@@ -13,6 +13,7 @@
 		"BlockCollisionSpliteratorMixin",
 		"BossBarHudMixin",
 		"CameraMixin",
+		"ChannelAccessor",
 		"ChatInputSuggestorMixin",
 		"ChatScreenMixin",
 		"ClientCommonNetworkHandlerAccessor",

@@ -16,19 +16,11 @@ final class SilenceTellyRotationUtility {
     }
 
     static Vec2f getClosestToBlockFace(final BlockPos pos, final Direction face, final Vec2f reference) {
-        return getClosestToBlockFace(pos, face, reference, mc.player == null ? null : mc.player.getEyePos());
-    }
-
-    static Vec2f getClosestToBlockFace(final BlockPos pos, final Direction face, final Vec2f reference, final Vec3d eyePos) {
-        return getClosestToBlockFace(pos, face, reference, eyePos, false);
-    }
-
-    static Vec2f getClosestToBlockFace(final BlockPos pos, final Direction face, final Vec2f reference,
-                                       final Vec3d eyePos, final boolean fixSensitivity) {
-        if (mc.player == null || pos == null || face == null || eyePos == null) {
+        if (mc.player == null || pos == null || face == null) {
             return null;
         }
 
+        final Vec3d eyePos = mc.player.getEyePos();
         Vec2f bestRotation = null;
         double bestDifference = Double.MAX_VALUE;
         for (final double firstOffset : FACE_OFFSETS) {
@@ -37,8 +29,7 @@ final class SilenceTellyRotationUtility {
                     continue;
                 }
                 final Vec3d hitVec = getFaceHitVec(pos, face, firstOffset, secondOffset);
-                final Vec2f rawRotation = getRotationTo(eyePos, hitVec);
-                final Vec2f rotation = fixSensitivity ? patchSensitivity(rawRotation, reference) : rawRotation;
+                final Vec2f rotation = getRotationTo(eyePos, hitVec);
                 if (!SilenceTellyRaycastUtility.didHitBlockFace(eyePos, rotation, pos, face, true)) {
                     continue;
                 }
@@ -51,13 +42,7 @@ final class SilenceTellyRotationUtility {
             }
         }
 
-        if (bestRotation != null) {
-            return bestRotation;
-        }
-
-        final Vec2f center = getRotationTo(eyePos, getFaceHitVec(pos, face, 0.0D, 0.0D));
-        final Vec2f fallback = fixSensitivity ? patchSensitivity(center, reference) : center;
-        return SilenceTellyRaycastUtility.didHitBlockFace(eyePos, fallback, pos, face, true) ? fallback : null;
+        return bestRotation != null ? bestRotation : getRotationTo(eyePos, getFaceHitVec(pos, face, 0.0D, 0.0D));
     }
 
     static Vec2f getRotationTo(final Vec3d from, final Vec3d to) {

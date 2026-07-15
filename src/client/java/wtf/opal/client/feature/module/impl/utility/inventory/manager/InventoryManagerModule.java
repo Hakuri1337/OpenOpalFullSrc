@@ -15,7 +15,6 @@ import wtf.opal.client.feature.module.impl.movement.InventoryMoveModule;
 import wtf.opal.client.feature.module.impl.utility.inventory.AutoArmorModule;
 import wtf.opal.client.feature.module.impl.utility.inventory.AcaInventoryActionScheduler;
 import wtf.opal.client.feature.module.impl.utility.inventory.ChestStealerModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.repository.ModuleRepository;
 import wtf.opal.event.impl.game.PostGameTickEvent;
 import wtf.opal.event.impl.game.inventory.ManualInventoryInteractionEvent;
@@ -199,8 +198,7 @@ public final class InventoryManagerModule extends Module {
         }
 
         final KillAuraModule killAuraModule = moduleRepository.getModule(KillAuraModule.class);
-        final ScaffoldModule scaffoldModule = moduleRepository.getModule(ScaffoldModule.class);
-        if ((killAuraModule.isEnabled() && killAuraModule.getTargeting().isTargetSelected()) || scaffoldModule.isEnabled()) {
+        if (killAuraModule.isEnabled() && killAuraModule.getTargeting().isTargetSelected()) {
             resetStateForBlockedContext();
             return false;
         }

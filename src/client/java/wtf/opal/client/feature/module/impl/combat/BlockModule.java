@@ -5,7 +5,6 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ShieldItem;
 import net.minecraft.registry.tag.ItemTags;
-import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.LocalDataWatch;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
@@ -14,7 +13,6 @@ import wtf.opal.client.feature.helper.impl.target.TargetProperty;
 import wtf.opal.client.feature.helper.impl.target.impl.TargetLivingEntity;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.property.impl.GroupProperty;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
@@ -53,10 +51,6 @@ public final class BlockModule extends Module {
     @Subscribe(priority = 2)
     public void onHandleInput(final MouseHandleInputEvent event) {
         blocking = false;
-
-        if (OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class).isEnabled()) {
-            return;
-        }
 
         final TargetList targetList = LocalDataWatch.getTargetList();
         final SlotHelper slotHelper = SlotHelper.getInstance();

@@ -54,7 +54,7 @@ public final class CapeModule extends Module {
             this.name = name;
             this.slug = name.replace(' ', '_').toLowerCase();
             this.identifier = Identifier.of("opal", "capes/" + this.slug + ".png");
-            this.textureAsset = new AssetInfo.TextureAssetInfo(this.identifier);
+            this.textureAsset = new AssetInfo.TextureAssetInfo(this.identifier, this.identifier);
         }
 
         public String getSlug() {

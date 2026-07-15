@@ -66,6 +66,11 @@ import java.util.List;
 
 import static wtf.opal.client.Constants.mc;
 
+/**
+ * @deprecated Legacy Scaffold is intentionally unregistered and must not receive new integrations.
+ *             It remains in source only as migration reference until the complete BlockFly replacement lands.
+ */
+@Deprecated(forRemoval = true)
 public final class ScaffoldModule extends Module implements IslandTrigger {
     private static final Direction[] DIRECTIONS = Direction.values();
     private static final double MAX_PLACEMENT_DISTANCE_SQUARED = 20.25D;

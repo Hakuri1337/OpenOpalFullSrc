@@ -27,7 +27,6 @@ import wtf.opal.client.feature.module.impl.combat.killaura.target.KillAuraTarget
 import wtf.opal.client.feature.module.impl.combat.velocity.VelocityMode;
 import wtf.opal.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.renderer.world.WorldRenderer;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MouseHandleInputEvent;
@@ -94,6 +93,15 @@ public final class KillAuraModule extends Module {
         }
 
         final CurrentTarget target = this.targeting.getTarget();
+        if (target != null && this.shouldUseTargetHitResult(target)) {
+            if (this.settings.isOverrideRaycast()
+                    && this.settings.isTickLookahead()
+                    && (this.hitResult == null || this.hitResult.getEntity() != target.getEntity())) {
+                return;
+            }
+            mc.crosshairTarget = target.getRotations().hitResult();
+        }
+
         if (target == null || mc.crosshairTarget == null || mc.crosshairTarget.getType() == HitResult.Type.MISS) {
             final double closestDistance = this.targeting.getClosestDistance();
             if (closestDistance <= this.settings.getSwingRange() && SwingDelay.isSwingAvailable(this.settings.getSwingCpsProperty()) && PlayerUtility.getBlockOver() == null) {
@@ -111,13 +119,6 @@ public final class KillAuraModule extends Module {
         final boolean allowSwingWhenUsing = animationsModule.isEnabled() && animationsModule.isSwingWhileUsing();
         if (mc.player.isUsingItem() && !allowSwingWhenUsing) {
             return;
-        }
-
-        if (this.settings.isOverrideRaycast()) {
-            if (this.settings.isTickLookahead() && (this.hitResult == null || this.hitResult.getEntity() != target.getEntity())) {
-                return;
-            }
-            mc.crosshairTarget = target.getRotations().hitResult();
         }
 
         if (mc.crosshairTarget.getType() == HitResult.Type.ENTITY) {
@@ -167,6 +168,15 @@ public final class KillAuraModule extends Module {
                 this.attacks = 0;
             }
         }
+    }
+
+    private boolean shouldUseTargetHitResult(final CurrentTarget target) {
+        if (mc.player == null || target == null) {
+            return false;
+        }
+        return this.settings.isOverrideRaycast()
+                || this.settings.isThroughWalls()
+                || PlayerUtility.getDistanceToEntity(target.getEntity()) > mc.player.getEntityInteractionRange();
     }
 
     private boolean isAttackSwingAvailable(final CurrentTarget target) {
@@ -402,11 +412,6 @@ public final class KillAuraModule extends Module {
             return;
         }
 
-        if (OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class).isEnabled()) {
-            releaseAutoblock();
-            return;
-        }
-
         final CurrentTarget target = this.targeting.getTarget();
         if (target == null) {
             releaseAutoblock();
@@ -449,10 +454,6 @@ public final class KillAuraModule extends Module {
         final ItemStack heldItem = SlotHelper.getInstance().getMainHandStack(mc.player);
         if (settings.isRequireWeapon() &&
                 !(heldItem.isIn(ItemTags.SWORDS) || heldItem.isIn(ItemTags.AXES) || heldItem.isIn(ItemTags.PICKAXES))) {
-            return false;
-        }
-
-        if (OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class).isEnabled()) {
             return false;
         }
 

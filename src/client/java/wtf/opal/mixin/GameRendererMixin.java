@@ -16,7 +16,6 @@ import net.minecraft.client.gui.render.GuiRenderer;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
@@ -31,7 +30,6 @@ import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.module.impl.combat.PiercingModule;
 import wtf.opal.client.feature.module.impl.visual.NoFOVModule;
 import wtf.opal.client.feature.module.impl.visual.NoHurtCameraModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.renderer.liquidglass.reglass.LiquidGlassPipelines;
 import wtf.opal.client.renderer.liquidglass.reglass.LiquidGlassPrecomputeRuntime;
 import wtf.opal.client.renderer.liquidglass.reglass.LiquidGlassUniforms;
@@ -41,7 +39,6 @@ import wtf.opal.client.renderer.liquidglass.reglass.gui.QuadVertexBufferProvider
 import wtf.opal.client.renderer.shader.ShaderFramebuffer;
 import wtf.opal.event.EventDispatcher;
 import wtf.opal.event.impl.render.RenderWorldEvent;
-import wtf.opal.utility.player.MoveUtility;
 import wtf.opal.utility.player.RaycastUtility;
 
 import java.util.List;
@@ -202,20 +199,6 @@ public abstract class GameRendererMixin {
     private void hookNoFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
         if (OpalClient.getInstance().getModuleRepository().getModule(NoFOVModule.class).isEnabled()) {
             cir.setReturnValue(mc.options.getFov().getValue().floatValue());
-            return;
-        }
-
-        final ScaffoldModule scaffold = OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class);
-        if (scaffold.isEnabled()
-                && scaffold.isSilenceTellyMode()
-                && scaffold.getSettings().isSilenceTellyKeepFov()
-                && mc.player != null
-                && MoveUtility.isMoving()) {
-            float fov = scaffold.getSettings().getSilenceTellyFov();
-            if (mc.player.hasStatusEffect(StatusEffects.SPEED)) {
-                fov += (mc.player.getStatusEffect(StatusEffects.SPEED).getAmplifier() + 1) * 0.13F;
-            }
-            cir.setReturnValue(fov);
         }
     }
 }

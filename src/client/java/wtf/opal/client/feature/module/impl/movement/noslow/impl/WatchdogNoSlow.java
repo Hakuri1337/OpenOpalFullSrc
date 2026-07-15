@@ -10,7 +10,6 @@ import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket;
 import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.util.Hand;
-import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseButton;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseHelper;
 import wtf.opal.client.feature.helper.impl.player.packet.blockage.block.holder.BlockHolder;
@@ -18,9 +17,7 @@ import wtf.opal.client.feature.helper.impl.player.packet.blockage.impl.InboundNe
 import wtf.opal.client.feature.helper.impl.player.packet.blockage.impl.OutboundNetworkBlockage;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.module.impl.movement.noslow.NoSlowModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.property.impl.mode.ModuleMode;
-import wtf.opal.client.feature.module.repository.ModuleRepository;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MouseHandleInputEvent;
 import wtf.opal.event.impl.game.input.PostHandleInputEvent;

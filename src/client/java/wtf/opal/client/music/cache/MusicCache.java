@@ -17,24 +17,44 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 
 public final class MusicCache {
     private final Path audioDirectory;
     private final HttpClient httpClient;
     private final Executor ioExecutor;
+    private final ConcurrentMap<Path, CompletableFuture<Path>> downloads = new ConcurrentHashMap<>();
     private volatile long maximumBytes = 2L * 1024 * 1024 * 1024;
 
     public MusicCache(final Path directory, final HttpClient httpClient, final Executor ioExecutor) {
         this.audioDirectory = directory.resolve("audio");
         this.httpClient = httpClient;
         this.ioExecutor = ioExecutor;
+        cleanupTemporaryFiles();
     }
 
     public CompletableFuture<Path> resolve(final AudioSource source) {
         final Path target = pathFor(source);
-        if (Files.isRegularFile(target)) {
-            return CompletableFuture.completedFuture(target);
+        try {
+            if (isUsable(target, source)) return CompletableFuture.completedFuture(target);
+            Files.deleteIfExists(target);
+        } catch (final IOException exception) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Unable to inspect cached audio", exception));
+        }
+
+        final CompletableFuture<Path> download = downloads.computeIfAbsent(target,
+                ignored -> beginDownload(source, target));
+        download.whenComplete((ignored, throwable) -> downloads.remove(target, download));
+        return download;
+    }
+
+    private CompletableFuture<Path> beginDownload(final AudioSource source, final Path target) {
+        try {
+            if (isUsable(target, source)) return CompletableFuture.completedFuture(target);
+        } catch (final IOException exception) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Unable to inspect cached audio", exception));
         }
         final HttpRequest request = HttpRequest.newBuilder(source.uri())
                 .timeout(Duration.ofMinutes(2))
@@ -54,9 +74,10 @@ public final class MusicCache {
             closeQuietly(response.body());
             throw new IllegalStateException("Audio download returned HTTP " + response.statusCode());
         }
+        Path temporary = null;
         try {
             Files.createDirectories(audioDirectory);
-            final Path temporary = Files.createTempFile(audioDirectory, ".download-", ".tmp");
+            temporary = Files.createTempFile(audioDirectory, ".download-", ".tmp");
             try (InputStream input = response.body()) {
                 Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -73,10 +94,44 @@ public final class MusicCache {
             } catch (final AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            temporary = null;
             evictIfNeeded();
             return target;
         } catch (final IOException exception) {
             throw new IllegalStateException("Unable to cache audio", exception);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (final IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static boolean isUsable(final Path target, final AudioSource source) throws IOException {
+        if (!Files.isRegularFile(target)) return false;
+        final long size = Files.size(target);
+        return size > 0 && (source.size() <= 0 || source.size() == size);
+    }
+
+    private void cleanupTemporaryFiles() {
+        if (!Files.isDirectory(audioDirectory)) return;
+        final long cutoff = System.currentTimeMillis() - Duration.ofMinutes(5).toMillis();
+        try (var files = Files.list(audioDirectory)) {
+            files.filter(Files::isRegularFile)
+                    .filter(path -> {
+                        final String name = path.getFileName().toString();
+                        return name.startsWith(".download-") && name.endsWith(".tmp");
+                    })
+                    .filter(path -> lastModified(path) < cutoff)
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (final IOException ignored) {
+                        }
+                    });
+        } catch (final IOException ignored) {
         }
     }
 

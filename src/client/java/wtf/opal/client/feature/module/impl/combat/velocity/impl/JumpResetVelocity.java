@@ -12,12 +12,10 @@ import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldTimeUpdateS2CPacket;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
-import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.helper.impl.player.rotation.model.impl.InstantRotationModel;
 import wtf.opal.client.feature.module.impl.combat.velocity.VelocityMode;
 import wtf.opal.client.feature.module.impl.combat.velocity.VelocityModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
 import wtf.opal.event.impl.game.PreGameTickEvent;
@@ -158,7 +156,7 @@ public final class JumpResetVelocity extends VelocityMode {
             event.setForward(1.0F);
             event.setSideways(0.0F);
         }
-        if (this.jumpTicks > 0 && !this.isScaffoldEnabled()) {
+        if (this.jumpTicks > 0) {
             ((LivingEntityAccessor) mc.player).setJumpingCooldown(0);
             event.setJump(true);
             this.jumpTicks--;
@@ -226,11 +224,6 @@ public final class JumpResetVelocity extends VelocityMode {
                 return;
             }
         }
-    }
-
-    private boolean isScaffoldEnabled() {
-        final ScaffoldModule scaffold = OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class);
-        return scaffold != null && scaffold.isEnabled();
     }
 
     private void resetDelayState() {

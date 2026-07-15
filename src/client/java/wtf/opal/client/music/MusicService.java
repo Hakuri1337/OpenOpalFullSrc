@@ -1,6 +1,8 @@
 package wtf.opal.client.music;
 
 import com.google.gson.JsonObject;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import wtf.opal.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
 import wtf.opal.client.music.api.MusicApiClient;
 import wtf.opal.client.music.cache.MusicCache;
@@ -39,6 +41,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import static wtf.opal.client.Constants.DIRECTORY;
 
 public final class MusicService implements AutoCloseable, IEventSubscriber {
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(3,
             Thread.ofPlatform().daemon().name("OpenOpal Music IO-", 0).factory());
     private final ScheduledExecutorService monitor = Executors.newSingleThreadScheduledExecutor(
@@ -364,6 +368,7 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
     private synchronized void startCurrent(final long seekMillis) {
         if (closed || queueIndex < 0 || queueIndex >= queue.size()) return;
         final long generation = operationGeneration.incrementAndGet();
+        player.stop();
         currentSong = queue.get(queueIndex);
         final Song playingSong = currentSong;
         currentAudioPath = null;
@@ -438,6 +443,9 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
     }
 
     private void fail(final Throwable throwable) {
+        final Throwable cause = unwrap(throwable);
+        final String song = currentSong == null ? "unknown song" : currentSong.name() + " (" + currentSong.id() + ")";
+        LOGGER.error("Music playback failed for {}", song, cause);
         pauseRequested = false;
         state = PlaybackState.ERROR;
         error = readableError(throwable);

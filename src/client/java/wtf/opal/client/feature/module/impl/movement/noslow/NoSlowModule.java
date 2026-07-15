@@ -5,8 +5,8 @@ import net.minecraft.registry.tag.ItemTags;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
-import wtf.opal.client.feature.module.impl.movement.noslow.impl.GrimFastNoSlow;
 import wtf.opal.client.feature.module.impl.movement.noslow.impl.GrimJumpNoSlow;
+import wtf.opal.client.feature.module.impl.movement.noslow.impl.NoC0FNoSlow;
 import wtf.opal.client.feature.module.impl.movement.noslow.impl.UniversalNoSlow;
 import wtf.opal.client.feature.module.impl.movement.noslow.impl.VanillaNoSlow;
 import wtf.opal.client.feature.module.impl.movement.noslow.impl.WatchdogNoSlow;
@@ -19,14 +19,18 @@ import static wtf.opal.client.Constants.mc;
 
 public final class NoSlowModule extends Module {
 
-    private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", this, Mode.VANILLA);
+    private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", this, Mode.VANILLA)
+            .alias("GrimFast", Mode.NO_C0F)
+            .alias("GrimC0F", Mode.NO_C0F)
+            .alias("Heypixel", Mode.NO_C0F)
+            .alias("Heypixel 3", Mode.NO_C0F);
     private final BooleanProperty allowSprinting = new BooleanProperty("Keep sprinting", true);
 
     private Action action = Action.NONE;
 
     public NoSlowModule() {
         super("No Slow", "Removes vanilla slowdowns such as item usage.", ModuleCategory.MOVEMENT);
-        addModuleModes(mode, new VanillaNoSlow(this), new WatchdogNoSlow(this), new UniversalNoSlow(this), new GrimJumpNoSlow(this), new GrimFastNoSlow(this));
+        addModuleModes(mode, new VanillaNoSlow(this), new WatchdogNoSlow(this), new UniversalNoSlow(this), new GrimJumpNoSlow(this), new NoC0FNoSlow(this));
         addProperties(mode, allowSprinting);
     }
 
@@ -71,7 +75,7 @@ public final class NoSlowModule extends Module {
         WATCHDOG("Watchdog"),
         UNIVERSAL("Universal"),
         GRIM_JUMP("GrimJump"),
-        GRIM_FAST("GrimFast");
+        NO_C0F("NoC0F");
 
         private final String name;
 
@@ -102,15 +106,12 @@ public final class NoSlowModule extends Module {
         }
 
         final String normalizedValue = normalize(valueString);
-        if (normalizedValue.equals("grim")
-                || normalizedValue.equals("grimv3")
-                || normalizedValue.equals("grimfast")
-                || normalizedValue.equals("noslow")
-                || normalizedValue.equals("zen")
+        if (normalizedValue.equals("grimfast")
                 || normalizedValue.equals("grimc0f")
                 || normalizedValue.equals("noc0f")
-                || normalizedValue.equals("heypixel")) {
-            this.mode.setValueOrdinal(Mode.GRIM_FAST.ordinal());
+                || normalizedValue.equals("heypixel")
+                || normalizedValue.equals("heypixel3")) {
+            this.mode.setValueOrdinal(Mode.NO_C0F.ordinal());
             return true;
         }
 

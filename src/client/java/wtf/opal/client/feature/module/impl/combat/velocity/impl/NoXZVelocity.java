@@ -6,12 +6,26 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.common.CommonPingS2CPacket;
+import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerInputC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.network.packet.s2c.common.DisconnectS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.CloseScreenS2CPacket;
+import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
+import net.minecraft.network.packet.s2c.play.HealthUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlaySoundFromEntityS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
+import net.minecraft.network.packet.s2c.play.ProfilelessChatMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.TeamS2CPacket;
+import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Vec3d;
@@ -25,7 +39,6 @@ import wtf.opal.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.opal.client.feature.module.impl.movement.StuckModule;
 import wtf.opal.client.feature.module.impl.utility.AntiBotsModule;
 import wtf.opal.client.feature.module.impl.world.TimerModule;
-import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
 import wtf.opal.duck.ClientConnectionAccess;
@@ -33,6 +46,7 @@ import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MoveInputEvent;
 import wtf.opal.event.impl.game.input.PostHandleInputEvent;
 import wtf.opal.event.impl.game.packet.ReceivePacketEvent;
+import wtf.opal.event.impl.game.packet.SendPacketEvent;
 import wtf.opal.event.impl.game.player.movement.PreMovementPacketEvent;
 import wtf.opal.event.impl.game.server.ServerDisconnectEvent;
 import wtf.opal.event.subscriber.Subscribe;
@@ -51,7 +65,6 @@ import static wtf.opal.client.Constants.mc;
 public final class NoXZVelocity extends VelocityMode {
 
     private static final int SUSPEND_TIMEOUT_TICKS = 12;
-    private static final int MAX_TRANSACTION_PACKETS = 128;
     private static final double MAX_TARGET_RANGE = 3.7D;
 
     private enum Phase {
@@ -71,6 +84,7 @@ public final class NoXZVelocity extends VelocityMode {
             .hideIf(() -> this.module.getActiveMode() != this);
 
     private final Queue<Packet<?>> inboundPackets = new ConcurrentLinkedQueue<>();
+    private final Queue<Packet<?>> movementPackets = new ConcurrentLinkedQueue<>();
 
     private Phase phase = Phase.IDLE;
     private EntityVelocityUpdateS2CPacket pendingVelocity;
@@ -82,7 +96,6 @@ public final class NoXZVelocity extends VelocityMode {
     private int flagCooldown;
     private int forwardPrimeTicks;
     private boolean flushInboundOnMotion;
-    private boolean transactionCapReached;
     private boolean pendingKillAuraFinalization;
     private Vec3d velocityBeforeKillAuraAttack;
     private boolean flushing;
@@ -110,7 +123,7 @@ public final class NoXZVelocity extends VelocityMode {
 
         if (packet instanceof PlayerPositionLookS2CPacket) {
             if (this.isSuspending()) {
-                this.releaseSuspension("position correction", true);
+                this.releaseSuspension("position correction");
             }
             this.clearAttackState();
             this.restoreTimer();
@@ -120,22 +133,10 @@ public final class NoXZVelocity extends VelocityMode {
         }
 
         if (this.isSuspending()) {
-            if (packet instanceof EntityVelocityUpdateS2CPacket velocityPacket
-                    && velocityPacket.getEntityId() == mc.player.getId()) {
-                this.releaseSuspension("second velocity", true);
-                this.captureVelocity(event, velocityPacket);
-                return;
+            if (!this.isAllowedDuringSuspension(packet)) {
+                this.inboundPackets.add(packet);
+                event.setCancelled();
             }
-
-            if (!(packet instanceof CommonPingS2CPacket)) {
-                return;
-            }
-
-            this.inboundPackets.add(packet);
-            if (this.inboundPackets.size() >= MAX_TRANSACTION_PACKETS) {
-                this.transactionCapReached = true;
-            }
-            event.setCancelled();
             return;
         }
 
@@ -175,13 +176,22 @@ public final class NoXZVelocity extends VelocityMode {
         this.instantProgress = 0.0F;
         if (this.flushInboundOnMotion) {
             this.flushInboundOnMotion = false;
-            this.transactionCapReached = this.inboundPackets.size() >= MAX_TRANSACTION_PACKETS;
-        } else {
-            this.inboundPackets.clear();
-            this.transactionCapReached = false;
+            this.flushInboundPackets();
         }
+        this.inboundPackets.clear();
+        this.movementPackets.clear();
         event.setCancelled();
         this.debugLog("suspend reason=" + (!mc.player.isOnGround() ? "air" : !this.isValidTarget(target) ? "no target" : "not sprinting"));
+    }
+
+    @Subscribe(priority = 100)
+    public void onSendPacket(final SendPacketEvent event) {
+        if (this.flushing || !this.isSuspending() || !this.isMovementTimelinePacket(event.getPacket())) {
+            return;
+        }
+
+        this.movementPackets.add(event.getPacket());
+        event.setCancelled();
     }
 
     @Subscribe(priority = 2)
@@ -200,7 +210,7 @@ public final class NoXZVelocity extends VelocityMode {
 
         if (this.module.isInvalid() || this.shouldIgnore()) {
             if (this.isSuspending()) {
-                this.releaseSuspension("invalid state", false);
+                this.releaseSuspension("invalid state");
             }
             this.clearAttackState();
             this.restoreTimer();
@@ -213,17 +223,17 @@ public final class NoXZVelocity extends VelocityMode {
 
             final boolean onGround = mc.player.isOnGround();
             final boolean timeout = this.suspendTicks >= SUSPEND_TIMEOUT_TICKS;
-            final boolean transactionCap = this.transactionCapReached;
-            if (onGround || timeout || transactionCap) {
+            if (onGround || timeout) {
                 final LivingEntity target = this.getAttackTarget();
                 if (onGround && this.isValidTarget(target) && mc.player.isSprinting()) {
                     final int attacks = this.getReleaseAttackCount();
                     final boolean useInstant = this.ownsTimer && this.instantProgress > 0.0F;
-                    this.releaseSuspension(onGround ? "ground" : "timeout", false, useInstant);
+                    this.releaseSuspension(onGround ? "ground" : "timeout", useInstant);
                     this.startAttackWindow(target, attacks, useInstant);
+                    this.processAttackWindow();
                 } else {
-                    final String reason = transactionCap ? "transaction cap" : timeout ? "timeout" : "ground without attack";
-                    this.releaseSuspension(reason, false);
+                    final String reason = timeout ? "timeout" : "ground without attack";
+                    this.releaseSuspension(reason);
                     if (onGround && mc.player.isSprinting()) {
                         mc.player.setSprinting(false);
                     }
@@ -391,36 +401,45 @@ public final class NoXZVelocity extends VelocityMode {
         this.debugLog(source + " h=" + this.horizontalSpeed(before) + " -> " + this.horizontalSpeed(mc.player.getVelocity()));
     }
 
-    private void releaseSuspension(final String reason, final boolean deferInbound) {
-        this.releaseSuspension(reason, deferInbound, false);
+    private void releaseSuspension(final String reason) {
+        this.releaseSuspension(reason, false);
     }
 
-    private void releaseSuspension(final String reason, final boolean deferInbound, final boolean keepTimer) {
+    private void releaseSuspension(final String reason, final boolean keepTimer) {
         if (!this.isSuspending()) {
             return;
         }
 
         final int inboundCount = this.inboundPackets.size();
+        final int movementCount = this.movementPackets.size();
         this.flushing = true;
         try {
+            this.replayMovementPackets();
             this.applyPendingVelocity();
-            if (deferInbound) {
-                this.flushInboundOnMotion = !this.inboundPackets.isEmpty();
-            } else {
-                this.flushInboundPackets();
-            }
+            this.flushInboundOnMotion = !this.inboundPackets.isEmpty();
         } finally {
             this.flushing = false;
         }
 
         this.pendingVelocity = null;
         this.suspendTicks = 0;
-        this.transactionCapReached = false;
         this.phase = Phase.IDLE;
-        if (!deferInbound && !keepTimer) {
+        if (!keepTimer) {
             this.restoreTimer();
         }
-        this.debugLog("release reason=" + reason + " transactions=" + inboundCount);
+        this.debugLog("release reason=" + reason + " move=" + movementCount + " inbound=" + inboundCount);
+    }
+
+    private void replayMovementPackets() {
+        final ClientConnection connection = this.getConnection();
+        if (!(connection instanceof ClientConnectionAccess access)) {
+            return;
+        }
+
+        Packet<?> packet;
+        while ((packet = this.movementPackets.poll()) != null) {
+            access.opal$sendPacketSilent(packet);
+        }
     }
 
     private void applyPendingVelocity() {
@@ -445,12 +464,6 @@ public final class NoXZVelocity extends VelocityMode {
     }
 
     private void applyInboundPacket(final Packet<?> packet) {
-        final ClientConnection connection = this.getConnection();
-        if (connection instanceof ClientConnectionAccess access) {
-            access.opal$channelReadSilent(packet);
-            return;
-        }
-
         final ClientPlayNetworkHandler networkHandler = mc.getNetworkHandler();
         if (networkHandler != null) {
             try {
@@ -459,6 +472,36 @@ public final class NoXZVelocity extends VelocityMode {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private boolean isAllowedDuringSuspension(final Packet<?> packet) {
+        return packet instanceof EntityVelocityUpdateS2CPacket
+                || packet instanceof HealthUpdateS2CPacket
+                || packet instanceof PlayerPositionLookS2CPacket
+                || packet instanceof PlaySoundS2CPacket
+                || packet instanceof PlaySoundFromEntityS2CPacket
+                || packet instanceof ChatMessageS2CPacket
+                || packet instanceof ProfilelessChatMessageS2CPacket
+                || packet instanceof GameMessageS2CPacket
+                || packet instanceof DeathMessageS2CPacket
+                || packet instanceof CloseScreenS2CPacket
+                || packet instanceof EntityDamageS2CPacket
+                || packet instanceof TitleS2CPacket
+                || packet instanceof TeamS2CPacket
+                || packet instanceof DisconnectS2CPacket
+                || packet instanceof EntityAnimationS2CPacket animation
+                && animation.getEntityId() != mc.player.getId();
+    }
+
+    private boolean isMovementTimelinePacket(final Packet<?> packet) {
+        if (packet instanceof PlayerMoveC2SPacket || packet instanceof PlayerInputC2SPacket) {
+            return true;
+        }
+        if (!(packet instanceof ClientCommandC2SPacket command)) {
+            return false;
+        }
+        return command.getMode() == ClientCommandC2SPacket.Mode.START_SPRINTING
+                || command.getMode() == ClientCommandC2SPacket.Mode.STOP_SPRINTING;
     }
 
     private ClientConnection getConnection() {
@@ -568,8 +611,7 @@ public final class NoXZVelocity extends VelocityMode {
         }
 
         final StuckModule stuck = OpalClient.getInstance().getModuleRepository().getModule(StuckModule.class);
-        final ScaffoldModule scaffold = OpalClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class);
-        return (stuck != null && stuck.isEnabled()) || (scaffold != null && scaffold.isEnabled());
+        return stuck != null && stuck.isEnabled();
     }
 
     private boolean isSuspending() {
@@ -599,8 +641,8 @@ public final class NoXZVelocity extends VelocityMode {
     private void clearWithoutFlush(final String reason) {
         this.pendingVelocity = null;
         this.inboundPackets.clear();
+        this.movementPackets.clear();
         this.flushInboundOnMotion = false;
-        this.transactionCapReached = false;
         this.suspendTicks = 0;
         this.forwardPrimeTicks = 0;
         this.clearAttackState();
@@ -648,10 +690,11 @@ public final class NoXZVelocity extends VelocityMode {
     @Override
     public void onDisable() {
         if (this.isSuspending()) {
-            this.releaseSuspension("disable", false);
-        } else {
-            this.flushInboundPackets();
+            this.releaseSuspension("disable");
         }
+        this.flushInboundOnMotion = false;
+        this.flushInboundPackets();
+        this.movementPackets.clear();
         this.clearWithoutFlush("disable");
         super.onDisable();
     }
@@ -668,7 +711,7 @@ public final class NoXZVelocity extends VelocityMode {
 
     @Override
     public boolean hasQueuedPackets() {
-        return this.pendingVelocity != null || !this.inboundPackets.isEmpty();
+        return this.pendingVelocity != null || !this.inboundPackets.isEmpty() || !this.movementPackets.isEmpty();
     }
 
     @Override
