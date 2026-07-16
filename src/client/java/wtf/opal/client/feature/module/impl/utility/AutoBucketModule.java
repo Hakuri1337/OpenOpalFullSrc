@@ -3,6 +3,7 @@ package wtf.opal.client.feature.module.impl.utility;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -20,6 +21,7 @@ import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MoveInputEvent;
+import wtf.opal.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.opal.event.subscriber.Subscribe;
 import wtf.opal.utility.player.RotationUtility;
 
@@ -56,6 +58,8 @@ public final class AutoBucketModule extends Module {
     private Vec2f pendingMlgRotation;
     private float lastRequestedYaw = Float.NaN;
     private float lastRequestedPitch = Float.NaN;
+    private float lastSentYaw = Float.NaN;
+    private float lastSentPitch = Float.NaN;
     private int postPlaceCooldown;
     private int postActionCooldown;
     private int retryCooldown;
@@ -100,6 +104,12 @@ public final class AutoBucketModule extends Module {
         if (this.postActionCooldown > 0 || this.mlgRecoveryActive) {
             event.setSneak(false);
         }
+    }
+
+    @Subscribe
+    public void onPostMovementPacket(final PostMovementPacketEvent event) {
+        this.lastSentYaw = event.getYaw();
+        this.lastSentPitch = event.getPitch();
     }
 
     private boolean handleMlgTick() {
@@ -195,7 +205,9 @@ public final class AutoBucketModule extends Module {
         }
 
         this.saveAndSwitch(waterSlot);
-        this.useItem();
+        if (!this.useItem()) {
+            return;
+        }
 
         this.helperRetrievePending = true;
         this.helperRetrieveTriesLeft = 8;
@@ -266,7 +278,7 @@ public final class AutoBucketModule extends Module {
 
         final Vec2f rotation = this.getSafeRotationTo(Vec3d.ofCenter(waterPos), this.getCurrentRotation().x, MAX_BUCKET_PITCH);
         this.requestRotation(rotation);
-        if (!this.isRotationReady(rotation)) {
+        if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
             return true;
         }
 
@@ -276,7 +288,9 @@ public final class AutoBucketModule extends Module {
         }
 
         this.saveAndSwitch(emptySlot);
-        this.useItem();
+        if (!this.useItem()) {
+            return false;
+        }
         this.postActionCooldown = 8;
         this.postPlaceCooldown = Math.max(this.postPlaceCooldown, 1);
         return true;
@@ -312,7 +326,7 @@ public final class AutoBucketModule extends Module {
         this.mlgPlacedWaterPos = waterSource;
         final Vec2f rotation = this.getSafeRotationTo(Vec3d.ofCenter(waterSource), this.getCurrentRotation().x, MAX_BUCKET_PITCH);
         this.requestRotation(rotation);
-        if (!this.isRotationReady(rotation)) {
+        if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
             this.retryMlgRecovery();
             return;
         }
@@ -326,9 +340,12 @@ public final class AutoBucketModule extends Module {
 
         this.mlgPlacedWaterPos = hit.getBlockPos().toImmutable();
         this.saveAndSwitch(this.mlgRecoverySlot);
-        this.useItem();
-        this.mlgRecoveryTriesLeft--;
-        this.mlgRecoveryDelay = 2;
+        if (this.useItem()) {
+            this.mlgRecoveryTriesLeft--;
+            this.mlgRecoveryDelay = 2;
+        } else {
+            this.retryMlgRecovery();
+        }
     }
 
     private void placeMlgWaterBucket(final int slot, final boolean markPlaced) {
@@ -342,7 +359,9 @@ public final class AutoBucketModule extends Module {
 
         this.mlgPlacedWaterPos = placedPos;
         this.saveAndSwitch(slot);
-        this.useItem();
+        if (!this.useItem()) {
+            return;
+        }
 
         if (markPlaced) {
             this.waterPlaced = true;
@@ -388,7 +407,7 @@ public final class AutoBucketModule extends Module {
         this.helperPlacedWaterPos = waterSource;
         final Vec2f rotation = this.getSafeRotationTo(Vec3d.ofCenter(waterSource), this.getCurrentRotation().x, MAX_BUCKET_PITCH);
         this.requestRotation(rotation);
-        if (!this.isRotationReady(rotation)) {
+        if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
             this.retryHelperRetrieve();
             return;
         }
@@ -402,9 +421,12 @@ public final class AutoBucketModule extends Module {
 
         this.helperPlacedWaterPos = hit.getBlockPos().toImmutable();
         this.saveAndSwitch(this.helperRetrieveSlot);
-        this.useItem();
-        this.helperRetrieveTriesLeft--;
-        this.helperRetrieveDelay = 2;
+        if (this.useItem()) {
+            this.helperRetrieveTriesLeft--;
+            this.helperRetrieveDelay = 2;
+        } else {
+            this.retryHelperRetrieve();
+        }
     }
 
     private boolean shouldExtinguish() {
@@ -710,6 +732,13 @@ public final class AutoBucketModule extends Module {
                 && Math.abs(current.y - this.lastRequestedPitch) <= BUCKET_ROTATION_READY_DIFFERENCE;
     }
 
+    private boolean isServerRotationReady(final Vec2f rotation) {
+        return !Float.isNaN(this.lastSentYaw)
+                && !Float.isNaN(this.lastSentPitch)
+                && Math.abs(MathHelper.wrapDegrees(this.lastSentYaw - rotation.x)) <= BUCKET_ROTATION_READY_DIFFERENCE
+                && Math.abs(this.lastSentPitch - rotation.y) <= BUCKET_ROTATION_READY_DIFFERENCE;
+    }
+
     private BlockHitResult getVerifiedSolidHit(final Vec2f rotation, final BlockHitResult expectedHit) {
         if (!this.isRotationReady(rotation)) {
             return null;
@@ -734,12 +763,16 @@ public final class AutoBucketModule extends Module {
         SlotHelper.setCurrentItem(targetSlot);
     }
 
-    private void useItem() {
+    private boolean useItem() {
         if (mc.player == null || mc.interactionManager == null) {
-            return;
+            return false;
         }
-        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        final ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+        if (result.isAccepted()) {
+            mc.player.swingHand(Hand.MAIN_HAND);
+            return true;
+        }
+        return false;
     }
 
     private int findWaterBucketSlot() {
@@ -799,6 +832,8 @@ public final class AutoBucketModule extends Module {
         this.postPlaceCooldown = 0;
         this.postActionCooldown = 0;
         this.retryCooldown = 0;
+        this.lastSentYaw = Float.NaN;
+        this.lastSentPitch = Float.NaN;
     }
 
     private void resetState() {

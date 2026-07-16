@@ -53,6 +53,15 @@ public final class BlockFlyRotationHandler {
         previousSentRotation = rotation == null ? null : rotation.copy();
     }
 
+    public static void markSentRotation(final BlockFlyRotation rotation) {
+        if (rotation == null) {
+            return;
+        }
+        previousSentRotation = sentRotation == null ? null : sentRotation.copy();
+        sentRotation = rotation.copy();
+        previousRotation = rotation.copy();
+    }
+
     public static boolean isOwningRotation() {
         return active && targetRotation != null;
     }

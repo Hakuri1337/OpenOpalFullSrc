@@ -8,36 +8,49 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import static wtf.opal.client.Constants.mc;
 
 public final class BlockFlyDelayedTickQueue {
-    private static final Queue<Runnable> TASKS = new ConcurrentLinkedQueue<>();
+    private static final Queue<DelayedTick> TASKS = new ConcurrentLinkedQueue<>();
 
     private BlockFlyDelayedTickQueue() {
     }
 
-    public static void add(final Runnable task) {
-        TASKS.add(task);
+    public static void add(final Runnable task, final boolean skipEntityTick) {
+        TASKS.add(new DelayedTick(task, skipEntityTick));
     }
 
-    public static boolean consumeFor(final Entity entity) {
+    public static TickResult consumeFor(final Entity entity) {
         if (mc.player == null || entity != mc.player || TASKS.isEmpty()) {
-            return false;
+            return TickResult.NONE;
         }
-        final Runnable task = TASKS.poll();
+        final DelayedTick task = TASKS.poll();
         if (task != null) {
             try {
-                task.run();
+                task.action().run();
             } catch (final RuntimeException exception) {
                 TASKS.clear();
                 throw exception;
             }
         }
-        return true;
+        return task != null && task.skipEntityTick() ? TickResult.SKIP : TickResult.CONTINUE;
     }
 
     public static int size() {
         return TASKS.size();
     }
 
+    public static boolean isEmpty() {
+        return TASKS.isEmpty();
+    }
+
     public static void clear() {
         TASKS.clear();
+    }
+
+    public enum TickResult {
+        NONE,
+        SKIP,
+        CONTINUE
+    }
+
+    private record DelayedTick(Runnable action, boolean skipEntityTick) {
     }
 }

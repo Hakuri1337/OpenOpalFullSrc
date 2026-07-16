@@ -395,31 +395,40 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
     }
 
     private void scheduleDelayedPlacement() {
+        if (!BlockFlyDelayedTickQueue.isEmpty()) {
+            return;
+        }
         final BlockFlyRotation rotationToBlock = BlockFlyRotationUtil.rotationToBlock(
                 this.currentPlacement.supportPos(), 1.0F);
-        final BlockFlyRotation previousTarget = BlockFlyRotationHandler.targetRotation();
+        final BlockFlyPlacementTarget delayedPlacement = this.currentPlacement;
         this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
         BlockFlyRotationHandler.setTargetRotation(this.rotations);
         this.rotationDelay++;
-        BlockFlyDelayedTickQueue.add(() -> {
-        });
         BlockFlyDelayedTickQueue.add(() -> {
             if (mc.player == null) {
                 BlockFlyDelayedTickQueue.clear();
                 return;
             }
-            BlockFlyRotationHandler.setPreviousSentRotation(rotationToBlock);
-            if (previousTarget == null || previousTarget.yaw() != rotationToBlock.yaw()) {
-                this.sendPacketSilent(new PlayerMoveC2SPacket.LookAndOnGround(
-                        BlockFlyRotationHandler.wireYaw(rotationToBlock.yaw()),
-                        rotationToBlock.pitch(),
-                        mc.player.isOnGround(),
-                        mc.player.horizontalCollision
-                ));
+            BlockFlyRotationHandler.markSentRotation(rotationToBlock);
+            this.sendPacketSilent(new PlayerMoveC2SPacket.LookAndOnGround(
+                    BlockFlyRotationHandler.wireYaw(rotationToBlock.yaw()),
+                    rotationToBlock.pitch(),
+                    mc.player.isOnGround(),
+                    mc.player.horizontalCollision
+            ));
+        }, true);
+        BlockFlyDelayedTickQueue.add(() -> {
+            if (mc.player == null || mc.world == null) {
+                BlockFlyDelayedTickQueue.clear();
+                return;
             }
+            this.currentPlacement = delayedPlacement;
+            this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
+            BlockFlyRotationHandler.setTargetRotation(this.rotations);
             this.doSnap();
-            this.runTick();
-        });
+            this.canBuildNow = true;
+            this.rotationDelay = 0;
+        }, false);
     }
 
     private void applyRotations() {

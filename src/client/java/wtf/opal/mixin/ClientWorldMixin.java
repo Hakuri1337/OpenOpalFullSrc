@@ -51,7 +51,12 @@ public final class ClientWorldMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;tick()V")
     )
     private void hookSkipTicks(final Entity instance) {
-        if (BlockFlyDelayedTickQueue.consumeFor(instance)) {
+        final BlockFlyDelayedTickQueue.TickResult blockFlyTick = BlockFlyDelayedTickQueue.consumeFor(instance);
+        if (blockFlyTick == BlockFlyDelayedTickQueue.TickResult.SKIP) {
+            return;
+        }
+        if (blockFlyTick == BlockFlyDelayedTickQueue.TickResult.CONTINUE) {
+            instance.tick();
             return;
         }
         if (mc.player != null && instance == mc.player && SkipTickUtility.consumeSkipTick()) {
