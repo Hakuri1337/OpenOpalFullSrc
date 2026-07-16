@@ -3,7 +3,7 @@ package wtf.opal.client;
 public final class ReleaseInfo {
 
     public static final ReleaseChannel CHANNEL = ReleaseChannel.STABLE;
-    public static final String VERSION = "b2";
+    public static final String VERSION = "b3";
     public static final String NAME = "OpenOpal";
 
     public enum ReleaseChannel {

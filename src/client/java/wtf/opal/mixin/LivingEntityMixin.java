@@ -20,6 +20,7 @@ import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.module.impl.movement.MovementFixModule;
 import wtf.opal.client.feature.module.impl.movement.SprintModule;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
+import wtf.opal.client.feature.module.impl.world.blockfly.rotation.BlockFlyRotationBridge;
 import wtf.opal.duck.ClientPlayerEntityAccess;
 import wtf.opal.event.EventDispatcher;
 import wtf.opal.event.impl.game.player.movement.JumpEvent;
@@ -86,6 +87,9 @@ public abstract class LivingEntityMixin extends Entity {
     )
     private float redirectYaw(LivingEntity instance) {
         if (instance instanceof ClientPlayerEntity player) {
+            if (BlockFlyRotationBridge.ownsRotation()) {
+                return BlockFlyRotationBridge.logicalYawOr(instance.getYaw());
+            }
             if (OpalClient.getInstance().getModuleRepository().getModule(MovementFixModule.class).isFixMovement()) {
                 return instance.getYaw();
             }

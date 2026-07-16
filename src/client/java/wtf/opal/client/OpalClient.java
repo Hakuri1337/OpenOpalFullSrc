@@ -44,6 +44,7 @@ import wtf.opal.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.opal.client.feature.module.impl.world.FastBreakModule;
 import wtf.opal.client.feature.module.impl.world.TimerModule;
 import wtf.opal.client.feature.module.impl.world.breaker.BreakerModule;
+import wtf.opal.client.feature.module.impl.world.blockfly.BlockFlyModule;
 import wtf.opal.client.feature.module.repository.ModuleRepository;
 import wtf.opal.client.notification.NotificationManager;
 import wtf.opal.client.music.MusicPlayerModule;
@@ -117,6 +118,7 @@ public final class OpalClient {
                     new PostProcessingModule(),
                     // World
                     // DEPRECATED: Legacy Scaffold is intentionally unregistered; BlockFly will replace it.
+                    new BlockFlyModule(),
                     new TimerModule(),
                     new BreakerModule(),
                     new FastBreakModule(),

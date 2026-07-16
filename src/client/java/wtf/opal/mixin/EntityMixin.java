@@ -20,6 +20,7 @@ import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.module.impl.movement.MovementFixModule;
 import wtf.opal.client.feature.module.impl.movement.physics.PhysicsModule;
+import wtf.opal.client.feature.module.impl.world.blockfly.rotation.BlockFlyRotationBridge;
 import wtf.opal.event.EventDispatcher;
 import wtf.opal.event.impl.game.player.movement.PostMoveEvent;
 import wtf.opal.event.impl.game.player.movement.PreMoveEvent;
@@ -65,6 +66,9 @@ public abstract class EntityMixin {
     )
     private float redirectYaw(Entity instance) {
         final boolean isPlayer = mc.player != null && (Object) this == mc.player;
+        if (isPlayer && BlockFlyRotationBridge.ownsRotation()) {
+            return BlockFlyRotationBridge.logicalYawOr(instance.getYaw());
+        }
         if (isPlayer && !OpalClient.getInstance().getModuleRepository().getModule(MovementFixModule.class).isFixMovement()) {
             return RotationHelper.getClientHandler().getYawOr(instance.getYaw());
         }

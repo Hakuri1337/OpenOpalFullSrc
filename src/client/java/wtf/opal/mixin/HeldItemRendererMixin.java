@@ -25,6 +25,7 @@ import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
+import wtf.opal.client.feature.module.impl.world.blockfly.render.BlockFlyRenderSpoof;
 import wtf.opal.duck.PlayerEntityAccess;
 import wtf.opal.utility.player.BlockUtility;
 
@@ -283,6 +284,7 @@ public abstract class HeldItemRendererMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getMainHandStack()Lnet/minecraft/item/ItemStack;")
     )
     private ItemStack getMainHandStack(ClientPlayerEntity instance) {
-        return SlotHelper.getInstance().getMainHandStack(instance);
+        final ItemStack stack = SlotHelper.getInstance().getMainHandStack(instance);
+        return BlockFlyRenderSpoof.mainHandStackOr(instance, stack);
     }
 }

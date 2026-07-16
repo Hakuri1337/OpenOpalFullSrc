@@ -1,9 +1,12 @@
 package wtf.opal.client.feature.module.impl.world.blockfly.motion;
 
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
+
+import static wtf.opal.client.Constants.mc;
 
 public final class BlockFlyMotionSimulator {
     private double x;
@@ -32,9 +35,10 @@ public final class BlockFlyMotionSimulator {
         this.forward = input.y;
         this.sprinting = player.isSprinting();
 
-        final float currentFactor = player.getWorld().getBlockState(player.getBlockPos())
+        final ClientWorld world = mc.world;
+        final float currentFactor = world == null ? 1.0F : world.getBlockState(player.getBlockPos())
                 .getBlock().getJumpVelocityMultiplier();
-        final float belowFactor = player.getWorld().getBlockState(player.getSteppingPos())
+        final float belowFactor = world == null ? 1.0F : world.getBlockState(player.getSteppingPos())
                 .getBlock().getJumpVelocityMultiplier();
         this.jumpPower = 0.42F * (currentFactor == 1.0F ? belowFactor : currentFactor)
                 + player.getJumpBoostVelocityModifier();

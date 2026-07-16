@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.opal.event.EventDispatcher;
 import wtf.opal.event.impl.game.world.EntityRemoveEvent;
 import wtf.opal.event.impl.game.world.PlaySoundEvent;
+import wtf.opal.client.feature.module.impl.world.blockfly.tick.BlockFlyDelayedTickQueue;
 import wtf.opal.utility.player.SkipTickUtility;
 
 import static wtf.opal.client.Constants.mc;
@@ -50,6 +51,9 @@ public final class ClientWorldMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;tick()V")
     )
     private void hookSkipTicks(final Entity instance) {
+        if (BlockFlyDelayedTickQueue.consumeFor(instance)) {
+            return;
+        }
         if (mc.player != null && instance == mc.player && SkipTickUtility.consumeSkipTick()) {
             return;
         }
