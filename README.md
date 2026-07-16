@@ -1,6 +1,5 @@
-声明：目前Release的Inventorymamager和Cheststealer和Scaffold都是坏的
-Source里的Inv和Stealer修了，但是Sca没修好
-Sca修好了再发Release 目前不建议飘Heypixel
+声明：有未知heypixel 1h ban。
+scaffold改名为BlockFly并且修好了。
 # OpenOpal
 
 OpenOpal is a free and open-source Fabric client mod for Minecraft 1.21.10.
