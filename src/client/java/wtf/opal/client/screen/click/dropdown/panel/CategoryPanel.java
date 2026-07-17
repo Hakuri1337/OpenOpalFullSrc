@@ -125,13 +125,12 @@ public final class CategoryPanel extends OpalPanelComponent {
 
     @Override
     public void init() {
-        if (modulePanelList.isEmpty()) {
-            OpalClient.getInstance().getModuleRepository().getModulesInCategory(category)
-                    .stream()
-                    .filter(module -> module.isVisible())
-                    .forEach(module -> modulePanelList.add(new ModulePanel(module)));
-            modulePanelList.sort(Comparator.comparing(p -> p.getModule().getName()));
-        }
+        modulePanelList.clear();
+        OpalClient.getInstance().getModuleRepository().getModulesInCategory(category)
+                .stream()
+                .filter(module -> module.isVisible())
+                .forEach(module -> modulePanelList.add(new ModulePanel(module)));
+        modulePanelList.sort(Comparator.comparing(p -> p.getModule().getName()));
 
         this.openAnimation = new Animation(Easing.EASE_OUT_SINE, 100 + (panelIndex * 80L));
         closing = false;
