@@ -72,6 +72,10 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
         this.enabled = enabled;
         if (enabled) {
             this.onEnable();
+            // Auto-show deprecated modules in ClickGUI when enabled
+            if (this instanceof DeprecatedModule) {
+                this.visible = true;
+            }
         } else {
             this.onDisable();
         }
