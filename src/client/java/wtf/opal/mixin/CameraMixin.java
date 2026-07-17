@@ -11,9 +11,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
+import wtf.opal.client.feature.module.impl.visual.ViewClipModule;
 
 @Mixin(Camera.class)
 public abstract class CameraMixin {
@@ -47,6 +49,17 @@ public abstract class CameraMixin {
 
     @Unique
     private EntityPose prevPose;
+
+    @Inject(method = "clipToSpace", at = @At("HEAD"), cancellable = true)
+    private void opal$viewClip(final float desiredCameraDistance, final CallbackInfoReturnable<Float> cir) {
+        if (OpalClient.getInstance().getModuleRepository() == null) {
+            return;
+        }
+        final ViewClipModule viewClip = OpalClient.getInstance().getModuleRepository().getModule(ViewClipModule.class);
+        if (viewClip != null && viewClip.isEnabled()) {
+            cir.setReturnValue((float) viewClip.getCameraDistance(desiredCameraDistance));
+        }
+    }
 
     @Inject(
             method = "updateEyeHeight",

@@ -22,16 +22,12 @@ import static wtf.opal.client.Constants.mc;
 
 public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
     private static final long PACKET_DELAY_MS = 2_000L;
-    private static final long WAIT_AFTER_LAG_MS = 5_000L;
 
     private record PacketEntry(Packet<?> packet, long queuedAt) {
     }
 
     private final Queue<PacketEntry> packetQueue = new ConcurrentLinkedQueue<>();
-    private long waitStartedAt;
     private long disabledStartedAt;
-    private boolean lagDetected;
-    private boolean waitingLastTick;
     private boolean ignoreInitialTeleport;
 
     public CubecraftDisabler(DisablerModule module) {
@@ -72,24 +68,12 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
             return;
         }
 
-        this.waitStartedAt = System.currentTimeMillis();
-        this.lagDetected = true;
         this.flushQueue();
-        ChatUtility.print("CubeCraft Disabler | lag detected, waiting 5 seconds.");
+        ChatUtility.print("CubeCraft Disabler | lag detected, continuing immediately.");
     }
 
     @Subscribe
     public void onPreGameTick(PreGameTickEvent event) {
-        final boolean waiting = this.isWaiting();
-        if (this.waitingLastTick && !waiting) {
-            this.disabledStartedAt = System.currentTimeMillis();
-        }
-        this.waitingLastTick = waiting;
-
-        if (waiting) {
-            return;
-        }
-
         final long now = System.currentTimeMillis();
         PacketEntry entry;
         while ((entry = this.packetQueue.peek()) != null && now - entry.queuedAt() >= PACKET_DELAY_MS) {
@@ -117,8 +101,6 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
     @Override
     public void onDisable() {
         this.flushQueue();
-        this.lagDetected = false;
-        this.waitingLastTick = false;
         super.onDisable();
     }
 
@@ -128,13 +110,10 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
     }
 
     public boolean isWaiting() {
-        return this.lagDetected && System.currentTimeMillis() - this.waitStartedAt < WAIT_AFTER_LAG_MS;
+        return false;
     }
 
     public double getDisabledDuration() {
-        if (this.isWaiting()) {
-            return 0.0D;
-        }
         return (System.currentTimeMillis() - this.disabledStartedAt) / 1_000.0D;
     }
 
@@ -143,7 +122,7 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
     }
 
     public String getStatusSuffix() {
-        return this.isWaiting() ? "Waiting" : "Sentinel";
+        return "Sentinel";
     }
 
     private void flushQueue() {
@@ -155,10 +134,7 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
 
     private void clearState(boolean expectInitialTeleport) {
         this.packetQueue.clear();
-        this.lagDetected = false;
-        this.waitingLastTick = false;
         this.ignoreInitialTeleport = expectInitialTeleport;
-        this.waitStartedAt = 0L;
         this.disabledStartedAt = System.currentTimeMillis();
     }
 

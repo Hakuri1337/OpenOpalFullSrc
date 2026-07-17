@@ -31,6 +31,7 @@ import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.helper.impl.server.impl.HypixelServer;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
 import wtf.opal.client.feature.module.impl.visual.PostProcessingModule;
+import wtf.opal.client.feature.module.impl.visual.NoRenderModule;
 import wtf.opal.client.feature.module.impl.visual.StreamerModeModule;
 import wtf.opal.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.opal.client.feature.module.repository.ModuleRepository;
@@ -297,6 +298,13 @@ public abstract class InGameHudMixin {
     private void renderStatusEffectOverlay(CallbackInfo ci) {
         final OverlayModule overlayModule = OpalClient.getInstance().getModuleRepository().getModule(OverlayModule.class);
         if (overlayModule.isEnabled() && !overlayModule.isStatusEffectOverlayEnabled()) {
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "renderNauseaOverlay", at = @At("HEAD"), cancellable = true)
+    private void opal$hideNauseaOverlay(final DrawContext context, final float nauseaStrength, final CallbackInfo ci) {
+        if (NoRenderModule.shouldSuppressNausea()) {
             ci.cancel();
         }
     }

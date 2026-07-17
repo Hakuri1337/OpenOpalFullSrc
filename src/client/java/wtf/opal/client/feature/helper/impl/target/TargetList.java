@@ -10,7 +10,6 @@ import wtf.opal.client.feature.helper.impl.server.KnownServer;
 import wtf.opal.client.feature.helper.impl.target.impl.Target;
 import wtf.opal.client.feature.helper.impl.target.impl.TargetLivingEntity;
 import wtf.opal.client.feature.helper.impl.target.impl.TargetPlayer;
-import wtf.opal.client.feature.module.impl.utility.AntiBotsModule;
 
 import java.util.*;
 
@@ -47,10 +46,6 @@ public final class TargetList {
             }
 
             if (currentServer != null && !currentServer.isValidTarget(livingEntity)) {
-                continue;
-            }
-
-            if (AntiBotsModule.shouldFilter(livingEntity)) {
                 continue;
             }
 

@@ -127,6 +127,8 @@ public final class CategoryPanel extends OpalPanelComponent {
     public void init() {
         if (modulePanelList.isEmpty()) {
             OpalClient.getInstance().getModuleRepository().getModulesInCategory(category)
+                    .stream()
+                    .filter(module -> module.isVisible())
                     .forEach(module -> modulePanelList.add(new ModulePanel(module)));
             modulePanelList.sort(Comparator.comparing(p -> p.getModule().getName()));
         }
@@ -172,6 +174,8 @@ public final class CategoryPanel extends OpalPanelComponent {
         this.draggingAllowed = draggingAllowed;
         if (!draggingAllowed) {
             this.dragging = false;
+            this.dragOffsetX = 0;
+            this.dragOffsetY = 0;
         }
     }
 

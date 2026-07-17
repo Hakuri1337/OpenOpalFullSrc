@@ -8,6 +8,7 @@ import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import org.lwjgl.glfw.GLFW;
+import wtf.opal.client.feature.module.DeprecatedModule;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
@@ -20,7 +21,7 @@ import java.util.Set;
 
 import static wtf.opal.client.Constants.mc;
 
-public final class AutoChestModule extends Module {
+public final class AutoChestModule extends Module implements DeprecatedModule {
 
     private static final Set<Item> RESOURCES = Set.of(Items.IRON_INGOT, Items.GOLD_INGOT, Items.DIAMOND, Items.EMERALD);
 
@@ -33,6 +34,7 @@ public final class AutoChestModule extends Module {
 
     public AutoChestModule() {
         super("Auto Chest", "Dumps and retrieves resources in chests.", ModuleCategory.UTILITY);
+        this.setVisible(false);
         addProperties(ticks, autoDeposit);
     }
 

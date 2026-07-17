@@ -16,6 +16,7 @@ public final class ToggledSettings {
     private final BooleanProperty enabled;
     private final BooleanProperty lowercase;
     private final BooleanProperty showSuffix;
+    private final BooleanProperty noRenderModule;
     private final BooleanProperty offsetScoreboard;
     private final MultipleBooleanProperty visibleCategories;
     private final ModeProperty<BarMode> barMode;
@@ -27,6 +28,7 @@ public final class ToggledSettings {
         this.enabled = new BooleanProperty("Enabled", true);
         this.lowercase = new BooleanProperty("Lowercase", true);
         this.showSuffix = new BooleanProperty("Show suffix", true);
+        this.noRenderModule = new BooleanProperty("NoRenderModule", false);
         this.offsetScoreboard = new BooleanProperty("Offset scoreboard", true);
 
         this.visibleCategories = new MultipleBooleanProperty("Visible categories",
@@ -38,7 +40,7 @@ public final class ToggledSettings {
         module.addProperties(
                 new GroupProperty(
                         "Toggled modules",
-                        this.scale.get(), this.barMode, this.enabled, this.lowercase, this.showSuffix, this.offsetScoreboard, this.visibleCategories
+                        this.scale.get(), this.barMode, this.enabled, this.lowercase, this.showSuffix, this.noRenderModule, this.offsetScoreboard, this.visibleCategories
                 )
         );
     }
@@ -57,6 +59,10 @@ public final class ToggledSettings {
 
     public boolean isShowSuffix() {
         return this.showSuffix.getValue();
+    }
+
+    public boolean isNoRenderModule() {
+        return this.noRenderModule.getValue();
     }
 
     public boolean isOffsetScoreboard() {

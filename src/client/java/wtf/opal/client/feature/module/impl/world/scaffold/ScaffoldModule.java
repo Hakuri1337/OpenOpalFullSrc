@@ -38,6 +38,7 @@ import wtf.opal.client.feature.helper.impl.render.FadingBlockHelper;
 import wtf.opal.client.feature.helper.impl.server.impl.HypixelServer;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
+import wtf.opal.client.feature.module.DeprecatedModule;
 import wtf.opal.client.feature.module.impl.movement.StuckModule;
 import wtf.opal.client.feature.module.impl.movement.flight.FlightModule;
 import wtf.opal.client.feature.module.impl.movement.longjump.LongJumpModule;
@@ -67,11 +68,10 @@ import java.util.List;
 import static wtf.opal.client.Constants.mc;
 
 /**
- * @deprecated Legacy Scaffold is intentionally unregistered and must not receive new integrations.
- *             It remains in source only as migration reference until the complete BlockFly replacement lands.
+ * @deprecated Legacy Scaffold remains available for existing configurations, but is hidden from module GUIs by default.
  */
-@Deprecated(forRemoval = true)
-public final class ScaffoldModule extends Module implements IslandTrigger {
+@Deprecated
+public final class ScaffoldModule extends Module implements IslandTrigger, DeprecatedModule {
     private static final Direction[] DIRECTIONS = Direction.values();
     private static final double MAX_PLACEMENT_DISTANCE_SQUARED = 20.25D;
     private static final int NORMAL_SEARCH_DEPTH = 4;
@@ -119,6 +119,7 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
 
     public ScaffoldModule() {
         super("Scaffold", "Automatically places blocks under you.", ModuleCategory.WORLD);
+        this.setVisible(false);
     }
 
     @Override

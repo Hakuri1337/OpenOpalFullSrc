@@ -297,7 +297,7 @@ public final class FakeLagModule extends Module {
                 || livingEntity.isDead() || livingEntity.getHealth() <= 0.0F) {
             return false;
         }
-        if (AntiBotsModule.isBot(entity) || AntiBotsModule.isBedWarsBot(entity) || TeamsModule.isTeammate(entity)) {
+        if (AntiBotsModule.shouldFilter(entity) || TeamsModule.isTeammate(entity)) {
             return false;
         }
         return !LocalDataWatch.getFriendList().contains(entity.getName().getString().toUpperCase());

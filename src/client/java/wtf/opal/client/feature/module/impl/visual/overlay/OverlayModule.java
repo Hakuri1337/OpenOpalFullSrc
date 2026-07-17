@@ -17,6 +17,7 @@ import wtf.opal.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.opal.event.impl.client.PostClientInitializationEvent;
 import wtf.opal.event.impl.client.PropertyUpdateEvent;
 import wtf.opal.event.impl.game.PostGameTickEvent;
+import wtf.opal.event.impl.game.packet.ReceivePacketEvent;
 import wtf.opal.event.impl.render.RenderBloomEvent;
 import wtf.opal.event.impl.render.RenderScreenEvent;
 import wtf.opal.event.impl.render.ResolutionChangeEvent;
@@ -113,15 +114,26 @@ OverlayModule extends Module {
         if (this.toggledModules != null) {
             this.toggledModules.markSortingDirty();
         }
+
+        if (this.targetInfo != null) {
+            this.targetInfo.refreshIslandTrigger();
+        }
     }
 
     @Subscribe(priority = -20)
     public void onRenderScreen(RenderScreenEvent event) {
+        this.targetInfo.applyScoreboardHealth();
+
         for (IOverlayElement element : this.elements) {
             if (element.isActive()) {
                 element.render(event.drawContext(), event.tickDelta(), false);
             }
         }
+    }
+
+    @Subscribe
+    public void onReceivePacket(final ReceivePacketEvent event) {
+        this.targetInfo.onReceivePacket(event);
     }
 
     @Subscribe(priority = -20)

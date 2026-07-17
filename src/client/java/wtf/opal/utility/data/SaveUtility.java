@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static wtf.opal.client.Constants.DIRECTORY;
@@ -36,7 +37,7 @@ public final class SaveUtility {
     private static final BindingService BINDING_SERVICE = OpalClient.getInstance().getBindRepository().getBindingService();
     private static final File CONFIG_DIRECTORY = new File(DIRECTORY, "configs");
 
-    private static boolean autoSaveSuppressed;
+    private static final AtomicInteger AUTO_SAVE_SUPPRESSION_DEPTH = new AtomicInteger();
 
     private SaveUtility() {
     }
@@ -176,12 +177,7 @@ public final class SaveUtility {
 
         try {
             final String jsonString = Files.readString(configPath);
-            autoSaveSuppressed = true;
-            try {
-                return applyConfig(jsonString);
-            } finally {
-                autoSaveSuppressed = false;
-            }
+            return applyConfigJson(jsonString);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -223,14 +219,29 @@ public final class SaveUtility {
 
     public static void autoSaveDefaultConfig() {
         final OpalClient client = OpalClient.getInstance();
-        if (!client.isPostInitialization() || autoSaveSuppressed) {
+        if (!client.isPostInitialization() || isAutoSaveSuppressed()) {
             return;
         }
         saveConfig("default");
     }
 
     public static boolean isAutoSaveSuppressed() {
-        return autoSaveSuppressed;
+        return AUTO_SAVE_SUPPRESSION_DEPTH.get() > 0;
+    }
+
+    public static String captureConfigJson() {
+        return GSON.toJson(OpalClient.getInstance().getModuleRepository().getModules());
+    }
+
+    public static boolean applyConfigJson(final String jsonString) {
+        try (AutoSaveScope ignored = suppressAutoSave()) {
+            return applyConfig(jsonString);
+        }
+    }
+
+    public static AutoSaveScope suppressAutoSave() {
+        AUTO_SAVE_SUPPRESSION_DEPTH.incrementAndGet();
+        return new AutoSaveScope();
     }
 
     private static boolean applyConfig(final String jsonString) {
@@ -363,6 +374,22 @@ public final class SaveUtility {
             }
         }
         return builder.toString();
+    }
+
+    public static final class AutoSaveScope implements AutoCloseable {
+        private boolean closed;
+
+        private AutoSaveScope() {
+        }
+
+        @Override
+        public void close() {
+            if (this.closed) {
+                return;
+            }
+            this.closed = true;
+            AUTO_SAVE_SUPPRESSION_DEPTH.updateAndGet(depth -> Math.max(0, depth - 1));
+        }
     }
 
 }

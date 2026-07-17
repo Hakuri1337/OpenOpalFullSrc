@@ -92,8 +92,10 @@ public final class TabGUIModule extends Module {
 
     private void renderModules(NVGTextRenderer font, Pair<Integer, Integer> colors, float x, float y, float width, float panelHeight) {
         ModuleCategory category = ModuleCategory.VALUES[categoryIndex];
-        List<Module> modules = OpalClient.getInstance().getModuleRepository().getModulesInCategory(category).stream().toList();
+        List<Module> modules = getVisibleModules(category);
         if (modules.isEmpty()) return;
+
+        normalizeModuleIndex(category, modules);
 
         renderPanel(x, y, width, panelHeight, modules.size());
 
@@ -156,11 +158,31 @@ public final class TabGUIModule extends Module {
         if (mc.currentScreen != null) return;
 
         final ModuleCategory category = ModuleCategory.VALUES[categoryIndex];
-        final List<Module> moduleList = OpalClient.getInstance().getModuleRepository().getModulesInCategory(category).stream().toList();
+        final List<Module> moduleList = getVisibleModules(category);
+        final int key = event.getInteractionCode();
+
+        if (!categoryExpanded) {
+            if (key == GLFW.GLFW_KEY_UP) {
+                categoryIndex = (categoryIndex - 1 + ModuleCategory.VALUES.length) % ModuleCategory.VALUES.length;
+            } else if (key == GLFW.GLFW_KEY_DOWN) {
+                categoryIndex = (categoryIndex + 1) % ModuleCategory.VALUES.length;
+            } else if (key == GLFW.GLFW_KEY_RIGHT && !moduleList.isEmpty()) {
+                categoryExpanded = true;
+            }
+            return;
+        }
+
+        if (moduleList.isEmpty()) {
+            if (key == GLFW.GLFW_KEY_LEFT) {
+                categoryExpanded = false;
+            }
+            return;
+        }
+
+        normalizeModuleIndex(category, moduleList);
         final Module module = moduleList.get(category.getModuleIndex());
         final List<Property<?>> propertyList = module.getPropertyList();
 
-        final int key = event.getInteractionCode();
         switch (key) {
             case GLFW.GLFW_KEY_UP -> handleUpKey(category, module, moduleList, propertyList);
             case GLFW.GLFW_KEY_DOWN -> handleDownKey(category, module, moduleList, propertyList);
@@ -243,6 +265,16 @@ public final class TabGUIModule extends Module {
 
     private void cycleModuleIndex(ModuleCategory category, List<Module> moduleList, int direction) {
         category.setModuleIndex((category.getModuleIndex() + direction + moduleList.size()) % moduleList.size());
+    }
+
+    private List<Module> getVisibleModules(final ModuleCategory category) {
+        return OpalClient.getInstance().getModuleRepository().getModulesInCategory(category).stream()
+                .filter(Module::isVisible)
+                .toList();
+    }
+
+    private void normalizeModuleIndex(final ModuleCategory category, final List<Module> moduleList) {
+        category.setModuleIndex(Math.floorMod(category.getModuleIndex(), moduleList.size()));
     }
 
     private void cyclePropertyIndex(Module module, List<Property<?>> propertyList, int direction) {

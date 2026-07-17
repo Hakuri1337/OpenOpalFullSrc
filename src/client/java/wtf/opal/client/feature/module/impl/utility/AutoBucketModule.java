@@ -1,6 +1,7 @@
 package wtf.opal.client.feature.module.impl.utility;
 
 import net.minecraft.block.BlockState;
+import net.minecraft.fluid.Fluids;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.util.ActionResult;
@@ -51,6 +52,7 @@ public final class AutoBucketModule extends Module {
     private boolean readyToPlace;
     private boolean mlgRecoveryActive;
     private int mlgRecoveryDelay;
+    private int mlgRecoveryLandingWaitTicks;
     private int mlgRecoveryTriesLeft;
     private int mlgRecoverySlot = -1;
     private BlockPos mlgPlacedWaterPos;
@@ -124,6 +126,9 @@ public final class AutoBucketModule extends Module {
             this.waterPlaced = false;
             this.readyToPlace = false;
             this.clearPendingMlgPlacement();
+            if (!this.mlgRecoveryActive) {
+                this.mlgPlacedWaterPos = null;
+            }
         }
 
         if (this.mlgRecoveryActive) {
@@ -297,6 +302,13 @@ public final class AutoBucketModule extends Module {
     }
 
     private void handleMlgRecovery() {
+        if (!this.isSafeToRecoverMlgWater()) {
+            if (--this.mlgRecoveryLandingWaitTicks <= 0) {
+                this.clearMlgRecovery();
+            }
+            return;
+        }
+
         if (this.mlgRecoveryDelay > 0) {
             this.mlgRecoveryDelay--;
             return;
@@ -369,6 +381,7 @@ public final class AutoBucketModule extends Module {
 
         this.mlgRecoveryActive = this.recovery.getValue() && this.mlgPlacedWaterPos != null;
         this.mlgRecoveryDelay = 3;
+        this.mlgRecoveryLandingWaitTicks = this.mlgRecoveryActive ? 40 : 0;
         this.mlgRecoveryTriesLeft = this.mlgRecoveryActive ? 16 : 0;
         this.mlgRecoverySlot = -1;
         this.retryCooldown = 2;
@@ -645,7 +658,12 @@ public final class AutoBucketModule extends Module {
     }
 
     private boolean isWaterSource(final BlockPos pos) {
-        return !mc.world.getFluidState(pos).isEmpty() && mc.world.getFluidState(pos).isStill();
+        return mc.world.getFluidState(pos).getFluid() == Fluids.WATER
+                && mc.world.getFluidState(pos).isStill();
+    }
+
+    private boolean isSafeToRecoverMlgWater() {
+        return mc.player.isOnGround() || mc.player.isTouchingWater() || mc.player.isSwimming();
     }
 
     private BlockPos findRecoverableWaterSource(final BlockPos expected, final int radius) {
@@ -802,6 +820,7 @@ public final class AutoBucketModule extends Module {
     private void clearMlgRecovery() {
         this.mlgRecoveryActive = false;
         this.mlgRecoveryDelay = 0;
+        this.mlgRecoveryLandingWaitTicks = 0;
         this.mlgRecoveryTriesLeft = 0;
         this.mlgRecoverySlot = -1;
         this.mlgPlacedWaterPos = null;

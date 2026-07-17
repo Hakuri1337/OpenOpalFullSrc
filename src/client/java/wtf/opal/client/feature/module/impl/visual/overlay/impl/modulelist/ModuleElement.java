@@ -4,6 +4,7 @@ import com.ibm.icu.impl.Pair;
 import net.minecraft.util.Formatting;
 import org.jetbrains.annotations.NotNull;
 import wtf.opal.client.feature.module.Module;
+import wtf.opal.client.feature.module.ModuleCategory;
 import wtf.opal.client.renderer.NVGRenderer;
 import wtf.opal.client.renderer.repository.FontRepository;
 import wtf.opal.client.renderer.text.NVGTextRenderer;
@@ -148,7 +149,10 @@ public final class ModuleElement implements Comparable<ModuleElement> {
     }
 
     public boolean isModuleVisible() {
-        return this.module.isVisible() && this.module.isEnabled() && this.settings.getVisibleCategories().getProperty(this.module.getCategory().getName()).getValue();
+        return this.module.isVisible()
+                && this.module.isEnabled()
+                && (!this.settings.isNoRenderModule() || this.module.getCategory() != ModuleCategory.VISUAL)
+                && this.settings.getVisibleCategories().getProperty(this.module.getCategory().getName()).getValue();
     }
 
     public boolean isVisible() {

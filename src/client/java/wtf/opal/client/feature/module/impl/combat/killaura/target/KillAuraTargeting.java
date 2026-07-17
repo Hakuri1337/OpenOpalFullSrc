@@ -91,7 +91,7 @@ public final class KillAuraTargeting {
                 continue;
             }
 
-            if (AntiBotsModule.isBot(entity) || AntiBotsModule.isBedWarsBot(entity) || TeamsModule.isTeammate(entity)) {
+            if (AntiBotsModule.shouldFilter(entity) || TeamsModule.isTeammate(entity)) {
                 iterator.remove();
                 continue;
             }

@@ -128,7 +128,7 @@ public final class DelayVelocity extends VelocityMode {
         if (entity.isRemoved() || living.isDead() || !living.isAttackable() || living.getHealth() <= 0.0F) {
             return false;
         }
-        if (AntiBotsModule.isBot(entity) || AntiBotsModule.isBedWarsBot(entity) || TeamsModule.isTeammate(entity)) {
+        if (AntiBotsModule.shouldFilter(entity) || TeamsModule.isTeammate(entity)) {
             return false;
         }
         if (LocalDataWatch.getFriendList().contains(entity.getName().getString().toUpperCase())) {

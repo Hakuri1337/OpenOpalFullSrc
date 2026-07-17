@@ -35,4 +35,40 @@ public final class ViaFabricPlusSupport {
             return "unavailable (" + throwable.getClass().getSimpleName() + ")";
         }
     }
+
+    public static Object getTargetVersion() {
+        if (!LOADED) {
+            return null;
+        }
+
+        try {
+            return ViaFabricPlus18Api.getTargetVersion();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static boolean setTargetVersion1_8() {
+        if (!LOADED) {
+            return false;
+        }
+
+        try {
+            return ViaFabricPlus18Api.setTargetVersion1_8();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean restoreTargetVersion(final Object targetVersion) {
+        if (!LOADED || targetVersion == null) {
+            return false;
+        }
+
+        try {
+            return ViaFabricPlus18Api.restoreTargetVersion(targetVersion);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
 }

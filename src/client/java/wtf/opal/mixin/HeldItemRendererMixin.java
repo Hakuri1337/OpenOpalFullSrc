@@ -7,6 +7,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.*;
 import net.minecraft.item.consume.UseAction;
 import net.minecraft.registry.tag.ItemTags;
@@ -25,6 +26,7 @@ import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.module.impl.visual.AnimationsModule;
+import wtf.opal.client.feature.module.impl.visual.SilenceItemRotationModule;
 import wtf.opal.client.feature.module.impl.world.blockfly.render.BlockFlyRenderSpoof;
 import wtf.opal.duck.PlayerEntityAccess;
 import wtf.opal.utility.player.BlockUtility;
@@ -51,6 +53,38 @@ public abstract class HeldItemRendererMixin {
         final AnimationsModule animationModule = OpalClient.getInstance().getModuleRepository().getModule(AnimationsModule.class);
         if (animationModule.isEnabled() && Hand.MAIN_HAND == hand) {
             matrices.translate(animationModule.getMainHandX(), animationModule.getMainHandY(), animationModule.getMainHandScale());
+        }
+    }
+
+    @Inject(
+            method = "renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ItemDisplayContext;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V",
+            at = @At("HEAD")
+    )
+    private void applySilenceItemRotation(
+            LivingEntity entity,
+            ItemStack stack,
+            ItemDisplayContext displayContext,
+            MatrixStack matrices,
+            OrderedRenderCommandQueue orderedRenderCommandQueue,
+            int light,
+            CallbackInfo ci
+    ) {
+        if (mc.player == null || entity != mc.player
+                || (displayContext != ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                && displayContext != ItemDisplayContext.FIRST_PERSON_LEFT_HAND)) {
+            return;
+        }
+
+        final boolean renderedOnLeft = displayContext == ItemDisplayContext.FIRST_PERSON_LEFT_HAND;
+        final boolean mainHandOnLeft = mc.player.getMainArm() == Arm.LEFT;
+        final Hand hand = renderedOnLeft == mainHandOnLeft ? Hand.MAIN_HAND : Hand.OFF_HAND;
+        final SilenceItemRotationModule module = OpalClient.getInstance()
+                .getModuleRepository()
+                .getModule(SilenceItemRotationModule.class);
+
+        if (module.isEnabled() && module.shouldRotate(mc.player, stack, hand)) {
+            final float tickDelta = mc.getRenderTickCounter().getTickProgress(false);
+            module.applyRotation(matrices, mc.player.age + tickDelta);
         }
     }
 

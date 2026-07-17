@@ -12,6 +12,7 @@ import wtf.opal.client.feature.module.impl.utility.disabler.DisablerModule;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.packet.SendPacketEvent;
 import wtf.opal.event.subscriber.Subscribe;
+import wtf.opal.mixin.ClientPlayerEntityAccessor;
 
 import static wtf.opal.client.Constants.mc;
 
@@ -42,17 +43,19 @@ public final class MinibloxDisabler extends AbstractMinibloxDisabler {
         final Vec2f movement = mc.player.input.getMovementInput();
         final float sideways = sanitize(movement.x);
         final float forward = sanitize(movement.y);
+        final ClientPlayerEntityAccessor playerAccessor = (ClientPlayerEntityAccessor) mc.player;
         final MovePayload payload = new MovePayload(
-                finiteOrZero(mc.player.lastX),
-                finiteOrZero(mc.player.lastY),
-                finiteOrZero(mc.player.lastZ),
+                finiteOrZero(playerAccessor.getLastXClient()),
+                finiteOrZero(playerAccessor.getLastYClient()),
+                finiteOrZero(playerAccessor.getLastZClient()),
                 sanitizeAngle(movePacket.getYaw(mc.player.getYaw())),
                 sanitizeAngle(movePacket.getPitch(mc.player.getPitch())),
                 forward,
                 sideways,
                 mc.player.input.playerInput.jump(),
                 mc.player.input.playerInput.sneak(),
-                movePacket.isOnGround()
+                movePacket.isOnGround(),
+                mc.player.isSprinting()
         );
 
         this.sendingPayload = true;
@@ -73,7 +76,8 @@ public final class MinibloxDisabler extends AbstractMinibloxDisabler {
                     + " | input=(" + forward + "," + sideways + ")"
                     + " | jump=" + payload.jump()
                     + " sneak=" + payload.sneak()
-                    + " ground=" + payload.onGround());
+                    + " ground=" + payload.onGround()
+                    + " sprint=" + payload.sprint());
             this.movementPackets = 0;
         }
     }
@@ -127,7 +131,8 @@ public final class MinibloxDisabler extends AbstractMinibloxDisabler {
             float sideways,
             boolean jump,
             boolean sneak,
-            boolean onGround
+            boolean onGround,
+            boolean sprint
     ) implements CustomPayload {
         public static final Id<MovePayload> ID = new Id<>(Identifier.of("miniblox", "movepacket"));
         public static final PacketCodec<PacketByteBuf, MovePayload> CODEC = PacketCodec.of(
@@ -142,6 +147,7 @@ public final class MinibloxDisabler extends AbstractMinibloxDisabler {
                     buf.writeBoolean(value.jump);
                     buf.writeBoolean(value.sneak);
                     buf.writeBoolean(value.onGround);
+                    buf.writeBoolean(value.sprint);
                 },
                 buf -> new MovePayload(
                         buf.readDouble(),
@@ -151,6 +157,7 @@ public final class MinibloxDisabler extends AbstractMinibloxDisabler {
                         buf.readFloat(),
                         buf.readFloat(),
                         buf.readFloat(),
+                        buf.readBoolean(),
                         buf.readBoolean(),
                         buf.readBoolean(),
                         buf.readBoolean()

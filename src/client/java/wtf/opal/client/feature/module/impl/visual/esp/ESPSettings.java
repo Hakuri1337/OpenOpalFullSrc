@@ -12,7 +12,7 @@ public final class ESPSettings {
     private final BooleanProperty box, boxStroke;
     private final BooleanProperty healthBar, healthBarStroke;
 
-    private final BooleanProperty nameTags;
+    private final BooleanProperty nameTags, hideTeammates;
     private final MultipleBooleanProperty nameTagElements;
     private final MultipleBooleanProperty nameTagIndicators;
 
@@ -28,6 +28,8 @@ public final class ESPSettings {
         this.healthBarStroke = new BooleanProperty("Stroke", true).hideIf(() -> !this.healthBar.getValue());
 
         this.nameTags = new BooleanProperty("Enabled", true);
+        this.hideTeammates = new BooleanProperty("Hide Teammates", false)
+                .hideIf(() -> !this.nameTags.getValue());
 
         this.nameTagElements = new MultipleBooleanProperty("Elements",
                 new BooleanProperty("Name", true),
@@ -48,7 +50,7 @@ public final class ESPSettings {
         module.addProperties(
                 new GroupProperty("Box", this.box, this.boxStroke),
                 new GroupProperty("Health Bar", this.healthBar, this.healthBarStroke),
-                new GroupProperty("Name Tags", this.nameTags, this.nameTagElements, this.nameTagIndicators),
+                new GroupProperty("Name Tags", this.nameTags, this.hideTeammates, this.nameTagElements, this.nameTagIndicators),
                 this.targetProperty.get(),
                 this.bloom
         );
@@ -68,6 +70,10 @@ public final class ESPSettings {
 
     public MultipleBooleanProperty getNameTagIndicators() {
         return nameTagIndicators;
+    }
+
+    public boolean shouldHideTeammates() {
+        return this.hideTeammates.getValue();
     }
 
     public boolean getHealthBarStroke() {

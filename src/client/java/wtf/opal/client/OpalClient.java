@@ -6,6 +6,7 @@ import wtf.opal.client.command.impl.config.ConfigCommand;
 import wtf.opal.client.command.impl.misc.DashboardCommand;
 import wtf.opal.client.command.impl.misc.ScriptCommand;
 import wtf.opal.client.command.impl.module.BindCommand;
+import wtf.opal.client.command.impl.module.DeprecatedModulesCommand;
 import wtf.opal.client.command.impl.module.ToggleCommand;
 import wtf.opal.client.command.impl.player.FriendCommand;
 import wtf.opal.client.command.impl.player.UsernameCommand;
@@ -13,6 +14,7 @@ import wtf.opal.client.command.impl.player.movement.HClipCommand;
 import wtf.opal.client.command.impl.player.movement.VClipCommand;
 import wtf.opal.client.command.repository.CommandRepository;
 import wtf.opal.client.feature.helper.impl.LocalDataWatch;
+import wtf.opal.client.feature.helper.impl.miniblox.MiniBloxHelperService;
 import wtf.opal.client.feature.helper.impl.player.hypixel.TransactionStreamValidator;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
@@ -42,9 +44,11 @@ import wtf.opal.client.feature.module.impl.visual.*;
 import wtf.opal.client.feature.module.impl.visual.esp.ESPModule;
 import wtf.opal.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.opal.client.feature.module.impl.world.FastBreakModule;
+import wtf.opal.client.feature.module.impl.world.ChestAuraModule;
 import wtf.opal.client.feature.module.impl.world.TimerModule;
 import wtf.opal.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.opal.client.feature.module.impl.world.blockfly.BlockFlyModule;
+import wtf.opal.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.opal.client.feature.module.repository.ModuleRepository;
 import wtf.opal.client.notification.NotificationManager;
 import wtf.opal.client.music.MusicPlayerModule;
@@ -97,11 +101,13 @@ public final class OpalClient {
                     new VelocityModule(),
                     new FakeLagModule(),
                     new AutoHeadModule(),
+                    new AutoThrowModule(),
                     new CrystalAuraModule(),
                     // Visual
                     new ClickGUIModule(),
                     new FullBrightModule(),
                     new AnimationsModule(),
+                    new SilenceItemRotationModule(),
                     new OverlayModule(),
                     new ChamsModule(),
                     new ESPModule(),
@@ -115,13 +121,18 @@ public final class OpalClient {
 //                    new DiscordRPCModule(),
                     new NoHurtCameraModule(),
                     new NoFOVModule(),
+                    new NoRenderModule(),
                     new PostProcessingModule(),
+                    new LowFireModule(),
+                    new ViewClipModule(),
+                    new BedPlatesModule(),
                     // World
-                    // DEPRECATED: Legacy Scaffold is intentionally unregistered; BlockFly will replace it.
+                    new ScaffoldModule(),
                     new BlockFlyModule(),
                     new TimerModule(),
                     new BreakerModule(),
                     new FastBreakModule(),
+                    new ChestAuraModule(),
                     new AntiStaffModule(),
                     // Movement
                     new FlightModule(),
@@ -169,12 +180,14 @@ public final class OpalClient {
 
         SaveUtility.loadBindings();
         SaveUtility.loadConfigFile("default");
+        MiniBloxHelperService.getInstance().recoverInterruptedSession();
 
         if (this.commandRepository == null) {
             this.commandRepository = CommandRepository.builder()
                     .putAll(
                             new ToggleCommand(),
                             new BindCommand(),
+                            new DeprecatedModulesCommand(),
                             new ConfigCommand(),
                             new VClipCommand(),
                             new HClipCommand(),
@@ -208,6 +221,7 @@ public final class OpalClient {
         FadingBlockHelper.setInstance();
         ScreenPositionManager.setInstance();
         TransactionStreamValidator.setInstance();
+        MiniBloxHelperService.setInstance();
     }
 
     
@@ -221,6 +235,7 @@ public final class OpalClient {
 
     
     private void onShutdown() {
+        MiniBloxHelperService.getInstance().close();
         this.moduleRepository.getModule(ClickGUIModule.class).setEnabled(false);
         this.moduleRepository.getModule(MusicPlayerModule.class).setEnabled(false);
 

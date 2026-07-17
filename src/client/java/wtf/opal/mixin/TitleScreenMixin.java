@@ -5,26 +5,64 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.LogoDrawer;
+import net.minecraft.client.gui.Element;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.SplashTextRenderer;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import wtf.opal.client.renderer.menu.ClientBootTransition;
 import wtf.opal.client.renderer.menu.MenuVideoBackground;
 import wtf.opal.client.renderer.menu.OpenOpalMenuRenderer;
 import wtf.opal.client.renderer.liquidglass.reglass.LiquidGlassUniforms;
+import wtf.opal.client.screen.settings.OpenOpalSettingsScreen;
 
 @Mixin(TitleScreen.class)
 public final class TitleScreenMixin {
+
+    @Unique
+    private static final Text OPENOPAL_SETTINGS_TEXT = Text.literal("OpenOpal Settings");
 
     @Shadow
     private boolean doBackgroundFade;
 
     private TitleScreenMixin() {
+    }
+
+    @WrapOperation(
+            method = "addNormalWidgets",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/widget/ButtonWidget;builder(Lnet/minecraft/text/Text;Lnet/minecraft/client/gui/widget/ButtonWidget$PressAction;)Lnet/minecraft/client/gui/widget/ButtonWidget$Builder;",
+                    ordinal = 2
+            )
+    )
+    private ButtonWidget.Builder replaceRealmsButton(final Text message, final ButtonWidget.PressAction action,
+                                                      final Operation<ButtonWidget.Builder> original) {
+        final TitleScreen parent = (TitleScreen) (Object) this;
+        final ButtonWidget.PressAction openSettings = button -> MinecraftClient.getInstance()
+                .setScreen(new OpenOpalSettingsScreen(parent));
+        return original.call(OPENOPAL_SETTINGS_TEXT, openSettings);
+    }
+
+    @Inject(method = "addNormalWidgets", at = @At("RETURN"))
+    private void enableOpenOpalSettingsButton(final int y, final int spacing,
+                                               final CallbackInfoReturnable<Integer> cir) {
+        for (final Element child : ((Screen) (Object) this).children()) {
+            if (child instanceof ButtonWidget button && button.getMessage().equals(OPENOPAL_SETTINGS_TEXT)) {
+                button.active = true;
+                button.setTooltip(null);
+                break;
+            }
+        }
     }
 
     @Inject(

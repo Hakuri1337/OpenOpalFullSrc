@@ -19,6 +19,8 @@ import wtf.opal.client.renderer.text.NVGTextRenderer;
 import wtf.opal.utility.render.ClientTheme;
 import wtf.opal.utility.render.ColorUtility;
 
+import java.util.Locale;
+
 import static wtf.opal.client.Constants.mc;
 
 public class DefaultIsland implements IslandTrigger {
@@ -41,10 +43,13 @@ public class DefaultIsland implements IslandTrigger {
             final ServerInfo serverInfo = mc.getNetworkHandler().getServerInfo();
             if (serverInfo != null) {
                 final KnownServer currentKnownServer = LocalDataWatch.get().getKnownServerManager().getCurrentServer();
+                final String mappedAddress = this.getMappedServerAddress(serverInfo.address);
 
-                serverAddress = currentKnownServer != null && currentKnownServer.getProxyServer() != null
-                        ? currentKnownServer.getProxyServer().getName().toLowerCase()
-                        : serverInfo.address.toLowerCase();
+                serverAddress = mappedAddress != null
+                        ? mappedAddress
+                        : currentKnownServer != null && currentKnownServer.getProxyServer() != null
+                                ? currentKnownServer.getProxyServer().getName().toLowerCase(Locale.ROOT)
+                                : serverInfo.address.toLowerCase(Locale.ROOT);
 
                 serverAddress = serverAddress.length() > 20
                         ? serverAddress.substring(0, 20 - 3) + "..."
@@ -126,6 +131,22 @@ public class DefaultIsland implements IslandTrigger {
         final int size = scaleFactor > 2 ? 128 : 32;
 
         return ImageRepository.getImage(String.format("window-icons/icon_%dx%d.png", size, size));
+    }
+
+    private String getMappedServerAddress(final String address) {
+        final String normalizedAddress = address.toLowerCase(Locale.ROOT);
+        final int portSeparator = normalizedAddress.indexOf(':');
+        final String host = portSeparator == -1 ? normalizedAddress : normalizedAddress.substring(0, portSeparator);
+
+        if (host.equals("127.0.0.1") || host.equals("localhost") || host.equals("loaclhost")) {
+            return "LocalServer";
+        }
+
+        if (host.contains("fis")) {
+            return "FisProxy";
+        }
+
+        return null;
     }
 
     @Override

@@ -592,7 +592,7 @@ public final class NoXZVelocity extends VelocityMode {
                 || !target.isAlive() || !target.isAttackable() || target.getHealth() <= 0.0F) {
             return false;
         }
-        if (AntiBotsModule.isBot(target) || AntiBotsModule.isBedWarsBot(target) || TeamsModule.isTeammate(target)) {
+        if (AntiBotsModule.shouldFilter(target) || TeamsModule.isTeammate(target)) {
             return false;
         }
         if (LocalDataWatch.getFriendList().contains(target.getName().getString().toUpperCase())) {

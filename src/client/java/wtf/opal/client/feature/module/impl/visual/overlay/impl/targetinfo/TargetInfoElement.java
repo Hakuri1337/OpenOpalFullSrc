@@ -17,6 +17,7 @@ import net.minecraft.entity.mob.SkeletonEntity;
 import net.minecraft.entity.mob.ZombieEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.s2c.play.ScoreboardScoreUpdateS2CPacket;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 import net.minecraft.util.Colors;
@@ -32,11 +33,14 @@ import wtf.opal.client.feature.module.impl.combat.killaura.KillAuraModule;
 import wtf.opal.client.feature.module.impl.combat.killaura.target.CurrentTarget;
 import wtf.opal.client.feature.module.impl.visual.overlay.IOverlayElement;
 import wtf.opal.client.feature.module.impl.visual.overlay.OverlayModule;
+import wtf.opal.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
+import wtf.opal.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger;
 import wtf.opal.client.feature.module.property.impl.ScreenPositionProperty;
 import wtf.opal.client.renderer.MinecraftRenderer;
 import wtf.opal.client.renderer.NVGRenderer;
 import wtf.opal.client.renderer.repository.FontRepository;
 import wtf.opal.client.renderer.text.NVGTextRenderer;
+import wtf.opal.event.impl.game.packet.ReceivePacketEvent;
 import wtf.opal.utility.render.ColorUtility;
 import wtf.opal.utility.render.ESPUtility;
 import wtf.opal.utility.render.OrderedTextVisitor;
@@ -47,7 +51,10 @@ import java.awt.*;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.lwjgl.nanovg.NanoVG.*;
 import static org.lwjgl.nanovg.NanoVGGL3.NVG_IMAGE_NODELETE;
@@ -55,16 +62,19 @@ import static org.lwjgl.nanovg.NanoVGGL3.nvglCreateImageFromHandle;
 import static wtf.opal.client.Constants.VG;
 import static wtf.opal.client.Constants.mc;
 
-public final class TargetInfoElement implements IOverlayElement {
+public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
 
     private static final NVGTextRenderer BOLD_FONT = FontRepository.getFont("productsans-bold");
     private static final NVGTextRenderer MEDIUM_FONT = FontRepository.getFont("productsans-medium");
     private static final NVGTextRenderer ICON_FONT = FontRepository.getFont("materialicons-regular");
     private static final DecimalFormat HEALTH_DF = new DecimalFormat("0.#");
+    public static final Map<String, AtomicInteger> playerHealthMap = new HashMap<>();
 
     private final Animation targetAnimation, healthAnimation;
     private final TargetInfoSettings settings;
     private Target currentTarget, lastTarget;
+    private Target islandTarget;
+    private boolean islandTriggerActive;
 
     public TargetInfoElement(final OverlayModule module) {
         this.settings = new TargetInfoSettings(module);
@@ -78,9 +88,50 @@ public final class TargetInfoElement implements IOverlayElement {
     public void initialize() {
     }
 
+    public void onReceivePacket(final ReceivePacketEvent event) {
+        if (!(event.getPacket() instanceof ScoreboardScoreUpdateS2CPacket packet)
+                || mc.world == null || mc.player == null) {
+            return;
+        }
+
+        if (("belowHealth".equals(packet.objectiveName()) || "health".equals(packet.objectiveName()))
+                && !packet.scoreHolderName().equals(mc.player.getGameProfile().name())) {
+            playerHealthMap.computeIfAbsent(packet.scoreHolderName(), ignored -> new AtomicInteger())
+                    .set(packet.score());
+        }
+    }
+
+    public void applyScoreboardHealth() {
+        if (mc.world == null || mc.player == null) {
+            return;
+        }
+
+        for (AbstractClientPlayerEntity player : mc.world.getPlayers()) {
+            if (player == mc.player || !playerHealthMap.containsKey(player.getName().getString())) {
+                continue;
+            }
+
+            player.setHealth(Math.max(1.0F, playerHealthMap.get(player.getName().getString()).get()));
+        }
+    }
+
     @Override
     public void render(DrawContext context, float delta, boolean isBloom) {
         final Target target = this.getTarget();
+        this.updateIslandTrigger(target);
+
+        if (this.settings.isDynamicIsland()) {
+            if (target != null) {
+                final float absorption = target.entity.getAbsorptionAmount();
+                final float healthPercent = MathHelper.clamp(
+                        (target.entity.getHealth() + absorption) / (target.entity.getMaxHealth() + absorption),
+                        0, 1
+                );
+                this.healthAnimation.run(healthPercent);
+            }
+            return;
+        }
+
         if (target == null) {
             return;
         }
@@ -307,6 +358,129 @@ public final class TargetInfoElement implements IOverlayElement {
     @Override
     public boolean isActive() {
         return this.settings.isEnabled();
+    }
+
+    @Override
+    public void onDisable() {
+        this.updateIslandTrigger(null);
+    }
+
+    public void refreshIslandTrigger() {
+        if (!this.settings.isEnabled() || !this.settings.isDynamicIsland()) {
+            this.updateIslandTrigger(null);
+        }
+    }
+
+    private void updateIslandTrigger(final Target target) {
+        final boolean shouldShow = this.settings.isEnabled() && this.settings.isDynamicIsland() && target != null;
+        this.islandTarget = shouldShow ? target : null;
+
+        if (shouldShow && !this.islandTriggerActive) {
+            DynamicIslandElement.addTrigger(this);
+            this.islandTriggerActive = true;
+        } else if (!shouldShow && this.islandTriggerActive) {
+            DynamicIslandElement.removeTrigger(this);
+            this.islandTriggerActive = false;
+        }
+    }
+
+    @Override
+    public void renderIsland(DrawContext context, float posX, float posY, float width, float height, float progress) {
+        final Target target = this.islandTarget;
+        if (target == null) {
+            return;
+        }
+
+        final LivingEntity entity = target.entity;
+        final NVGTextRenderer titleFont = FontRepository.getFont("productsans-semibold");
+        final Pair<Integer, Integer> theme = ColorUtility.getClientTheme();
+
+        final float headSize = 17;
+        final float headX = posX + 6;
+        final float headY = posY + (height - headSize) / 2.0F;
+        this.renderIslandHead(target, headX, headY, headSize, theme);
+
+        final float contentX = headX + headSize + 6;
+        final float contentWidth = Math.max(30, width - (contentX - posX) - 8);
+        final String name = this.ellipsize(titleFont, target.getFormattedName(), contentWidth, 7.5F);
+        titleFont.drawString(name, contentX, posY + 11.5F, 7.5F, 0xFFFFFFFF);
+
+        final float absorption = entity.getAbsorptionAmount();
+        final float health = Math.max(0, entity.getHealth() + absorption);
+        final float maximumHealth = Math.max(1, entity.getMaxHealth() + absorption);
+        final float healthPercent = MathHelper.clamp(health / maximumHealth, 0, 1);
+        final float displayHealthPercent = MathHelper.clamp(this.healthAnimation.getValue(), 0, 1);
+        final float barY = posY + height - 8.5F;
+
+        NVGRenderer.roundedRect(contentX, barY, contentWidth, 2.5F, 1.25F, 0x334F4F4F);
+        if (displayHealthPercent > 0.01F) {
+            NVGRenderer.roundedRectGradient(contentX, barY, contentWidth * displayHealthPercent, 2.5F, 1.25F, theme.first, theme.second, 0);
+        }
+
+        if (healthPercent > 0.01F && displayHealthPercent < healthPercent) {
+            NVGRenderer.roundedRectGradient(contentX, barY, contentWidth * healthPercent, 2.5F, 1.25F,
+                    ColorUtility.applyOpacity(theme.first, 100), ColorUtility.applyOpacity(theme.second, 100), 0);
+        }
+    }
+
+    @Override
+    public float getIslandWidth() {
+        final Target target = this.islandTarget;
+        if (target == null) {
+            return 112;
+        }
+
+        final NVGTextRenderer titleFont = FontRepository.getFont("productsans-semibold");
+        return Math.clamp(45 + titleFont.getStringWidth(target.getFormattedName(), 7.5F), 112, 180);
+    }
+
+    @Override
+    public float getIslandHeight() {
+        return 29;
+    }
+
+    @Override
+    public int getIslandPriority() {
+        return 10;
+    }
+
+    private void renderIslandHead(final Target target, final float x, final float y, final float size, final Pair<Integer, Integer> theme) {
+        final int skinTextureGlId = this.getSkinTextureGlId(target.entity);
+        if (skinTextureGlId == -1) {
+            NVGRenderer.roundedRectGradient(x, y, size, size, size / 2.0F, theme.first, theme.second, 45);
+            return;
+        }
+
+        final int skinTextureHandle = target.getSkinTextureHandle(skinTextureGlId);
+        this.renderIslandSkinLayer(skinTextureHandle, x, y, size, 8, 8);
+        this.renderIslandSkinLayer(skinTextureHandle, x, y, size, 40, 8);
+    }
+
+    private void renderIslandSkinLayer(
+            final int skinTextureHandle,
+            final float x,
+            final float y,
+            final float size,
+            final int sourceX,
+            final int sourceY
+    ) {
+        final float skinScale = size / 8.0F;
+        nvgBeginPath(VG);
+        nvgImagePattern(VG, x - sourceX * skinScale, y - sourceY * skinScale,
+                64 * skinScale, 64 * skinScale, 0, skinTextureHandle, 1, NVGRenderer.NVG_PAINT);
+        nvgFillPaint(VG, NVGRenderer.NVG_PAINT);
+        nvgRoundedRect(VG, x, y, size, size, 3);
+        nvgFill(VG);
+        nvgClosePath(VG);
+    }
+
+    private String ellipsize(final NVGTextRenderer font, final String text, final float width, final float size) {
+        if (font.getStringWidth(text, size) <= width) {
+            return text;
+        }
+
+        final String suffix = "...";
+        return font.trimStringToWidth(text, Math.max(0, width - font.getStringWidth(suffix, size)), size) + suffix;
     }
 
     private Target getTarget() {

@@ -1,15 +1,6 @@
 package wtf.opal.client.feature.module.impl.combat.velocity.impl;
 
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.common.DisconnectS2CPacket;
-import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
-import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
-import net.minecraft.network.packet.s2c.play.WorldTimeUpdateS2CPacket;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
@@ -25,18 +16,9 @@ import wtf.opal.event.subscriber.Subscribe;
 import wtf.opal.mixin.LivingEntityAccessor;
 import wtf.opal.utility.misc.chat.ChatUtility;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-
 import static wtf.opal.client.Constants.mc;
 
 public final class JumpResetVelocity extends VelocityMode {
-
-    private enum Phase {
-        IDLE,
-        AIR,
-        GROUND
-    }
 
     private final BooleanProperty rotate = new BooleanProperty("Rotate", false)
             .hideIf(() -> this.module.getActiveMode() != this);
@@ -44,104 +26,39 @@ public final class JumpResetVelocity extends VelocityMode {
             .hideIf(() -> this.module.getActiveMode() != this);
     private final NumberProperty rotateTicks = new NumberProperty("Rotate Ticks", 12.0D, 3.0D, 20.0D, 1.0D)
             .hideIf(() -> this.module.getActiveMode() != this || (!this.rotate.getValue() && !this.followDirection.getValue()));
-    private final NumberProperty airDelay = new NumberProperty("Air Delay", "ticks", 20.0D, 1.0D, 40.0D, 1.0D)
-            .hideIf(() -> this.module.getActiveMode() != this);
-    private final NumberProperty groundDelay = new NumberProperty("Ground Delay", "ticks", 10.0D, 1.0D, 30.0D, 1.0D)
-            .hideIf(() -> this.module.getActiveMode() != this);
     private final BooleanProperty debug = new BooleanProperty("Debug", false)
             .hideIf(() -> this.module.getActiveMode() != this);
 
-    private final Queue<Packet<?>> packets = new ConcurrentLinkedQueue<>();
-    private Phase phase = Phase.IDLE;
-    private int delayTicks;
     private int jumpTicks;
     private int rotationHeldTicks;
-    private boolean suspending;
     private Vec2f heldRotation;
-    private Vec2f delayedGroundRotation;
 
     public JumpResetVelocity(final VelocityModule module) {
         super(module);
-        module.addProperties(this.rotate, this.followDirection, this.rotateTicks, this.airDelay, this.groundDelay, this.debug);
+        module.addProperties(this.rotate, this.followDirection, this.rotateTicks, this.debug);
     }
 
     @Subscribe(priority = 1)
     public void onReceivePacket(final ReceivePacketEvent event) {
-        if (mc.player == null || mc.world == null || this.module.isInvalid()) {
+        if (mc.player == null || mc.world == null || this.module.isInvalid()
+                || !(event.getPacket() instanceof EntityVelocityUpdateS2CPacket velocityPacket)
+                || velocityPacket.getEntityId() != mc.player.getId()) {
             return;
         }
 
-        final Packet<?> packet = event.getPacket();
-        if (this.suspending) {
-            if (this.isPassthroughPacket(packet)) {
-                return;
-            }
-            if (packet instanceof DisconnectS2CPacket || packet instanceof PlayerRespawnS2CPacket || packet instanceof GameJoinS2CPacket) {
-                this.flushPackets(false);
-                this.resetAll();
-                return;
-            }
-            if (packet instanceof PlayerPositionLookS2CPacket) {
-                this.flushPackets(false);
-                this.resetDelayState();
-                this.clearRotation();
-                return;
-            }
-
-            event.setCancelled();
-            this.packets.add(packet);
-            return;
-        }
-
-        if (!(packet instanceof EntityVelocityUpdateS2CPacket velocityPacket) || velocityPacket.getEntityId() != mc.player.getId()) {
-            return;
-        }
-
-        final Vec2f knockbackRotation = this.getKnockbackRotation(velocityPacket.getVelocity());
-        this.suspending = true;
-        this.packets.add(packet);
-        event.setCancelled();
+        this.setHeldRotation(this.getKnockbackRotation(velocityPacket.getVelocity()));
 
         if (mc.player.isOnGround()) {
-            this.phase = Phase.GROUND;
-            this.delayTicks = this.groundDelay.getValue().intValue();
-            this.delayedGroundRotation = knockbackRotation;
-            this.debugLog("ground delay=" + this.delayTicks);
-        } else {
-            this.phase = Phase.AIR;
-            this.delayTicks = this.airDelay.getValue().intValue();
-            this.setHeldRotation(knockbackRotation);
-            this.debugLog("air delay=" + this.delayTicks);
+            this.jumpTicks = 1;
+            this.debugLog("queue jump reset");
         }
     }
 
     @Subscribe
     public void onPreTick(final PreGameTickEvent event) {
         if (mc.player == null || mc.world == null || this.module.isInvalid()) {
-            if (this.suspending) {
-                this.flushPackets(false);
-            }
             this.resetAll();
             return;
-        }
-
-        if (this.suspending) {
-            if (this.phase == Phase.AIR) {
-                if (mc.player.isOnGround() || this.delayTicks-- <= 0) {
-                    this.debugLog("flush air");
-                    this.flushPackets(false);
-                    this.resetDelayState();
-                }
-            } else if (this.phase == Phase.GROUND) {
-                if (this.delayTicks-- <= 0) {
-                    final Vec2f rotation = this.delayedGroundRotation;
-                    this.debugLog("flush ground");
-                    this.flushPackets(false);
-                    this.resetDelayState();
-                    this.setHeldRotation(rotation);
-                    this.jumpTicks = 1;
-                }
-            }
         }
 
         this.tickHeldRotation();
@@ -152,14 +69,17 @@ public final class JumpResetVelocity extends VelocityMode {
         if (mc.player == null) {
             return;
         }
+
         if (this.followDirection.getValue() && this.heldRotation != null) {
             event.setForward(1.0F);
             event.setSideways(0.0F);
         }
+
         if (this.jumpTicks > 0) {
             ((LivingEntityAccessor) mc.player).setJumpingCooldown(0);
             event.setJump(true);
             this.jumpTicks--;
+            this.debugLog("jump reset");
         }
     }
 
@@ -167,20 +87,16 @@ public final class JumpResetVelocity extends VelocityMode {
         if (!this.rotate.getValue() && !this.followDirection.getValue()) {
             return null;
         }
+
         final float yaw = (float) Math.toDegrees(Math.atan2(velocity.x, -velocity.z));
         return new Vec2f(yaw, mc.player.getPitch());
-    }
-
-    private boolean isPassthroughPacket(final Packet<?> packet) {
-        return packet instanceof ChatMessageS2CPacket
-                || packet instanceof GameMessageS2CPacket
-                || packet instanceof WorldTimeUpdateS2CPacket;
     }
 
     private void tickHeldRotation() {
         if (this.heldRotation == null || mc.player == null) {
             return;
         }
+
         RotationHelper.getHandler().rotate(this.heldRotation, InstantRotationModel.INSTANCE);
         this.rotationHeldTicks++;
         if (mc.player.hurtTime == 0
@@ -194,6 +110,7 @@ public final class JumpResetVelocity extends VelocityMode {
         if (rotation == null) {
             return;
         }
+
         this.heldRotation = rotation;
         this.rotationHeldTicks = 0;
         RotationHelper.getHandler().rotate(rotation, InstantRotationModel.INSTANCE);
@@ -204,38 +121,7 @@ public final class JumpResetVelocity extends VelocityMode {
         this.rotationHeldTicks = 0;
     }
 
-    private void flushPackets(final boolean clearOnly) {
-        if (clearOnly || mc.getNetworkHandler() == null) {
-            this.packets.clear();
-            return;
-        }
-
-        final ClientPlayNetworkHandler networkHandler = mc.getNetworkHandler();
-        while (!this.packets.isEmpty()) {
-            final Packet<?> packet = this.packets.poll();
-            if (packet == null) {
-                continue;
-            }
-            try {
-                //noinspection rawtypes,unchecked
-                ((Packet) packet).apply(networkHandler);
-            } catch (Exception ignored) {
-                this.packets.clear();
-                return;
-            }
-        }
-    }
-
-    private void resetDelayState() {
-        this.suspending = false;
-        this.phase = Phase.IDLE;
-        this.delayTicks = 0;
-        this.delayedGroundRotation = null;
-        this.packets.clear();
-    }
-
     private void resetAll() {
-        this.resetDelayState();
         this.jumpTicks = 0;
         this.clearRotation();
     }
@@ -244,6 +130,7 @@ public final class JumpResetVelocity extends VelocityMode {
         if (!this.debug.getValue()) {
             return;
         }
+
         final String text = "AntiKB JumpReset | " + message;
         if (mc.isOnThread()) {
             ChatUtility.print(text);
@@ -260,24 +147,23 @@ public final class JumpResetVelocity extends VelocityMode {
 
     @Override
     public void onDisable() {
-        this.flushPackets(false);
         this.resetAll();
         super.onDisable();
     }
 
     @Override
     public boolean isDelaying() {
-        return this.suspending;
+        return false;
     }
 
     @Override
     public boolean hasQueuedPackets() {
-        return !this.packets.isEmpty();
+        return false;
     }
 
     @Override
     public boolean shouldStopBacktrack() {
-        return this.isDelaying() || this.hasQueuedPackets();
+        return false;
     }
 
     @Override
@@ -287,6 +173,6 @@ public final class JumpResetVelocity extends VelocityMode {
 
     @Override
     public String getSuffix() {
-        return this.phase == Phase.IDLE ? "JumpReset" : "JumpReset " + this.phase.name();
+        return "JumpReset";
     }
 }

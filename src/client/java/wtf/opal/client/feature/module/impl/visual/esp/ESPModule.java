@@ -21,6 +21,7 @@ import wtf.opal.client.feature.helper.impl.target.TargetProperty;
 import wtf.opal.client.feature.helper.impl.target.impl.TargetLivingEntity;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
+import wtf.opal.client.feature.module.impl.combat.TeamsModule;
 import wtf.opal.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.opal.client.renderer.MinecraftRenderer;
 import wtf.opal.client.renderer.NVGRenderer;
@@ -118,7 +119,8 @@ public final class ESPModule extends Module {
 
         nvgShapeAntiAlias(VG, true);
 
-        if (settings.areNameTagsEnabled()) {
+        if (settings.areNameTagsEnabled()
+                && (!settings.shouldHideTeammates() || !TeamsModule.isTeammate(entity))) {
             renderNameTag(drawContext, entity, x, y, w);
         }
     }
