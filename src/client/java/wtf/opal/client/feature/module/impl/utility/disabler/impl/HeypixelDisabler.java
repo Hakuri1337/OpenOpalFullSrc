@@ -36,6 +36,7 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
     private final MultipleBooleanProperty options = new MultipleBooleanProperty("Options",
             new BooleanProperty("Grim Bad PacketsA", true),
             new BooleanProperty("Grim Duplicate RotPlace", true),
+            new BooleanProperty("Grim Aim360", false),
             new BooleanProperty("ACA Fast Switch", true),
             new BooleanProperty("ACA Inventory Frequency", false),
             new BooleanProperty("ACA Aim Step", true),
@@ -64,6 +65,8 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
     private float lastPlacedYawDiff;
     private float lastPlacedPitchDiff;
     private boolean rotated;
+    private float lastAim360Yaw;
+    private boolean aim360Initialized;
 
     public HeypixelDisabler(final DisablerModule module) {
         super(module);
@@ -94,6 +97,9 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
 
     @Subscribe
     public void onPreGameTick(final PreGameTickEvent event) {
+        if (!isEnabled("Grim Aim360")) {
+            this.aim360Initialized = false;
+        }
         if (!canProcess()) {
             return;
         }
@@ -177,6 +183,12 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
                 && packet instanceof PlayerMoveC2SPacket movePacket
                 && movePacket.changesLook()) {
             handleRotationAdjustments(movePacket);
+        }
+
+        if (isEnabled("Grim Aim360")
+                && packet instanceof PlayerMoveC2SPacket movePacket
+                && movePacket.changesLook()) {
+            handleGrimAim360(movePacket);
         }
     }
 
@@ -274,6 +286,26 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
         lastPitch = movePacket.getPitch(mc.player.getPitch());
     }
 
+    private void handleGrimAim360(final PlayerMoveC2SPacket movePacket) {
+        final float yaw = movePacket.getYaw(mc.player.getYaw());
+        final float pitch = movePacket.getPitch(mc.player.getPitch());
+        if (!Float.isFinite(yaw) || !Float.isFinite(pitch)) {
+            return;
+        }
+
+        if (!this.aim360Initialized) {
+            this.lastAim360Yaw = mc.player.getYaw();
+            this.aim360Initialized = true;
+        }
+
+        // BMW's GrimAim360 logic: keep yaw on the nearest equivalent turn.
+        final float continuousYaw = this.lastAim360Yaw + MathHelper.wrapDegrees(yaw - this.lastAim360Yaw);
+        final PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
+        accessor.setYaw(continuousYaw);
+        accessor.setPitch(MathHelper.clamp(pitch, -90.0F, 90.0F));
+        this.lastAim360Yaw = continuousYaw;
+    }
+
     private boolean canProcess() {
         if (mc.player == null || (isEnabled("Only Remote Server") && mc.isInSingleplayer())) {
             return false;
@@ -313,6 +345,8 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
         lastPlacedYawDiff = 0.0F;
         lastPlacedPitchDiff = 0.0F;
         rotated = false;
+        lastAim360Yaw = 0.0F;
+        aim360Initialized = false;
     }
 
     private void log(final String message) {

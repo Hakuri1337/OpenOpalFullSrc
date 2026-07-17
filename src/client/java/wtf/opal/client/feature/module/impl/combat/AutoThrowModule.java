@@ -1,5 +1,6 @@
 package wtf.opal.client.feature.module.impl.combat;
 
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
@@ -14,7 +15,7 @@ import net.minecraft.util.math.Vec3d;
 import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.LocalDataWatch;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
-import wtf.opal.client.feature.helper.impl.player.rotation.model.impl.InstantRotationModel;
+import wtf.opal.client.feature.helper.impl.player.rotation.model.impl.LinearRotationModel;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
 import wtf.opal.client.feature.module.impl.movement.StuckModule;
@@ -28,6 +29,8 @@ import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.opal.event.subscriber.Subscribe;
 import wtf.opal.utility.misc.time.Stopwatch;
+import wtf.opal.utility.player.PlayerUtility;
+import wtf.opal.utility.player.RotationUtility;
 
 import java.util.Comparator;
 import java.util.Optional;
@@ -37,9 +40,15 @@ import static wtf.opal.client.Constants.mc;
 /** Naven-compatible automatic egg/snowball throwing. */
 public final class AutoThrowModule extends Module {
 
+    private static final double PROJECTILE_SPEED = 1.5D;
+    private static final double PROJECTILE_GRAVITY = 0.03D;
+    private static final int MAX_TURN_TICKS = 4;
+
     private final NumberProperty minDistance = new NumberProperty("Min Distance", 5.0D, 3.0D, 30.0D, 1.0D);
     private final NumberProperty maxDistance = new NumberProperty("Max Distance", 10.0D, 3.0D, 30.0D, 1.0D);
     private final NumberProperty delay = new NumberProperty("Delay", "ms", 500.0D, 50.0D, 2000.0D, 50.0D);
+    private final NumberProperty fov = new NumberProperty("FOV", 90.0D, 15.0D, 180.0D, 5.0D);
+    private final NumberProperty turnSpeed = new NumberProperty("Turn Speed", "deg/tick", 35.0D, 10.0D, 90.0D, 5.0D);
     private final MultipleBooleanProperty targets = new MultipleBooleanProperty("Target",
             new BooleanProperty("Player", true),
             new BooleanProperty("Invisible", true),
@@ -54,7 +63,7 @@ public final class AutoThrowModule extends Module {
 
     public AutoThrowModule() {
         super("AutoThrow", "Automatically throws snowballs and eggs.", ModuleCategory.COMBAT);
-        this.addProperties(this.minDistance, this.maxDistance, this.delay, this.targets);
+        this.addProperties(this.minDistance, this.maxDistance, this.delay, this.fov, this.turnSpeed, this.targets);
     }
 
     @Subscribe
@@ -68,11 +77,8 @@ public final class AutoThrowModule extends Module {
             return;
         }
 
-        if (this.pendingPlan != null && this.rotationTicks > 0) {
-            RotationHelper.getHandler().rotate(this.pendingRotation, InstantRotationModel.INSTANCE);
-            if (--this.rotationTicks == 0) {
-                this.throwPending();
-            }
+        if (this.pendingPlan != null) {
+            this.updatePendingAim();
             return;
         }
 
@@ -86,10 +92,13 @@ public final class AutoThrowModule extends Module {
             return;
         }
 
-        this.pendingPlan = plan.get();
         this.pendingRotation = this.getRotationToEntity(target.get());
-        this.rotationTicks = 2;
-        RotationHelper.getHandler().rotate(this.pendingRotation, InstantRotationModel.INSTANCE);
+        if (this.pendingRotation == null) {
+            return;
+        }
+
+        this.pendingPlan = plan.get().withTarget(target.get().getId());
+        this.rotationTicks = this.getRequiredRotationTicks(this.pendingRotation);
         this.stopwatch.reset();
     }
 
@@ -105,6 +114,10 @@ public final class AutoThrowModule extends Module {
         }
 
         final ThrowPlan plan = this.pendingPlan;
+        if (!this.isPlanThrowable(plan)) {
+            this.clearPlan();
+            return;
+        }
         if (plan.hand == Hand.MAIN_HAND && plan.slot != mc.player.getInventory().getSelectedSlot()) {
             this.restoreSlot = mc.player.getInventory().getSelectedSlot();
             mc.player.getInventory().setSelectedSlot(plan.slot);
@@ -144,6 +157,7 @@ public final class AutoThrowModule extends Module {
                 .filter(entity -> !entity.isInvisibleTo(mc.player) || this.targets.getProperty("Invisible").getValue())
                 .filter(this::isSelectedTargetType)
                 .filter(mc.player::canSee)
+                .filter(entity -> RotationUtility.isEntityInFOV(entity, this.fov.getValue().floatValue()))
                 .filter(entity -> {
                     final double distance = this.getHorizontalDistance(entity);
                     return distance >= min && distance <= max;
@@ -163,31 +177,30 @@ public final class AutoThrowModule extends Module {
     }
 
     private Vec2f getRotationToEntity(final LivingEntity target) {
-        final Vec3d velocity = target.getVelocity();
-        final double targetY = target.getY() + target.getHeight() * 0.55D;
-        double time = 0.0D;
-        for (int i = 0; i < 3; i++) {
-            final double dx = target.getX() + velocity.x * time - mc.player.getX();
-            final double dz = target.getZ() + velocity.z * time - mc.player.getZ();
-            time = Math.sqrt(dx * dx + dz * dz) / 0.6D;
+        final Vec3d start = mc.player.getEyePos();
+        final Vec3d end = PlayerUtility.getClosestVectorToBoundingBox(start, target);
+        final Vec3d difference = end.subtract(start);
+        final double horizontalDistance = Math.hypot(difference.x, difference.z);
+        if (horizontalDistance < 1.0E-4D) {
+            return null;
         }
 
-        final double x = target.getX() + velocity.x * time - mc.player.getX();
-        final double y = targetY + velocity.y * time - mc.player.getEyeY();
-        final double z = target.getZ() + velocity.z * time - mc.player.getZ();
-        final double horizontal = Math.sqrt(x * x + z * z);
-        final float yaw = (float) Math.toDegrees(Math.atan2(z, x)) - 90.0F;
-        final float pitch = -this.getLowArcPitch((float) horizontal, (float) y, 0.6F, 0.006F);
-        return new Vec2f(yaw, MathHelper.clamp(pitch, -90.0F, 90.0F));
-    }
-
-    private float getLowArcPitch(final float distance, final float height, final float velocity, final float gravity) {
-        final float velocitySquared = velocity * velocity;
-        final float root = velocitySquared * velocitySquared - gravity * (gravity * distance * distance + 2.0F * height * velocitySquared);
-        if (root <= 0.0F) {
-            return (float) Math.toDegrees(Math.atan2(height, distance));
+        final double speedSquared = PROJECTILE_SPEED * PROJECTILE_SPEED;
+        final double discriminant = speedSquared * speedSquared
+                - PROJECTILE_GRAVITY * (PROJECTILE_GRAVITY * horizontalDistance * horizontalDistance
+                + 2.0D * difference.y * speedSquared);
+        if (discriminant < 0.0D) {
+            return null;
         }
-        return (float) Math.toDegrees(Math.atan((velocitySquared - Math.sqrt(root)) / (gravity * distance)));
+
+        final double tangent = (speedSquared - Math.sqrt(discriminant)) / (PROJECTILE_GRAVITY * horizontalDistance);
+        final float yaw = (float) Math.toDegrees(-Math.atan2(difference.x, difference.z));
+        final float pitch = (float) -Math.toDegrees(Math.atan(tangent));
+        if (Float.isNaN(yaw) || Float.isNaN(pitch)) {
+            return null;
+        }
+
+        return RotationUtility.getVanillaRotation(new Vec2f(yaw, MathHelper.clamp(pitch, -90.0F, 90.0F)));
     }
 
     private double getHorizontalDistance(final LivingEntity entity) {
@@ -199,6 +212,10 @@ public final class AutoThrowModule extends Module {
     }
 
     private boolean shouldPause() {
+        if (mc.currentScreen != null || mc.getOverlay() != null) {
+            return true;
+        }
+
         final var repository = OpalClient.getInstance().getModuleRepository();
         final BlockFlyModule blockFly = repository.getModule(BlockFlyModule.class);
         final StuckModule stuck = repository.getModule(StuckModule.class);
@@ -206,6 +223,74 @@ public final class AutoThrowModule extends Module {
         return blockFly != null && blockFly.isEnabled()
                 || stuck != null && stuck.isEnabled()
                 || blink != null && blink.isEnabled();
+    }
+
+    private void updatePendingAim() {
+        final LivingEntity target = this.getPendingTarget();
+        if (target == null || !this.isPlanThrowable(this.pendingPlan)) {
+            this.clearPlan();
+            return;
+        }
+
+        this.pendingRotation = this.getRotationToEntity(target);
+        if (this.pendingRotation == null) {
+            this.clearPlan();
+            return;
+        }
+
+        RotationHelper.getHandler().rotate(
+                this.pendingRotation,
+                new LinearRotationModel(this.turnSpeed.getValue())
+        );
+        if (--this.rotationTicks <= 0) {
+            this.throwPending();
+        }
+    }
+
+    private LivingEntity getPendingTarget() {
+        if (this.pendingPlan == null || mc.world == null) {
+            return null;
+        }
+
+        final Entity entity = mc.world.getEntityById(this.pendingPlan.targetId());
+        if (!(entity instanceof LivingEntity target)
+                || target == mc.player
+                || !target.isAlive()
+                || target.isSpectator()
+                || !mc.player.canSee(target)
+                || !this.isSelectedTargetType(target)
+                || AntiBotsModule.shouldFilter(target)
+                || TeamsModule.isTeammate(target)
+                || LocalDataWatch.getFriendList().contains(target.getName().getString().toUpperCase())) {
+            return null;
+        }
+
+        final double min = Math.min(this.minDistance.getValue(), this.maxDistance.getValue());
+        final double max = Math.max(this.minDistance.getValue(), this.maxDistance.getValue());
+        final double distance = this.getHorizontalDistance(target);
+        return distance >= min && distance <= max ? target : null;
+    }
+
+    private boolean isPlanThrowable(final ThrowPlan plan) {
+        if (plan == null || mc.player == null) {
+            return false;
+        }
+
+        if (plan.hand == Hand.OFF_HAND) {
+            return this.isThrowable(mc.player.getOffHandStack());
+        }
+
+        return plan.slot >= 0 && plan.slot < 9
+                && this.isThrowable(mc.player.getInventory().getStack(plan.slot));
+    }
+
+    private int getRequiredRotationTicks(final Vec2f rotation) {
+        final Vec2f currentRotation = RotationUtility.getRotation();
+        final float yawDifference = Math.abs(MathHelper.wrapDegrees(rotation.x - currentRotation.x));
+        final float pitchDifference = Math.abs(rotation.y - currentRotation.y);
+        final double difference = Math.hypot(yawDifference, pitchDifference);
+        final int ticks = (int) Math.ceil(difference / this.turnSpeed.getValue());
+        return Math.max(1, Math.min(MAX_TURN_TICKS, ticks));
     }
 
     private void restoreSlot() {
@@ -243,6 +328,13 @@ public final class AutoThrowModule extends Module {
         super.onDisable();
     }
 
-    private record ThrowPlan(Hand hand, int slot) {
+    private record ThrowPlan(Hand hand, int slot, int targetId) {
+        private ThrowPlan(final Hand hand, final int slot) {
+            this(hand, slot, -1);
+        }
+
+        private ThrowPlan withTarget(final int targetId) {
+            return new ThrowPlan(this.hand, this.slot, targetId);
+        }
     }
 }

@@ -188,7 +188,8 @@ public final class InventoryManagerModule extends Module {
         }
 
         if (timingMode == AcaInventoryActionScheduler.TimingMode.ACA
-                && (mc.player.isSprinting() || mc.player.isSneaking())) {
+                && (mc.player.isSprinting() || mc.player.isSneaking() || MoveUtility.isMoving() || mc.player.isUsingItem())) {
+            resetStateForBlockedContext();
             return false;
         }
 

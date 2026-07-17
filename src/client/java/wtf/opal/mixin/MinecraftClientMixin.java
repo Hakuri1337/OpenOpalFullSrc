@@ -44,7 +44,6 @@ import wtf.opal.event.impl.game.player.interaction.ItemUseEvent;
 import wtf.opal.event.impl.game.player.interaction.block.BlockPlacedEvent;
 import wtf.opal.event.impl.game.server.ServerDisconnectEvent;
 import wtf.opal.event.impl.render.ResolutionChangeEvent;
-import wtf.opal.utility.player.BlockUtility;
 
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientMixin {
@@ -194,14 +193,6 @@ public abstract class MinecraftClientMixin {
             cancellable = true
     )
     private void hookItemUse(CallbackInfo ci) {
-        if (this.crosshairTarget != null
-                && this.crosshairTarget.getType() == HitResult.Type.ENTITY
-                && this.player != null
-                && BlockUtility.isManualFakeABBlockingState(this.player)) {
-            ci.cancel();
-            return;
-        }
-
         final ItemUseEvent event = new ItemUseEvent();
         EventDispatcher.dispatch(event);
         if (event.isCancelled()) {

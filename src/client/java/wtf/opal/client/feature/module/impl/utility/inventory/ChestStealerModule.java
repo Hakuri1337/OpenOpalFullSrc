@@ -36,9 +36,11 @@ import wtf.opal.event.subscriber.Subscribe;
 import wtf.opal.mixin.KeyBindingAccessor;
 import wtf.opal.utility.misc.chat.ChatUtility;
 import wtf.opal.utility.player.InventoryUtility;
+import wtf.opal.utility.player.MoveUtility;
 import wtf.opal.utility.player.PlayerUtility;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.IntStream;
 
 import static wtf.opal.client.Constants.mc;
@@ -133,6 +135,10 @@ ChestStealerModule extends Module {
 
         if (this.lastContainerSyncId != screenHandler.syncId) {
             this.lastContainerSyncId = screenHandler.syncId;
+        }
+        if (this.isUnsafeAcaContext()) {
+            this.actionScheduler.endSession(AcaInventoryActionScheduler.Owner.CHEST_STEALER);
+            return;
         }
         this.actionScheduler.beginSession(
                 AcaInventoryActionScheduler.Owner.CHEST_STEALER,
@@ -337,9 +343,7 @@ ChestStealerModule extends Module {
     }
 
     private boolean moveChestSlot(final GenericContainerScreenHandler screenHandler, final int slot) {
-        if (mc.player != null
-                && this.timingMode.getValue() == AcaInventoryActionScheduler.TimingMode.ACA
-                && (mc.player.isSprinting() || mc.player.isSneaking())) {
+        if (this.isUnsafeAcaContext()) {
             return false;
         }
         return mc.player != null && this.actionScheduler.executeAction(
@@ -399,16 +403,27 @@ ChestStealerModule extends Module {
     private int selectNextSlot(final List<Integer> candidates) {
         final int lastSlot = this.actionScheduler.getLastRawSlot(AcaInventoryActionScheduler.Owner.CHEST_STEALER);
         if (lastSlot < 0) {
-            Collections.shuffle(candidates);
-            return candidates.getFirst();
+            return candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
         }
 
-        candidates.sort(Comparator.comparingInt(slot -> this.slotDistance(lastSlot, slot)));
-        return candidates.getFirst();
+        final int closestDistance = candidates.stream()
+                .mapToInt(slot -> this.slotDistance(lastSlot, slot))
+                .min()
+                .orElse(0);
+        final List<Integer> nearbyCandidates = candidates.stream()
+                .filter(slot -> this.slotDistance(lastSlot, slot) <= closestDistance + 1)
+                .toList();
+        return nearbyCandidates.get(ThreadLocalRandom.current().nextInt(nearbyCandidates.size()));
     }
 
     private int slotDistance(final int first, final int second) {
         return Math.abs(first / 9 - second / 9) + Math.abs(first % 9 - second % 9);
+    }
+
+    private boolean isUnsafeAcaContext() {
+        return mc.player != null
+                && this.timingMode.getValue() == AcaInventoryActionScheduler.TimingMode.ACA
+                && (mc.player.isSprinting() || mc.player.isSneaking() || mc.player.isUsingItem() || MoveUtility.isMoving());
     }
 
     @Subscribe
