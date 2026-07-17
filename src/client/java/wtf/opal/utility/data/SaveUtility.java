@@ -8,6 +8,7 @@ import wtf.opal.client.binding.IBindable;
 import wtf.opal.client.binding.type.InputType;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.UnknownModuleException;
+import wtf.opal.client.feature.module.DeprecatedModule;
 import wtf.opal.client.feature.module.impl.movement.noslow.NoSlowModule;
 import wtf.opal.client.feature.module.property.Property;
 
@@ -271,8 +272,11 @@ public final class SaveUtility {
                 if (jsonEnabled != null && jsonEnabled != clientModule.isEnabled()) {
                     clientModule.setEnabled(jsonEnabled);
                 }
-                if (jsonVisible != null && jsonVisible != clientModule.isVisible()) {
-                    clientModule.setVisible(jsonVisible);
+                // Deprecated modules: only .deprecated_modules toggle controls ClickGUI visibility, not config
+                if (!(clientModule instanceof DeprecatedModule)) {
+                    if (jsonVisible != null && jsonVisible != clientModule.isVisible()) {
+                        clientModule.setVisible(jsonVisible);
+                    }
                 }
 
                 final JsonElement jsonPropertiesElement = jsonModule.get("properties");

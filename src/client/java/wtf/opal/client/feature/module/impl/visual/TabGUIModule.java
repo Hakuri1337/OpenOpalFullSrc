@@ -5,6 +5,7 @@ import org.lwjgl.glfw.GLFW;
 import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
+import wtf.opal.client.feature.module.DeprecatedModule;
 import wtf.opal.client.feature.module.property.Property;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.bool.MultipleBooleanProperty;
@@ -269,7 +270,7 @@ public final class TabGUIModule extends Module {
 
     private List<Module> getVisibleModules(final ModuleCategory category) {
         return OpalClient.getInstance().getModuleRepository().getModulesInCategory(category).stream()
-                .filter(Module::isVisible)
+                .filter(module -> module.isVisible() || module instanceof DeprecatedModule)
                 .toList();
     }
 
