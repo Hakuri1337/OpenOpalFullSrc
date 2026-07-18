@@ -4,6 +4,7 @@ import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
 import wtf.opal.client.feature.module.impl.utility.disabler.impl.CubecraftDisabler;
 import wtf.opal.client.feature.module.impl.utility.disabler.impl.HeypixelDisabler;
+import wtf.opal.client.feature.module.impl.utility.disabler.impl.HypixelInventoryDisabler;
 import wtf.opal.client.feature.module.impl.utility.disabler.impl.MinibloxDisabler;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.mode.ModeProperty;
@@ -21,6 +22,7 @@ public final class DisablerModule extends Module {
         addProperties(mode, debug);
         addModuleModes(mode,
                 new HeypixelDisabler(this),
+                new HypixelInventoryDisabler(this),
                 new CubecraftDisabler(this),
                 new MinibloxDisabler(this));
     }
@@ -43,6 +45,7 @@ public final class DisablerModule extends Module {
 
     public enum Mode {
         HEYPIXEL("Heypixel"),
+        HYPIXEL_INVENTORY("HypixelInventory"),
         CUBECRAFT("CubeCraft"),
         MINIBLOX("MiniBlox");
 

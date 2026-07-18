@@ -4,11 +4,13 @@ import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.common.CommonPongC2SPacket;
 import net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 import net.minecraft.network.packet.s2c.play.OpenScreenS2CPacket;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec2f;
 import wtf.opal.client.feature.helper.impl.player.packet.blockage.impl.OutboundNetworkBlockage;
 import wtf.opal.client.feature.module.impl.utility.disabler.DisablerModule;
 import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
@@ -19,6 +21,7 @@ import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.packet.InstantaneousReceivePacketEvent;
 import wtf.opal.event.impl.game.packet.InstantaneousSendPacketEvent;
 import wtf.opal.event.subscriber.Subscribe;
+import wtf.opal.mixin.PlayerInteractItemC2SPacketAccessor;
 import wtf.opal.mixin.PlayerMoveC2SPacketAccessor;
 import wtf.opal.utility.misc.chat.ChatUtility;
 import wtf.opal.utility.misc.time.Stopwatch;
@@ -66,6 +69,7 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
     private float lastPlacedPitchDiff;
     private boolean rotated;
     private float lastAim360Yaw;
+    private float lastAim360Pitch;
     private boolean aim360Initialized;
 
     public HeypixelDisabler(final DisablerModule module) {
@@ -190,6 +194,10 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
                 && movePacket.changesLook()) {
             handleGrimAim360(movePacket);
         }
+
+        if (isEnabled("Grim Aim360") && packet instanceof PlayerInteractItemC2SPacket interactItemPacket) {
+            handleGrimAim360UseItem(interactItemPacket);
+        }
     }
 
     private void handleSelectedSlot(final InstantaneousSendPacketEvent event, final UpdateSelectedSlotC2SPacket slotPacket) {
@@ -300,10 +308,34 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
 
         // BMW's GrimAim360 logic: keep yaw on the nearest equivalent turn.
         final float continuousYaw = this.lastAim360Yaw + MathHelper.wrapDegrees(yaw - this.lastAim360Yaw);
+        final float normalizedPitch = MathHelper.clamp(pitch, -90.0F, 90.0F);
         final PlayerMoveC2SPacketAccessor accessor = (PlayerMoveC2SPacketAccessor) movePacket;
         accessor.setYaw(continuousYaw);
-        accessor.setPitch(MathHelper.clamp(pitch, -90.0F, 90.0F));
+        accessor.setPitch(normalizedPitch);
         this.lastAim360Yaw = continuousYaw;
+        this.lastAim360Pitch = normalizedPitch;
+    }
+
+    private void handleGrimAim360UseItem(final PlayerInteractItemC2SPacket packet) {
+        if (!this.aim360Initialized) {
+            return;
+        }
+
+        final PlayerInteractItemC2SPacketAccessor accessor = (PlayerInteractItemC2SPacketAccessor) packet;
+        accessor.setYaw(this.lastAim360Yaw);
+        accessor.setPitch(this.lastAim360Pitch);
+    }
+
+    public Vec2f getUseItemPacketRotation(final float fallbackYaw, final float fallbackPitch) {
+        if (!this.module.isEnabled()
+                || this.module.getActiveMode() != this
+                || !isEnabled("Grim Aim360")
+                || !this.aim360Initialized
+                || mc.player == null
+                || (isEnabled("Only Remote Server") && mc.isInSingleplayer())) {
+            return new Vec2f(fallbackYaw, fallbackPitch);
+        }
+        return new Vec2f(this.lastAim360Yaw, this.lastAim360Pitch);
     }
 
     private boolean canProcess() {
@@ -346,6 +378,7 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
         lastPlacedPitchDiff = 0.0F;
         rotated = false;
         lastAim360Yaw = 0.0F;
+        lastAim360Pitch = 0.0F;
         aim360Initialized = false;
     }
 

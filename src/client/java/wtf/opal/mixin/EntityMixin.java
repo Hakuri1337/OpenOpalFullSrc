@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.objectweb.asm.Opcodes;
@@ -26,6 +27,8 @@ import wtf.opal.event.impl.game.player.movement.PostMoveEvent;
 import wtf.opal.event.impl.game.player.movement.PreMoveEvent;
 import wtf.opal.event.impl.game.player.movement.StuckInBlockEvent;
 import wtf.opal.event.impl.game.player.movement.step.StepSuccessEvent;
+import wtf.opal.utility.player.RotationInjector;
+import wtf.opal.utility.player.RotationUtility;
 
 import static wtf.opal.client.Constants.mc;
 
@@ -58,6 +61,22 @@ public abstract class EntityMixin {
     )
     private void setPitch(float pitch, CallbackInfo ci) {
         this.checkRotation();
+    }
+
+    @Inject(
+            method = "getRotationVec",
+            at = @At("RETURN"),
+            cancellable = true
+    )
+    private void hookOnTickRotation(final float tickDelta, final CallbackInfoReturnable<Vec3d> cir) {
+        if ((Object) this != mc.player || !RotationInjector.isActive()) {
+            return;
+        }
+
+        final Vec2f rotation = RotationInjector.getRotation();
+        if (rotation != null) {
+            cir.setReturnValue(RotationUtility.getRotationVector(rotation.y, rotation.x));
+        }
     }
 
     @Redirect(

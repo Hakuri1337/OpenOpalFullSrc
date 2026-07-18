@@ -22,6 +22,8 @@ import wtf.opal.client.music.playback.PlaybackSnapshot;
 import wtf.opal.client.music.playback.PlaybackState;
 import wtf.opal.client.music.playback.RepeatMode;
 import wtf.opal.event.EventDispatcher;
+import wtf.opal.event.impl.game.JoinWorldEvent;
+import wtf.opal.event.impl.game.PostGameTickEvent;
 import wtf.opal.event.impl.game.server.ServerDisconnectEvent;
 import wtf.opal.event.subscriber.IEventSubscriber;
 import wtf.opal.event.subscriber.Subscribe;
@@ -42,6 +44,7 @@ import static wtf.opal.client.Constants.DIRECTORY;
 
 public final class MusicService implements AutoCloseable, IEventSubscriber {
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int WORLD_RESUME_DELAY_TICKS = 2;
 
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(3,
             Thread.ofPlatform().daemon().name("OpenOpal Music IO-", 0).factory());
@@ -75,6 +78,10 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
     private String error = "";
     private boolean pauseRequested;
     private long pausedPositionMillis;
+    private long worldResumeGeneration;
+    private long worldResumePositionMillis;
+    private int worldResumeTicks;
+    private boolean worldResumePending;
     private boolean closed;
 
     public MusicService() {
@@ -197,8 +204,68 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
     }
 
     @Subscribe
-    public void onServerDisconnect(final ServerDisconnectEvent event) {
+    public synchronized void onServerDisconnect(final ServerDisconnectEvent event) {
+        cancelWorldResume();
         pausePlayback();
+    }
+
+    /**
+     * Minecraft stops every SoundManager source whenever it swaps ClientWorld instances.
+     * Preserve an active cached track here and recreate its OpenAL stream after the new world settles.
+     */
+    @Subscribe
+    public synchronized void onJoinWorld(final JoinWorldEvent event) {
+        if (worldResumePending) {
+            worldResumeGeneration++;
+            if (player.isPlaying()) {
+                worldResumePositionMillis = playbackPosition();
+            }
+            worldResumeTicks = WORLD_RESUME_DELAY_TICKS;
+            player.stop();
+            state = PlaybackState.SEEKING;
+            registerIsland();
+            updateSnapshot(worldResumePositionMillis);
+            return;
+        }
+
+        if (closed
+                || pauseRequested
+                || state != PlaybackState.PLAYING
+                || currentSong == null
+                || currentAudioPath == null
+                || !player.isPlaying()) {
+            return;
+        }
+
+        worldResumePositionMillis = playbackPosition();
+        worldResumeGeneration++;
+        worldResumeTicks = WORLD_RESUME_DELAY_TICKS;
+        worldResumePending = true;
+        player.stop();
+        state = PlaybackState.SEEKING;
+        registerIsland();
+        updateSnapshot(worldResumePositionMillis);
+    }
+
+    @Subscribe
+    public synchronized void onPostGameTick(final PostGameTickEvent event) {
+        if (!worldResumePending || worldResumeTicks < 0) {
+            return;
+        }
+
+        if (closed || pauseRequested || currentSong == null || currentAudioPath == null) {
+            cancelWorldResume();
+            return;
+        }
+
+        if (worldResumeTicks-- > 1) {
+            return;
+        }
+
+        final long resumePosition = worldResumePositionMillis;
+        final long resumeGeneration = worldResumeGeneration;
+        worldResumeTicks = -1;
+        resumeAfterWorldChange(resumePosition, resumeGeneration);
     }
 
     public synchronized void next() {
@@ -236,6 +303,7 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
 
     public synchronized void seek(final long requestedMillis) {
         if (currentSong == null || currentAudioPath == null) return;
+        cancelWorldResume();
         final long target = Math.clamp(requestedMillis, 0, Math.max(0, currentSong.durationMillis() - 250));
         final boolean remainPaused = pauseRequested || state == PlaybackState.PAUSED;
         pauseRequested = remainPaused;
@@ -293,6 +361,7 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
     }
 
     public synchronized void stop() {
+        cancelWorldResume();
         operationGeneration.incrementAndGet();
         pauseRequested = false;
         pausedPositionMillis = 0L;
@@ -367,6 +436,7 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
 
     private synchronized void startCurrent(final long seekMillis) {
         if (closed || queueIndex < 0 || queueIndex >= queue.size()) return;
+        cancelWorldResume();
         final long generation = operationGeneration.incrementAndGet();
         player.stop();
         currentSong = queue.get(queueIndex);
@@ -442,6 +512,36 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
         if (state == PlaybackState.PLAYING || state == PlaybackState.PAUSED) updateSnapshot();
     }
 
+    private void resumeAfterWorldChange(final long requestedMillis, final long resumeGeneration) {
+        final long target = Math.clamp(requestedMillis, 0, Math.max(0, currentSong.durationMillis() - 250));
+        final long generation = operationGeneration.get();
+        state = PlaybackState.SEEKING;
+        registerIsland();
+        updateSnapshot(target);
+        player.play(currentAudioPath, target, volume).whenComplete((ignored, throwable) -> {
+            synchronized (this) {
+                if (operationGeneration.get() != generation
+                        || !worldResumePending
+                        || worldResumeGeneration != resumeGeneration
+                        || closed) return;
+                if (throwable != null) {
+                    cancelWorldResume();
+                    fail(throwable);
+                    return;
+                }
+                if (pauseRequested) {
+                    cancelWorldResume();
+                    pausePlayback();
+                    return;
+                }
+                pausedPositionMillis = 0L;
+                state = PlaybackState.PLAYING;
+                cancelWorldResume();
+                updateSnapshot();
+            }
+        });
+    }
+
     private void fail(final Throwable throwable) {
         final Throwable cause = unwrap(throwable);
         final String song = currentSong == null ? "unknown song" : currentSong.name() + " (" + currentSong.id() + ")";
@@ -511,7 +611,8 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
         if (closed || currentSong == null || state == PlaybackState.IDLE || state == PlaybackState.ERROR) {
             return;
         }
-        final long position = player.isPlaying() ? player.getPositionMillis() : snapshot.positionMillis();
+        cancelWorldResume();
+        final long position = playbackPosition();
         pauseRequested = true;
         pausedPositionMillis = Math.max(0L, position);
         operationGeneration.incrementAndGet();
@@ -537,10 +638,22 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
         seek(position);
     }
 
+    private long playbackPosition() {
+        return player.isPlaying() ? player.getPositionMillis() : snapshot.positionMillis();
+    }
+
+    private void cancelWorldResume() {
+        worldResumeGeneration++;
+        worldResumePositionMillis = 0L;
+        worldResumeTicks = 0;
+        worldResumePending = false;
+    }
+
     @Override
     public synchronized void close() {
         if (closed) return;
         closed = true;
+        cancelWorldResume();
         operationGeneration.incrementAndGet();
         DynamicIslandElement.removeTrigger(islandTrigger);
         player.close();

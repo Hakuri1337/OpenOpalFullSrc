@@ -58,6 +58,17 @@ public final class DynamicIslandElement implements IOverlayElement, IEventSubscr
 
         final float progress = Math.min(1, this.heightAnimation.getProgress());
 
+        // The bloom pass is already inside Minecraft's render pass. Rendering
+        // an island head there can lazily upload a skin texture, which is
+        // illegal while that pass is open. Keep the island background in bloom
+        // but render all trigger content only in the normal HUD pass.
+        if (isBloom) {
+            if (!custom) {
+                this.renderIslandBackground(animatedX, animatedY, animatedWidth, animatedHeight);
+            }
+            return;
+        }
+
         final Runnable render = () -> trigger.renderIsland(context, animatedX, animatedY, animatedWidth, animatedHeight, progress);
 
         if (custom) {

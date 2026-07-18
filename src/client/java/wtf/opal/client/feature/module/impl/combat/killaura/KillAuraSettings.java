@@ -11,6 +11,7 @@ import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.opal.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
+import wtf.opal.utility.player.RotationInjector;
 
 public final class KillAuraSettings {
 
@@ -31,6 +32,7 @@ public final class KillAuraSettings {
     private final BooleanProperty smartWeapon;
     private final BooleanProperty attackCooldown19;
     private final NumberProperty fov;
+    private final ModeProperty<RotationInjector.RotationMode> rotationMode;
 
     private final MultipleBooleanProperty visuals;
 
@@ -59,6 +61,7 @@ public final class KillAuraSettings {
         this.attackCooldown19 = new BooleanProperty("1.9+ Attack Cooldown", false);
         this.mode = new ModeProperty<>("Mode", Mode.SWITCH);
         this.fov = new NumberProperty("FOV", 180, 1, 180, 1);
+        this.rotationMode = new ModeProperty<>("Rotation Mode", module, RotationInjector.RotationMode.NORMAL);
 
         this.visuals = new MultipleBooleanProperty("Visuals",
                 new BooleanProperty("Box", false),
@@ -68,7 +71,7 @@ public final class KillAuraSettings {
         module.addProperties(
                 rotationProperty.get(), new GroupProperty("Requirements", requireWeapon, requireAttackKey, hitSelect),
                 mode, range, rotationRange, swingRange, hideFakeSwings, targetProperty.get(),
-                fov, overrideRaycast, tickLookahead, throughWalls, heypixelBypass, autoblockMode, keepSprintFov, grimKeepSprint, smartWeapon, attackCooldown19, visuals
+                fov, overrideRaycast, tickLookahead, throughWalls, heypixelBypass, autoblockMode, keepSprintFov, grimKeepSprint, smartWeapon, attackCooldown19, rotationMode, visuals
         );
     }
 
@@ -146,6 +149,10 @@ public final class KillAuraSettings {
 
     public IRotationModel createRotationModel() {
         return isHeypixelBypass() ? new HeypixelRotationModel(rotationProperty.getMaxAngle()) : rotationProperty.createModel();
+    }
+
+    public RotationInjector.RotationMode getRotationMode() {
+        return this.rotationMode.getValue();
     }
 
     public Mode getMode() {

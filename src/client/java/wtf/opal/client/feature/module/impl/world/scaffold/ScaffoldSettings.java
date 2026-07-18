@@ -20,10 +20,12 @@ import wtf.opal.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.opal.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.opal.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.opal.client.feature.module.property.impl.number.NumberProperty;
+import wtf.opal.utility.player.RotationInjector;
 
 public final class ScaffoldSettings {
 
     private final RotationProperty rotationProperty;
+    private final ModeProperty<RotationInjector.RotationMode> rotationMode;
     private final BooleanProperty movementIntelligence;
     private final BooleanProperty movementSnapping, diagonalMovement;
     private final NumberProperty movementSteps;
@@ -82,6 +84,7 @@ public final class ScaffoldSettings {
         this.movementSteps = new NumberProperty("Steps", 3, 1, 3, 1).hideIf(() -> !this.isMovementSnapping());
         this.rotationProperty = new RotationProperty(InstantRotationModel.INSTANCE,
                 new GroupProperty("Movement intelligence", this.movementIntelligence, this.diagonalMovement, this.movementSnapping, this.movementSteps));
+        this.rotationMode = new ModeProperty<>("Rotation Mode", module, RotationInjector.RotationMode.NORMAL);
 
         this.simulationCps = new CPSProperty(module, "Interact CPS", false);
 
@@ -146,7 +149,7 @@ public final class ScaffoldSettings {
         this.silenceTellyInteractItemBeforePlace = new BooleanProperty("ST Interact Item Before Place", false).hideIf(() -> !this.isSilenceTellyMode());
 
         module.addModuleModes(mode, new VanillaScaffold(module), new WatchdogScaffold(module), new AntiGamingChairScaffold(module), new BloxdScaffold(module), new TellyScaffold(module), new HeypixelScaffold(module), new HypixelScaffold(module), new SilenceTellyScaffold(module));
-        module.addProperties(rotationProperty.get(), mode, switchMode, swingMode, tower, snapRotations, overrideRaycast,
+        module.addProperties(rotationProperty.get(), rotationMode, mode, switchMode, swingMode, tower, snapRotations, overrideRaycast,
                 interactBeforePlace, sameY, autoJump, tellyHeypixel, keepFov, duplicateRotPlace, blockOverlay,
                 uitemsTelly, upTellyBypass, snap, selfRescueMode, rotateSpeed, rotateBackSpeed, tellyTick, safeWalk,
                 hypixelAddons, silenceTellyMode, silenceTellyAlwaysUpdateRotation, silenceTellyPlaceTick,
@@ -397,6 +400,10 @@ public final class ScaffoldSettings {
 
     public IRotationModel createRotationModel() {
         return rotationProperty.createModel();
+    }
+
+    public RotationInjector.RotationMode getRotationMode() {
+        return rotationMode.getValue();
     }
 
     public boolean isRotationModel(final EnumRotationModel model) {

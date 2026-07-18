@@ -97,10 +97,12 @@ public final class OpalClient {
                     new PiercingModule(),
                     new AutoClickerModule(),
                     new AttackDelayModule(),
+                    new SuperKnockBackModule(),
                     new CriticalsModule(),
                     new VelocityModule(),
                     new FakeLagModule(),
                     new AutoHeadModule(),
+                    new FastPearlModule(),
                     new AutoThrowModule(),
                     new CrystalAuraModule(),
                     // Visual
@@ -155,6 +157,7 @@ public final class OpalClient {
                     new StuckModule(),
                     // Utility
                     new FastUseModule(),
+                    new AutoRodModule(),
                     new MusicPlayerModule(),
                     new NoFallModule(),
                     new AutoBucketModule(),
@@ -170,6 +173,7 @@ public final class OpalClient {
                     new AutoHypixelModule(),
                     new BlinkModule(),
                     new PingSpoofModule(),
+                    new ServerPackSpoofModule(),
                     new AntiBotsModule(),
                     new KillSayModule(),
                     new NoRotateModule(),

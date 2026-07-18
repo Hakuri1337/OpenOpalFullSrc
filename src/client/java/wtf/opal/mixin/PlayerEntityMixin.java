@@ -28,6 +28,7 @@ import wtf.opal.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.opal.client.feature.module.impl.world.FastBreakModule;
 import wtf.opal.duck.PlayerEntityAccess;
 import wtf.opal.event.EventDispatcher;
+import wtf.opal.event.impl.game.player.combat.AttackSlowdownEvent;
 import wtf.opal.event.impl.game.player.movement.ClipAtLedgeEvent;
 import wtf.opal.event.impl.game.player.movement.KeepSprintEvent;
 import wtf.opal.utility.player.PlayerUtility;
@@ -49,6 +50,8 @@ public abstract class PlayerEntityMixin extends LivingEntity implements PlayerEn
             at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/PlayerEntity;setVelocity(Lnet/minecraft/util/math/Vec3d;)V")
     )
     private void hookKeepSprint(final Entity target, final CallbackInfo ci) {
+        EventDispatcher.dispatch(new AttackSlowdownEvent());
+
         keepSprintEvent = new KeepSprintEvent();
 
         EventDispatcher.dispatch(keepSprintEvent);

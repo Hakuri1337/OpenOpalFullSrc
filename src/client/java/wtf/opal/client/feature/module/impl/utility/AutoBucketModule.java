@@ -24,6 +24,7 @@ import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MoveInputEvent;
 import wtf.opal.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.opal.event.subscriber.Subscribe;
+import wtf.opal.mixin.ClientPlayerInteractionManagerAccessor;
 import wtf.opal.utility.player.RotationUtility;
 
 import static wtf.opal.client.Constants.mc;
@@ -32,6 +33,10 @@ public final class AutoBucketModule extends Module {
 
     private static final float BUCKET_ROTATION_READY_DIFFERENCE = 3.5F;
     private static final float MAX_BUCKET_PITCH = 88.0F;
+    private static final float MAX_PICKUP_PITCH = 90.0F;
+    private static final int PICKUP_PREPARE_TICKS = 3;
+    private static final int PICKUP_CONFIRM_TICKS = 3;
+    private static final int PICKUP_MAX_ATTEMPTS = 12;
 
     private final BooleanProperty mlg = new BooleanProperty("MLG", true);
     private final NumberProperty fallDistance = new NumberProperty("Fall Distance", 3.0D, 1.0D, 10.0D, 0.1D)
@@ -50,12 +55,7 @@ public final class AutoBucketModule extends Module {
     private double lastY;
     private boolean waterPlaced;
     private boolean readyToPlace;
-    private boolean mlgRecoveryActive;
-    private int mlgRecoveryDelay;
-    private int mlgRecoveryLandingWaitTicks;
-    private int mlgRecoveryTriesLeft;
-    private int mlgRecoverySlot = -1;
-    private BlockPos mlgPlacedWaterPos;
+    private PickupTask pickupTask;
     private BlockHitResult pendingMlgHit;
     private Vec2f pendingMlgRotation;
     private float lastRequestedYaw = Float.NaN;
@@ -64,14 +64,8 @@ public final class AutoBucketModule extends Module {
     private float lastSentPitch = Float.NaN;
     private int postPlaceCooldown;
     private int postActionCooldown;
-    private int retryCooldown;
 
-    private boolean helperRetrievePending;
-    private int helperRetrieveTriesLeft;
-    private int helperRetrieveSlot = -1;
-    private BlockPos helperPlacedWaterPos;
     private int helperCooldownTicks;
-    private int helperRetrieveDelay;
 
     public AutoBucketModule() {
         super("AutoBucket", "Handles water bucket MLG and helper recovery.", ModuleCategory.UTILITY);
@@ -103,7 +97,7 @@ public final class AutoBucketModule extends Module {
 
     @Subscribe
     public void onMoveInput(final MoveInputEvent event) {
-        if (this.postActionCooldown > 0 || this.mlgRecoveryActive) {
+        if (this.postActionCooldown > 0 || this.hasPickupTask(PickupCause.MLG)) {
             event.setSneak(false);
         }
     }
@@ -126,13 +120,10 @@ public final class AutoBucketModule extends Module {
             this.waterPlaced = false;
             this.readyToPlace = false;
             this.clearPendingMlgPlacement();
-            if (!this.mlgRecoveryActive) {
-                this.mlgPlacedWaterPos = null;
-            }
         }
 
-        if (this.mlgRecoveryActive) {
-            this.handleMlgRecovery();
+        if (this.hasPickupTask(PickupCause.MLG)) {
+            this.handlePickupTask();
             return true;
         }
 
@@ -143,15 +134,6 @@ public final class AutoBucketModule extends Module {
         final double remainingDistance = this.distanceToGround(8.0D);
 
         if (this.waterPlaced) {
-            if (this.mlgPlacedWaterPos == null && this.retryCooldown == 0) {
-                if (remainingDistance > 0.0D && remainingDistance <= 1.35D) {
-                    final int retrySlot = this.findWaterBucketSlot();
-                    if (retrySlot != -1) {
-                        this.placeMlgWaterBucket(retrySlot, false);
-                    }
-                    this.retryCooldown = 2;
-                }
-            }
             return true;
         }
 
@@ -184,12 +166,12 @@ public final class AutoBucketModule extends Module {
 
     private void handleHelperTick() {
         if (!this.extinguish.getValue()) {
-            this.clearHelperRetrieve();
+            this.clearPickupTask(PickupCause.EXTINGUISH);
             return;
         }
 
-        if (this.helperRetrievePending) {
-            this.handleHelperRetrieve();
+        if (this.hasPickupTask(PickupCause.EXTINGUISH)) {
+            this.handlePickupTask();
             return;
         }
 
@@ -214,11 +196,7 @@ public final class AutoBucketModule extends Module {
             return;
         }
 
-        this.helperRetrievePending = true;
-        this.helperRetrieveTriesLeft = 8;
-        this.helperRetrieveSlot = -1;
-        this.helperPlacedWaterPos = placedWaterPos;
-        this.helperRetrieveDelay = 3;
+        this.beginPickup(placedWaterPos, PickupCause.EXTINGUISH, false);
         this.helperCooldownTicks = 8;
     }
 
@@ -244,9 +222,6 @@ public final class AutoBucketModule extends Module {
         if (this.postActionCooldown > 0) {
             this.postActionCooldown--;
         }
-        if (this.retryCooldown > 0) {
-            this.retryCooldown--;
-        }
         if (this.helperCooldownTicks > 0) {
             this.helperCooldownTicks--;
         }
@@ -262,8 +237,7 @@ public final class AutoBucketModule extends Module {
 
     private boolean tryFillWaterBucket() {
         if (this.waterPlaced
-                || this.mlgRecoveryActive
-                || this.mlgPlacedWaterPos != null
+                || this.pickupTask != null
                 || this.postPlaceCooldown > 0
                 || this.postActionCooldown > 0
                 || this.accumulatedFall > 0.5F
@@ -293,7 +267,7 @@ public final class AutoBucketModule extends Module {
         }
 
         this.saveAndSwitch(emptySlot);
-        if (!this.useItem()) {
+        if (!this.useItemAt(rotation, hit)) {
             return false;
         }
         this.postActionCooldown = 8;
@@ -301,62 +275,82 @@ public final class AutoBucketModule extends Module {
         return true;
     }
 
-    private void handleMlgRecovery() {
-        if (!this.isSafeToRecoverMlgWater()) {
-            if (--this.mlgRecoveryLandingWaitTicks <= 0) {
-                this.clearMlgRecovery();
+    /**
+     * The old module had separate MLG and extinguish pickup loops. Both used
+     * an 88-degree cap, so water directly under the player was often never
+     * ray-traced. This mirrors Amadeus's place -> short delay -> rotate ->
+     * pickup sequence while retaining explicit server-confirmation retries.
+     */
+    private void handlePickupTask() {
+        final PickupTask task = this.pickupTask;
+        if (task == null || mc.player == null || mc.world == null) {
+            this.clearPickupTask();
+            return;
+        }
+
+        if (task.waitForSafeLanding && !this.isSafeToRecoverMlgWater()) {
+            if (--task.landingWaitTicks <= 0) {
+                this.clearPickupTask();
             }
             return;
         }
 
-        if (this.mlgRecoveryDelay > 0) {
-            this.mlgRecoveryDelay--;
+        if (task.bucketSlot >= 0 && mc.player.getInventory().getStack(task.bucketSlot).isOf(Items.WATER_BUCKET)) {
+            this.finishPickupTask();
             return;
         }
 
-        if (this.mlgRecoverySlot == -1) {
-            this.mlgRecoverySlot = this.findEmptyBucketSlot();
-            if (this.mlgRecoverySlot == -1) {
-                this.retryMlgRecovery();
-                return;
+        if (task.confirmTicks > 0) {
+            task.confirmTicks--;
+            if (task.confirmTicks == 0) {
+                this.retryPickupTask();
             }
-        }
-
-        final ItemStack stack = mc.player.getInventory().getStack(this.mlgRecoverySlot);
-        if (stack.isOf(Items.WATER_BUCKET)) {
-            this.clearMlgRecovery();
-            this.postPlaceCooldown = Math.max(this.postPlaceCooldown, 1);
             return;
         }
 
-        final BlockPos waterSource = this.findRecoverableWaterSource(this.mlgPlacedWaterPos, 1);
+        if (task.delayTicks > 0) {
+            task.delayTicks--;
+            return;
+        }
+
+        final int bucketSlot = this.findEmptyBucketSlot();
+        if (bucketSlot == -1) {
+            this.retryPickupTask();
+            return;
+        }
+
+        final BlockPos waterSource = this.findRecoverableWaterSource(task.expectedWaterPos, 1);
         if (waterSource == null) {
-            this.retryMlgRecovery();
+            this.retryPickupTask();
             return;
         }
 
-        this.mlgPlacedWaterPos = waterSource;
-        final Vec2f rotation = this.getSafeRotationTo(Vec3d.ofCenter(waterSource), this.getCurrentRotation().x, MAX_BUCKET_PITCH);
+        task.expectedWaterPos = waterSource.toImmutable();
+        final Vec2f rotation = this.getPickupRotation(task.expectedWaterPos);
         this.requestRotation(rotation);
         if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
-            this.retryMlgRecovery();
+            if (++task.rotationWaitTicks >= 8) {
+                this.retryPickupTask();
+            }
             return;
         }
+        task.rotationWaitTicks = 0;
 
         final BlockHitResult hit = this.raycastFluid(this.getCurrentRotation(), mc.player.getBlockInteractionRange());
         if (hit.getType() == HitResult.Type.MISS || !this.isWaterSource(hit.getBlockPos())
-                || hit.getBlockPos().getSquaredDistance(this.mlgPlacedWaterPos) > 4.0D) {
-            this.retryMlgRecovery();
+                || hit.getBlockPos().getSquaredDistance(task.expectedWaterPos) > 4.0D) {
+            this.retryPickupTask();
             return;
         }
 
-        this.mlgPlacedWaterPos = hit.getBlockPos().toImmutable();
-        this.saveAndSwitch(this.mlgRecoverySlot);
-        if (this.useItem()) {
-            this.mlgRecoveryTriesLeft--;
-            this.mlgRecoveryDelay = 2;
+        task.expectedWaterPos = hit.getBlockPos().toImmutable();
+        this.saveAndSwitch(bucketSlot);
+        if (this.useItemAt(rotation, hit)) {
+            task.bucketSlot = bucketSlot;
+            task.confirmTicks = PICKUP_CONFIRM_TICKS;
+            task.attemptsLeft--;
         } else {
-            this.retryMlgRecovery();
+            this.retryPickupTask();
         }
     }
 
@@ -369,7 +363,6 @@ public final class AutoBucketModule extends Module {
             return;
         }
 
-        this.mlgPlacedWaterPos = placedPos;
         this.saveAndSwitch(slot);
         if (!this.useItem()) {
             return;
@@ -379,67 +372,10 @@ public final class AutoBucketModule extends Module {
             this.waterPlaced = true;
         }
 
-        this.mlgRecoveryActive = this.recovery.getValue() && this.mlgPlacedWaterPos != null;
-        this.mlgRecoveryDelay = 3;
-        this.mlgRecoveryLandingWaitTicks = this.mlgRecoveryActive ? 40 : 0;
-        this.mlgRecoveryTriesLeft = this.mlgRecoveryActive ? 16 : 0;
-        this.mlgRecoverySlot = -1;
-        this.retryCooldown = 2;
+        if (this.recovery.getValue()) {
+            this.beginPickup(placedPos, PickupCause.MLG, true);
+        }
         this.clearPendingMlgPlacement();
-    }
-
-    private void handleHelperRetrieve() {
-        if (mc.player == null || mc.world == null) {
-            this.clearHelperRetrieve();
-            return;
-        }
-        if (this.helperRetrieveDelay > 0) {
-            this.helperRetrieveDelay--;
-            return;
-        }
-
-        if (this.helperRetrieveSlot == -1) {
-            this.helperRetrieveSlot = this.findEmptyBucketSlot();
-            if (this.helperRetrieveSlot == -1) {
-                this.retryHelperRetrieve();
-                return;
-            }
-        }
-
-        if (mc.player.getInventory().getStack(this.helperRetrieveSlot).isOf(Items.WATER_BUCKET)) {
-            this.clearHelperRetrieve();
-            return;
-        }
-
-        final BlockPos waterSource = this.findRecoverableWaterSource(this.helperPlacedWaterPos, 1);
-        if (waterSource == null) {
-            this.retryHelperRetrieve();
-            return;
-        }
-
-        this.helperPlacedWaterPos = waterSource;
-        final Vec2f rotation = this.getSafeRotationTo(Vec3d.ofCenter(waterSource), this.getCurrentRotation().x, MAX_BUCKET_PITCH);
-        this.requestRotation(rotation);
-        if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
-            this.retryHelperRetrieve();
-            return;
-        }
-
-        final BlockHitResult hit = this.raycastFluid(this.getCurrentRotation(), mc.player.getBlockInteractionRange());
-        if (hit.getType() == HitResult.Type.MISS || !this.isWaterSource(hit.getBlockPos())
-                || hit.getBlockPos().getSquaredDistance(this.helperPlacedWaterPos) > 4.0D) {
-            this.retryHelperRetrieve();
-            return;
-        }
-
-        this.helperPlacedWaterPos = hit.getBlockPos().toImmutable();
-        this.saveAndSwitch(this.helperRetrieveSlot);
-        if (this.useItem()) {
-            this.helperRetrieveTriesLeft--;
-            this.helperRetrieveDelay = 2;
-        } else {
-            this.retryHelperRetrieve();
-        }
     }
 
     private boolean shouldExtinguish() {
@@ -688,22 +624,36 @@ public final class AutoBucketModule extends Module {
         return best;
     }
 
-    private void retryMlgRecovery() {
-        if (--this.mlgRecoveryTriesLeft <= 0) {
-            this.clearMlgRecovery();
-        } else {
-            this.mlgRecoveryDelay = 1;
-            this.mlgRecoverySlot = -1;
+    private void beginPickup(final BlockPos waterPos, final PickupCause cause, final boolean waitForSafeLanding) {
+        if (waterPos == null) {
+            return;
+        }
+        this.pickupTask = new PickupTask(waterPos.toImmutable(), cause, waitForSafeLanding);
+    }
+
+    private boolean hasPickupTask(final PickupCause cause) {
+        return this.pickupTask != null && this.pickupTask.cause == cause;
+    }
+
+    private void retryPickupTask() {
+        final PickupTask task = this.pickupTask;
+        if (task == null) {
+            return;
+        }
+
+        task.bucketSlot = -1;
+        task.confirmTicks = 0;
+        task.delayTicks = 1;
+        task.rotationWaitTicks = 0;
+        if (--task.attemptsLeft <= 0) {
+            this.clearPickupTask();
         }
     }
 
-    private void retryHelperRetrieve() {
-        if (--this.helperRetrieveTriesLeft <= 0) {
-            this.clearHelperRetrieve();
-        } else {
-            this.helperRetrieveSlot = -1;
-            this.helperRetrieveDelay = 1;
-        }
+    private void finishPickupTask() {
+        this.postPlaceCooldown = Math.max(this.postPlaceCooldown, 1);
+        this.postActionCooldown = Math.max(this.postActionCooldown, 2);
+        this.clearPickupTask();
     }
 
     private double getMlgPlaceDistance() {
@@ -728,6 +678,12 @@ public final class AutoBucketModule extends Module {
         final float yaw = RotationUtility.getDuplicateWrapped(raw.x, yawReference);
         final float pitch = MathHelper.clamp(raw.y, -maxPitch, maxPitch);
         return new Vec2f(yaw, pitch);
+    }
+
+    private Vec2f getPickupRotation(final BlockPos waterPos) {
+        // Amadeus aims at the recorded water source itself. Unlike placement,
+        // pickup must permit a true vertical look at the player's feet.
+        return this.getSafeRotationTo(Vec3d.ofCenter(waterPos), this.getCurrentRotation().x, MAX_PICKUP_PITCH);
     }
 
     private void requestRotation(final Vec2f rotation) {
@@ -793,6 +749,38 @@ public final class AutoBucketModule extends Module {
         return false;
     }
 
+    private boolean useItemAt(final Vec2f rotation, final BlockHitResult hit) {
+        if (mc.player == null || mc.world == null || mc.interactionManager == null) {
+            return false;
+        }
+
+        ((ClientPlayerInteractionManagerAccessor) mc.interactionManager).callSyncSelectedSlot();
+        final float originalYaw = mc.player.getYaw();
+        final float originalPitch = mc.player.getPitch();
+        mc.player.setYaw(rotation.x);
+        mc.player.setPitch(rotation.y);
+
+        try {
+            if (hit != null) {
+                final ActionResult blockResult = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+                if (blockResult.isAccepted()) {
+                    mc.player.swingHand(Hand.MAIN_HAND);
+                    return true;
+                }
+            }
+
+            final ActionResult itemResult = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+            if (itemResult.isAccepted()) {
+                mc.player.swingHand(Hand.MAIN_HAND);
+                return true;
+            }
+            return false;
+        } finally {
+            mc.player.setYaw(originalYaw);
+            mc.player.setPitch(originalPitch);
+        }
+    }
+
     private int findWaterBucketSlot() {
         if (mc.player == null) {
             return -1;
@@ -817,22 +805,14 @@ public final class AutoBucketModule extends Module {
         return -1;
     }
 
-    private void clearMlgRecovery() {
-        this.mlgRecoveryActive = false;
-        this.mlgRecoveryDelay = 0;
-        this.mlgRecoveryLandingWaitTicks = 0;
-        this.mlgRecoveryTriesLeft = 0;
-        this.mlgRecoverySlot = -1;
-        this.mlgPlacedWaterPos = null;
-        this.clearPendingMlgPlacement();
+    private void clearPickupTask() {
+        this.pickupTask = null;
     }
 
-    private void clearHelperRetrieve() {
-        this.helperRetrievePending = false;
-        this.helperRetrieveTriesLeft = 0;
-        this.helperRetrieveSlot = -1;
-        this.helperPlacedWaterPos = null;
-        this.helperRetrieveDelay = 0;
+    private void clearPickupTask(final PickupCause cause) {
+        if (this.hasPickupTask(cause)) {
+            this.clearPickupTask();
+        }
     }
 
     private void clearPendingMlgPlacement() {
@@ -847,10 +827,9 @@ public final class AutoBucketModule extends Module {
         this.lastY = mc.player == null ? 0.0D : mc.player.getY();
         this.waterPlaced = false;
         this.readyToPlace = false;
-        this.clearMlgRecovery();
+        this.clearPickupTask(PickupCause.MLG);
         this.postPlaceCooldown = 0;
         this.postActionCooldown = 0;
-        this.retryCooldown = 0;
         this.lastSentYaw = Float.NaN;
         this.lastSentPitch = Float.NaN;
     }
@@ -858,7 +837,7 @@ public final class AutoBucketModule extends Module {
     private void resetState() {
         this.restoreSlot = -1;
         this.resetMlgState();
-        this.clearHelperRetrieve();
+        this.clearPickupTask();
         this.helperCooldownTicks = 0;
     }
 
@@ -870,7 +849,31 @@ public final class AutoBucketModule extends Module {
 
     @Override
     protected void onDisable() {
+        this.restoreSlotIfNeeded();
         this.resetState();
         super.onDisable();
+    }
+
+    private enum PickupCause {
+        MLG,
+        EXTINGUISH
+    }
+
+    private static final class PickupTask {
+        private BlockPos expectedWaterPos;
+        private final PickupCause cause;
+        private final boolean waitForSafeLanding;
+        private int landingWaitTicks = 40;
+        private int delayTicks = PICKUP_PREPARE_TICKS;
+        private int confirmTicks;
+        private int rotationWaitTicks;
+        private int attemptsLeft = PICKUP_MAX_ATTEMPTS;
+        private int bucketSlot = -1;
+
+        private PickupTask(final BlockPos expectedWaterPos, final PickupCause cause, final boolean waitForSafeLanding) {
+            this.expectedWaterPos = expectedWaterPos;
+            this.cause = cause;
+            this.waitForSafeLanding = waitForSafeLanding;
+        }
     }
 }

@@ -197,7 +197,14 @@ public abstract class GameRendererMixin {
 
     @Inject(method = "getFov", at = @At("RETURN"), cancellable = true)
     private void hookNoFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
-        if (OpalClient.getInstance().getModuleRepository().getModule(NoFOVModule.class).isEnabled()) {
+        // First-person hands use the non-changing projection path. Lock only
+        // the dynamic world FOV so their projection remains vanilla-correct.
+        if (!OpalClient.getInstance().isPostInitialization() || !changingFov) {
+            return;
+        }
+
+        final NoFOVModule noFovModule = OpalClient.getInstance().getModuleRepository().getModule(NoFOVModule.class);
+        if (noFovModule != null && noFovModule.isEnabled()) {
             cir.setReturnValue(mc.options.getFov().getValue().floatValue());
         }
     }

@@ -557,7 +557,12 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
         if (identifier == null) {
             return -1;
         }
-        return Integer.parseInt(mc.getTextureManager().getTexture(identifier).getGlTexture().getLabel());
+        try {
+            return Integer.parseInt(mc.getTextureManager().getTexture(identifier).getGlTexture().getLabel());
+        } catch (IllegalStateException ignored) {
+            // Texture upload can be deferred until the next normal HUD pass.
+            return -1;
+        }
     }
 
     private static final class Target {

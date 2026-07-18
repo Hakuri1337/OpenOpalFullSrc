@@ -21,6 +21,7 @@ public final class SilenceItemRotationModule extends Module {
 
     private final ModeProperty<Axis> axis = new ModeProperty<>("Axis", Axis.Y);
     private final NumberProperty speed = new NumberProperty("Speed", "degrees/tick", 15.0D, 0.0D, 60.0D, 1.0D);
+    private final BooleanProperty allowRotationWhileMoving = new BooleanProperty("Allow rotation while moving", false);
     private final BooleanProperty mainHand = new BooleanProperty("Main hand", true);
     private final BooleanProperty offHand = new BooleanProperty("Off hand", true);
     private final BooleanProperty onlySword = new BooleanProperty("Only sword", false);
@@ -34,6 +35,7 @@ public final class SilenceItemRotationModule extends Module {
         this.addProperties(
                 this.axis,
                 this.speed,
+                this.allowRotationWhileMoving,
                 this.mainHand,
                 this.offHand,
                 this.onlySword,
@@ -66,7 +68,8 @@ public final class SilenceItemRotationModule extends Module {
             return false;
         }
 
-        if (Math.abs(player.forwardSpeed) > 0.001F || Math.abs(player.sidewaysSpeed) > 0.001F) {
+        if (!this.allowRotationWhileMoving.getValue()
+                && (Math.abs(player.forwardSpeed) > 0.001F || Math.abs(player.sidewaysSpeed) > 0.001F)) {
             return false;
         }
 

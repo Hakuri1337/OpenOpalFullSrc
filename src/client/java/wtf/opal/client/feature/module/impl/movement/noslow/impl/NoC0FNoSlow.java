@@ -1,6 +1,7 @@
 package wtf.opal.client.feature.module.impl.movement.noslow.impl;
 
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.PotionItem;
 import net.minecraft.network.packet.Packet;
@@ -13,14 +14,18 @@ import net.minecraft.util.Arm;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec2f;
 import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.opal.client.feature.module.impl.combat.velocity.impl.Heypixel3Velocity;
 import wtf.opal.client.feature.module.impl.movement.noslow.NoSlowModule;
+import wtf.opal.client.feature.module.impl.utility.disabler.DisablerModule;
+import wtf.opal.client.feature.module.impl.utility.disabler.impl.HeypixelDisabler;
 import wtf.opal.client.feature.module.impl.utility.inventory.manager.InventoryManagerModule;
 import wtf.opal.client.feature.module.property.impl.mode.ModuleMode;
 import wtf.opal.client.notification.NotificationType;
 import wtf.opal.duck.ClientConnectionAccess;
+import wtf.opal.mixin.KeyBindingAccessor;
 import wtf.opal.utility.player.PlayerUtility;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.input.MoveInputEvent;
@@ -157,6 +162,23 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
             return false;
         }
         return isSlowingUse(mc.player.getActiveItem());
+    }
+
+    /**
+     * KeyBinding#isPressed can remain true because this mode set it itself.
+     * Read the actual bound input so a tap cannot turn into a held use action.
+     */
+    private boolean isUseKeyHeld() {
+        if (mc.options == null || mc.getWindow() == null) {
+            return false;
+        }
+
+        final InputUtil.Key key = ((KeyBindingAccessor) mc.options.useKey).getBoundKey();
+        if (key.getCategory() == InputUtil.Type.MOUSE) {
+            return PlayerUtility.isMouseButtonPressed(key.getCode());
+        }
+
+        return InputUtil.isKeyPressed(mc.getWindow(), key.getCode());
     }
 
     private void ensureMainHandLeft() {
@@ -428,6 +450,9 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         if (this.step != Step.USING) {
             return;
         }
+        if (!isUseKeyHeld()) {
+            return;
+        }
         if (!isUsingSlowingItem()) {
             return;
         }
@@ -443,7 +468,7 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         this.swapSent = false;
         this.targetHand = Hand.MAIN_HAND;
         if (this.forcedUseKeyDown && mc.options != null) {
-            mc.options.useKey.setPressed(PlayerUtility.isKeyPressed(mc.options.useKey));
+            mc.options.useKey.setPressed(isUseKeyHeld());
         }
         this.forcedUseKeyDown = false;
         this.wasUsingSlowingItem = false;
@@ -483,6 +508,12 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
             return;
         }
 
+        if (this.step != Step.NONE && !isUseKeyHeld()) {
+            this.lockUseUntilRelease = false;
+            abort(true);
+            return;
+        }
+
         if (this.step != Step.NONE && (isVelocityDelaying() || isVelocityQueueing())) {
             this.lockUseUntilRelease = false;
             abort(this.step != Step.USING);
@@ -503,7 +534,7 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         }
 
         if (this.lockUseUntilRelease && mc.options != null) {
-            if (PlayerUtility.isKeyPressed(mc.options.useKey)) {
+            if (isUseKeyHeld()) {
                 mc.options.useKey.setPressed(false);
                 return;
             }
@@ -511,6 +542,12 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         }
 
         boolean usingSlowingItem = isUsingSlowingItem();
+        if (usingSlowingItem && !isUseKeyHeld()) {
+            if (this.step != Step.NONE) {
+                abort(true);
+            }
+            return;
+        }
         if (usingSlowingItem) {
             if (this.step == Step.NONE) {
                 Hand usedHand = mc.player.getActiveHand();
@@ -584,6 +621,9 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         if (this.step != Step.USING) {
             return;
         }
+        if (!isUseKeyHeld()) {
+            return;
+        }
         if (!isUsingSlowingItem()) {
             return;
         }
@@ -596,6 +636,12 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
     @Subscribe
     public void onSendPacket(SendPacketEvent event) {
         if (mc.player == null) {
+            return;
+        }
+
+        if (this.step != Step.NONE && !isUseKeyHeld()) {
+            this.lockUseUntilRelease = false;
+            abort(true);
             return;
         }
 
@@ -621,7 +667,8 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
                 && interactPacket.getHand() != this.targetHand) {
             event.setCancelled();
             Hand hand = this.targetHand;
-            sendPacketSilent(new PlayerInteractItemC2SPacket(hand, interactPacket.getSequence(), mc.player.getYaw(), mc.player.getPitch()));
+            final Vec2f rotation = this.getUseItemPacketRotation();
+            sendPacketSilent(new PlayerInteractItemC2SPacket(hand, interactPacket.getSequence(), rotation.x, rotation.y));
             return;
         }
 
@@ -671,6 +718,10 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
 
         if (this.step == Step.SWAP_HANDS) {
             if (packet instanceof ScreenHandlerSlotUpdateS2CPacket || packet instanceof InventoryS2CPacket) {
+                if (!isUseKeyHeld()) {
+                    abort(true);
+                    return;
+                }
                 if (mc.options != null) {
                     mc.options.useKey.setPressed(true);
                     this.forcedUseKeyDown = true;
@@ -698,9 +749,18 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         }
     }
 
+    private Vec2f getUseItemPacketRotation() {
+        final float yaw = mc.player.getYaw();
+        final float pitch = mc.player.getPitch();
+        final DisablerModule disabler = OpalClient.getInstance().getModuleRepository().getModule(DisablerModule.class);
+        if (disabler != null && disabler.getActiveMode() instanceof HeypixelDisabler heypixel) {
+            return heypixel.getUseItemPacketRotation(yaw, pitch);
+        }
+        return new Vec2f(yaw, pitch);
+    }
+
     @Override
     public Enum<?> getEnumValue() {
         return NoSlowModule.Mode.NO_C0F;
     }
 }
-

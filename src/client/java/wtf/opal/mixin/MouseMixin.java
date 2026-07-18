@@ -17,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
+import wtf.opal.client.OpalClient;
+import wtf.opal.client.feature.module.impl.utility.AutoRodModule;
 import wtf.opal.event.EventDispatcher;
 import wtf.opal.event.impl.game.input.MouseUpdateEvent;
 import wtf.opal.event.impl.press.MousePressEvent;
@@ -30,7 +32,8 @@ MouseMixin {
 
     @Inject(
             method = "onMouseButton",
-            at = @At("HEAD")
+            at = @At("HEAD"),
+            cancellable = true
     )
     private void onMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
         if (action == 1) {
@@ -39,6 +42,13 @@ MouseMixin {
             }
 
             EventDispatcher.dispatch(new MousePressEvent(input.button()));
+
+            if (OpalClient.getInstance().isPostInitialization()) {
+                final AutoRodModule autoRod = OpalClient.getInstance().getModuleRepository().getModule(AutoRodModule.class);
+                if (autoRod != null && autoRod.isEnabled() && autoRod.shouldInterceptButton(input.button())) {
+                    ci.cancel();
+                }
+            }
         }
     }
 

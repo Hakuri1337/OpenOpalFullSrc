@@ -293,6 +293,9 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
             }
         }
         BlockFlyDelayedTickQueue.clear();
+        if (restoreSlot) {
+            this.handoffRotationToVanilla();
+        }
         BlockFlyRotationHandler.deactivate();
         BlockFlyRenderSpoof.clear();
         this.island.reset();
@@ -635,6 +638,26 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
     private void finishRotationTick() {
         this.lastRotations.set(this.rotations.yaw(), this.rotations.pitch());
         BlockFlyRotationHandler.setTargetRotation(this.rotations);
+    }
+
+    private void handoffRotationToVanilla() {
+        if (mc.player == null || !BlockFlyRotationHandler.isOwningRotation()) {
+            return;
+        }
+
+        final BlockFlyRotation sent = BlockFlyRotationHandler.sentRotation();
+        final BlockFlyRotation target = BlockFlyRotationHandler.targetRotation();
+        final BlockFlyRotation referenceRotation = sent != null ? sent : target;
+        if (referenceRotation == null) {
+            return;
+        }
+
+        final float wireReference = BlockFlyRotationHandler.wireYaw(referenceRotation.yaw());
+        final float exitYaw = wireReference + MathHelper.wrapDegrees(mc.player.getYaw() - wireReference);
+        mc.player.setYaw(exitYaw);
+        mc.player.lastYaw = exitYaw;
+        mc.player.setHeadYaw(exitYaw);
+        mc.player.setBodyYaw(exitYaw);
     }
 
     private double getBlockDistance() {

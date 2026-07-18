@@ -1,309 +1,144 @@
 package wtf.opal.client.feature.module.impl.utility;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.Entity;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.TntEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec2f;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
-import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
-import wtf.opal.client.feature.helper.impl.player.rotation.model.impl.HeypixelRotationModel;
-import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
+import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.module.Module;
 import wtf.opal.client.feature.module.ModuleCategory;
+import wtf.opal.client.feature.module.impl.visual.overlay.OverlayModule;
+import wtf.opal.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
+import wtf.opal.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger;
+import wtf.opal.client.renderer.NVGRenderer;
+import wtf.opal.client.renderer.repository.FontRepository;
+import wtf.opal.client.renderer.text.NVGTextRenderer;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.subscriber.Subscribe;
-import wtf.opal.utility.player.InventoryUtility;
-import wtf.opal.utility.player.MoveUtility;
-import wtf.opal.utility.player.RotationUtility;
+import wtf.opal.utility.misc.chat.ChatUtility;
+import wtf.opal.utility.render.ColorUtility;
 
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Queue;
+import java.util.Locale;
 
 import static wtf.opal.client.Constants.mc;
 
+/**
+ * Detection-only TNT warning. It never rotates, switches items, or places
+ * blocks; the module is intentionally limited to local awareness.
+ */
 public final class AntiTNTModule extends Module {
 
-    private static final float ROTATION_SPEED = 45.0F;
-    private static final float ROTATION_READY_DIFFERENCE = 5.0F;
+    private static final double WARNING_RADIUS = 6.0D;
+    private static final double WARNING_RADIUS_SQUARED = WARNING_RADIUS * WARNING_RADIUS;
 
-    private final Queue<BlockPos> blockPositionQueue = new ArrayDeque<>();
-
-    private TntEntity targetTnt;
-    private int savedHotbarSlot = -1;
-    private BlockPos lastPlacedPos;
-    private int placementCooldown;
-    private Vec2f targetRotation;
+    private final TntWarningIsland island = new TntWarningIsland();
+    private TntEntity nearestTnt;
+    private int warnedTntId = Integer.MIN_VALUE;
 
     public AntiTNTModule() {
-        super("AntiTNT", "Places blocks around you when nearby TNT is dangerous.", ModuleCategory.UTILITY);
+        super("AntiTNT", "Warns when ignited TNT is within six blocks.", ModuleCategory.UTILITY);
     }
 
     @Subscribe
     public void onPreGameTick(final PreGameTickEvent event) {
-        if (mc.player == null || mc.world == null || mc.interactionManager == null) {
-            this.resetState();
+        if (mc.player == null || mc.world == null) {
+            this.clearWarning();
             return;
         }
 
-        if (this.isMoving()) {
-            this.blockPositionQueue.clear();
-            this.restoreSlot();
-            this.targetRotation = null;
-            this.targetTnt = null;
-            return;
-        }
-
-        if (this.placementCooldown > 0) {
-            this.placementCooldown--;
-        }
-
-        if (this.blockPositionQueue.isEmpty()) {
-            this.targetTnt = this.findNearestTnt();
-        }
-
-        if (!this.blockPositionQueue.isEmpty()) {
-            this.placeNextBlock();
-            return;
-        }
-
-        if (this.targetTnt != null) {
-            this.collectBlockPositions();
-        } else {
-            this.targetRotation = null;
-        }
-    }
-
-    private boolean isMoving() {
-        return mc.options != null
-                && (MoveUtility.isMoving()
-                || mc.options.forwardKey.isPressed()
-                || mc.options.backKey.isPressed()
-                || mc.options.leftKey.isPressed()
-                || mc.options.rightKey.isPressed()
-                || mc.player.isSprinting());
-    }
-
-    private TntEntity findNearestTnt() {
-        final Box searchBox = mc.player.getBoundingBox().expand(20.0D);
-        return mc.world.getEntitiesByClass(TntEntity.class, searchBox, entity -> entity.isAlive() && entity.getFuse() > 0)
-                .stream()
-                .filter(entity -> this.isMovingTowardsPlayer(entity) || this.hasLineOfSight(entity))
-                .min(Comparator.comparingDouble(entity -> entity.squaredDistanceTo(mc.player)))
+        this.nearestTnt = mc.world.getEntitiesByClass(
+                        TntEntity.class,
+                        mc.player.getBoundingBox().expand(WARNING_RADIUS),
+                        tnt -> tnt.isAlive()
+                                && tnt.getFuse() > 0
+                                && mc.player.squaredDistanceTo(tnt) <= WARNING_RADIUS_SQUARED
+                ).stream()
+                .min(Comparator.comparingDouble(mc.player::squaredDistanceTo))
                 .orElse(null);
-    }
 
-    private boolean hasLineOfSight(final TntEntity tnt) {
-        if (tnt.squaredDistanceTo(mc.player) > 64.0D) {
-            return false;
-        }
-
-        final BlockHitResult hit = mc.world.raycast(new RaycastContext(
-                this.getEntityPos(tnt),
-                mc.player.getEyePos(),
-                RaycastContext.ShapeType.COLLIDER,
-                RaycastContext.FluidHandling.NONE,
-                mc.player
-        ));
-        return hit.getType() == HitResult.Type.MISS;
-    }
-
-    private boolean isMovingTowardsPlayer(final Entity entity) {
-        final Vec3d toPlayer = this.getEntityPos(mc.player).subtract(this.getEntityPos(entity)).normalize();
-        return entity.getVelocity().dotProduct(toPlayer) > 0.05D;
-    }
-
-    private void collectBlockPositions() {
-        if (!this.blockPositionQueue.isEmpty()) {
+        if (this.nearestTnt == null) {
+            this.clearWarning();
             return;
         }
 
-        if (mc.currentScreen != null) {
-            mc.currentScreen.close();
-            mc.setScreen(null);
+        this.island.setTarget(this.nearestTnt);
+        if (this.warnedTntId != this.nearestTnt.getId()) {
+            this.warnedTntId = this.nearestTnt.getId();
+            final double distance = Math.sqrt(mc.player.squaredDistanceTo(this.nearestTnt));
+            ChatUtility.error(String.format(Locale.ROOT, "TNT nearby: %.1fm", distance));
         }
 
-        final BlockPos playerPos = mc.player.getBlockPos();
-        for (Direction direction : Direction.Type.HORIZONTAL) {
-            final BlockPos sidePos = playerPos.offset(direction);
-            if (this.canPlaceAt(sidePos)) {
-                this.blockPositionQueue.add(sidePos.toImmutable());
-            }
-        }
-
-        for (Direction direction : Direction.Type.HORIZONTAL) {
-            final BlockPos sidePos = playerPos.up().offset(direction);
-            if (this.canPlaceAt(sidePos)) {
-                this.blockPositionQueue.add(sidePos.toImmutable());
-            }
-        }
-
-        final BlockPos abovePos = playerPos.up(2);
-        if (this.canPlaceAt(abovePos)) {
-            this.blockPositionQueue.add(abovePos.toImmutable());
-        }
-    }
-
-    private void placeNextBlock() {
-        if (this.placementCooldown > 0 || this.blockPositionQueue.isEmpty()) {
-            return;
-        }
-
-        final BlockPos placePos = this.blockPositionQueue.peek();
-        final BlockHitResult hit = this.getPlacementHitResult(placePos);
-        if (hit == null) {
-            this.blockPositionQueue.poll();
-            return;
-        }
-
-        final int blockSlot = this.findBlockSlot();
-        if (blockSlot == -1) {
-            this.blockPositionQueue.clear();
-            this.restoreSlot();
-            return;
-        }
-
-        if (this.savedHotbarSlot == -1) {
-            this.savedHotbarSlot = mc.player.getInventory().getSelectedSlot();
-        }
-
-        final Vec2f rotation = RotationUtility.getVanillaRotation(RotationUtility.getRotationFromPosition(hit.getPos()));
-        this.targetRotation = rotation;
-        RotationHelper.getHandler().rotate(rotation, new HeypixelRotationModel(ROTATION_SPEED));
-        if (RotationUtility.getRotationDifference(this.getCurrentRotation(), rotation) > ROTATION_READY_DIFFERENCE) {
-            return;
-        }
-
-        SlotHelper.setCurrentItem(blockSlot).silence(SlotHelper.Silence.NONE);
-        final ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-        if (result.isAccepted()) {
-            mc.player.swingHand(Hand.MAIN_HAND);
-        }
-
-        this.lastPlacedPos = placePos;
-        this.blockPositionQueue.poll();
-        this.placementCooldown = 1;
-
-        if (this.blockPositionQueue.isEmpty()) {
-            this.restoreSlot();
-            this.targetRotation = null;
-        }
-    }
-
-    private Vec2f getCurrentRotation() {
-        return new Vec2f(
-                RotationHelper.getClientHandler().getYawOr(mc.player.getYaw()),
-                RotationHelper.getClientHandler().getPitchOr(mc.player.getPitch())
-        );
-    }
-
-    private void restoreSlot() {
-        if (this.savedHotbarSlot != -1 && mc.player != null) {
-            SlotHelper.setCurrentItem(this.savedHotbarSlot).silence(SlotHelper.Silence.NONE);
-            this.savedHotbarSlot = -1;
-        }
-    }
-
-    private boolean canPlaceAt(final BlockPos pos) {
-        if (mc.world.isOutOfHeightLimit(pos.getY())) {
-            return false;
-        }
-        return mc.world.getBlockState(pos).isReplaceable()
-                && !mc.player.getBoundingBox().intersects(new Box(pos));
-    }
-
-    private int findBlockSlot() {
-        for (int slot = 0; slot < 9; slot++) {
-            final ItemStack stack = mc.player.getInventory().getStack(slot);
-            if (stack.getItem() instanceof BlockItem blockItem && InventoryUtility.isGoodBlock(blockItem.getBlock())) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
-    private boolean isSolidBlock(final BlockPos pos) {
-        final BlockState state = mc.world.getBlockState(pos);
-        return !state.isAir() && !state.isReplaceable() && !state.getCollisionShape(mc.world, pos).isEmpty();
-    }
-
-    private BlockHitResult getPlacementHitResult(final BlockPos placePos) {
-        final BlockPos belowPos = placePos.down();
-        if (this.isSolidBlock(belowPos)) {
-            return new BlockHitResult(this.getHitVec(belowPos, Direction.UP), Direction.UP, belowPos, false);
-        }
-
-        for (Direction direction : Direction.Type.HORIZONTAL) {
-            final BlockPos sidePos = placePos.offset(direction);
-            if (!this.isSolidBlock(sidePos)) {
-                continue;
-            }
-
-            final Direction hitFace = direction.getOpposite();
-            return new BlockHitResult(this.getHitVec(sidePos, hitFace), hitFace, sidePos, false);
-        }
-
-        return null;
-    }
-
-    private Vec3d getHitVec(final BlockPos pos, final Direction direction) {
-        double hitX = pos.getX() + 0.5D;
-        double hitY = pos.getY() + 0.5D;
-        double hitZ = pos.getZ() + 0.5D;
-
-        if (direction == Direction.UP || direction == Direction.DOWN) {
-            hitX += (Math.random() - 0.5D) * 0.6D;
-            hitZ += (Math.random() - 0.5D) * 0.6D;
+        if (this.isDynamicIslandEnabled()) {
+            DynamicIslandElement.addTrigger(this.island);
         } else {
-            hitY += (Math.random() - 0.5D) * 0.5D;
+            DynamicIslandElement.removeTrigger(this.island);
         }
-
-        if (direction == Direction.WEST || direction == Direction.EAST) {
-            hitZ += (Math.random() - 0.5D) * 0.6D;
-        }
-        if (direction == Direction.SOUTH || direction == Direction.NORTH) {
-            hitX += (Math.random() - 0.5D) * 0.6D;
-        }
-
-        return new Vec3d(
-                Math.max(pos.getX(), Math.min(pos.getX() + 1.0D, hitX)),
-                Math.max(pos.getY(), Math.min(pos.getY() + 1.0D, hitY)),
-                Math.max(pos.getZ(), Math.min(pos.getZ() + 1.0D, hitZ))
-        );
-    }
-
-    private Vec3d getEntityPos(final Entity entity) {
-        return new Vec3d(entity.getX(), entity.getY(), entity.getZ());
-    }
-
-    private void resetState() {
-        this.blockPositionQueue.clear();
-        this.targetTnt = null;
-        this.lastPlacedPos = null;
-        this.targetRotation = null;
-        this.placementCooldown = 0;
-        this.restoreSlot();
-    }
-
-    @Override
-    protected void onEnable() {
-        this.resetState();
-        super.onEnable();
     }
 
     @Override
     protected void onDisable() {
-        this.resetState();
+        this.clearWarning();
         super.onDisable();
+    }
+
+    private boolean isDynamicIslandEnabled() {
+        final OverlayModule overlay = OpalClient.getInstance().getModuleRepository().getModule(OverlayModule.class);
+        return overlay != null && overlay.isEnabled();
+    }
+
+    private void clearWarning() {
+        this.nearestTnt = null;
+        this.warnedTntId = Integer.MIN_VALUE;
+        this.island.clear();
+        DynamicIslandElement.removeTrigger(this.island);
+    }
+
+    private static final class TntWarningIsland implements IslandTrigger {
+        private static final int WARNING_COLOR = 0xFFE65A5A;
+
+        private TntEntity target;
+
+        private void setTarget(final TntEntity target) {
+            this.target = target;
+        }
+
+        private void clear() {
+            this.target = null;
+        }
+
+        @Override
+        public void renderIsland(final DrawContext context, final float posX, final float posY,
+                                 final float width, final float height, final float progress) {
+            if (this.target == null || !this.target.isAlive() || mc.player == null) {
+                DynamicIslandElement.removeTrigger(this);
+                return;
+            }
+
+            final NVGTextRenderer titleFont = FontRepository.getFont("productsans-bold");
+            final NVGTextRenderer footerFont = FontRepository.getFont("productsans-medium");
+            final float distance = (float) Math.sqrt(mc.player.squaredDistanceTo(this.target));
+            final float fuseSeconds = this.target.getFuse() / 20.0F;
+
+            NVGRenderer.roundedRect(posX + 6.0F, posY + 4.0F, 17.0F, 17.0F, 8.5F,
+                    ColorUtility.applyOpacity(WARNING_COLOR, 150));
+            titleFont.drawString("!", posX + 12.0F, posY + 17.0F, 11.0F, -1);
+            titleFont.drawString("TNT ALERT", posX + 30.0F, posY + 12.5F, 8.0F, WARNING_COLOR);
+            footerFont.drawString(String.format(Locale.ROOT, "%.1fm  %.1fs", distance, fuseSeconds),
+                    posX + 30.0F, posY + 19.0F, 6.0F, ColorUtility.MUTED_COLOR);
+        }
+
+        @Override
+        public float getIslandWidth() {
+            return 130.0F;
+        }
+
+        @Override
+        public float getIslandHeight() {
+            return 25.0F;
+        }
+
+        @Override
+        public int getIslandPriority() {
+            return 12;
+        }
     }
 }

@@ -17,7 +17,6 @@ import net.minecraft.util.math.Vec3d;
 import wtf.opal.client.OpalClient;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseButton;
 import wtf.opal.client.feature.helper.impl.player.mouse.MouseHelper;
-import wtf.opal.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.opal.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.opal.client.feature.helper.impl.player.swing.SwingDelay;
 import wtf.opal.client.feature.module.Module;
@@ -41,6 +40,7 @@ import wtf.opal.utility.misc.math.MathUtility;
 import wtf.opal.utility.misc.math.RandomUtility;
 import wtf.opal.utility.player.PlayerUtility;
 import wtf.opal.utility.player.RaycastUtility;
+import wtf.opal.utility.player.RotationInjector;
 import wtf.opal.utility.render.ColorUtility;
 import wtf.opal.utility.render.CustomRenderLayers;
 
@@ -232,6 +232,7 @@ public final class KillAuraModule extends Module {
     private int grimAttackKeepTicks;
     private int grimDamageKeepTicks;
     private int grimDamageWindowTicks;
+    private boolean onTickRotationApplied;
     private BufferAllocator worldAllocator;
 
     @Subscribe
@@ -349,6 +350,7 @@ public final class KillAuraModule extends Module {
 
         if (!shouldRun()) {
             this.targeting.reset();
+            this.clearOnTickRotation();
             return;
         }
 
@@ -356,12 +358,20 @@ public final class KillAuraModule extends Module {
 
         final CurrentTarget target = this.targeting.getRotationTarget();
         if (target == null) {
+            this.clearOnTickRotation();
             updateAutoblock();
             return;
         }
 
-        RotationHelper.getHandler().rotate(
+        if (this.settings.getRotationMode() == RotationInjector.RotationMode.ON_TICK) {
+            this.onTickRotationApplied = true;
+        } else {
+            this.clearOnTickRotation();
+        }
+
+        RotationInjector.applyRotation(
                 target.getRotations().rotation(),
+                settings.getRotationMode(),
                 settings.createRotationModel()
         );
 
@@ -471,6 +481,7 @@ public final class KillAuraModule extends Module {
 
     @Override
     protected void onDisable() {
+        this.clearOnTickRotation();
         this.targeting.reset();
         this.hitResult = null;
         this.attacks = 0;
@@ -480,6 +491,13 @@ public final class KillAuraModule extends Module {
         this.haloTrailHeights.clear();
         releaseAutoblock();
         super.onDisable();
+    }
+
+    private void clearOnTickRotation() {
+        if (this.onTickRotationApplied) {
+            RotationInjector.clear();
+            this.onTickRotationApplied = false;
+        }
     }
 
     private final java.util.ArrayDeque<Double> haloTrailHeights = new java.util.ArrayDeque<>();

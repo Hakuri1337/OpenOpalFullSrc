@@ -104,6 +104,7 @@ public final class ScaffoldModule extends Module implements IslandTrigger, Depre
     private boolean upTellyBypassActive;
     private boolean upTellyBypassRecovering;
     private boolean upTellyBypassPendingGroundJump;
+    private boolean onTickRotationApplied;
 
     private Map<Integer, Integer> realStackSizeMap;
     private int autoJumpTicks;
@@ -125,6 +126,8 @@ public final class ScaffoldModule extends Module implements IslandTrigger, Depre
     @Override
     protected void onDisable() {
         RotationHelper.getHandler().reset();
+        RotationInjector.clear();
+        this.onTickRotationApplied = false;
         SlotHelper.getInstance().stop();
         this.dynamicIsland.onDisable();
         this.realStackSizeMap = null;
@@ -429,11 +432,21 @@ public final class ScaffoldModule extends Module implements IslandTrigger, Depre
                         ? ((LocalDataWatch.get().getKnownServerManager().getCurrentServer() instanceof HypixelServer && effectiveMode == ScaffoldSettings.Mode.WATCHDOG) ? new HypixelRotationModel() : this.settings.createRotationModel())
                         : this.createEffectiveRotationModel();
                 final Vec2f targetRotation = autoJumpActive ? this.getAutoJumpRotation(rotation.rotation()) : rotation.rotation();
-                RotationHelper.getHandler().rotate(
+                if (this.settings.getRotationMode() == RotationInjector.RotationMode.ON_TICK) {
+                    this.onTickRotationApplied = true;
+                } else if (this.onTickRotationApplied) {
+                    RotationInjector.clear();
+                    this.onTickRotationApplied = false;
+                }
+                RotationInjector.applyRotation(
                         targetRotation,
+                        this.settings.getRotationMode(),
                         model
                 );
             }
+        } else if (this.onTickRotationApplied && RotationInjector.isActive()) {
+            RotationInjector.startReturn(RotationUtility.getRotation());
+            this.onTickRotationApplied = false;
         }
     }
 
