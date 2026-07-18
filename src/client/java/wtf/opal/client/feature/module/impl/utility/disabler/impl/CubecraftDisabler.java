@@ -10,10 +10,8 @@ import wtf.opal.client.feature.module.property.impl.mode.ModuleMode;
 import wtf.opal.event.impl.game.JoinWorldEvent;
 import wtf.opal.event.impl.game.PreGameTickEvent;
 import wtf.opal.event.impl.game.packet.SendPacketEvent;
-import wtf.opal.event.impl.game.player.teleport.PreTeleportEvent;
 import wtf.opal.event.impl.game.server.ServerDisconnectEvent;
 import wtf.opal.event.subscriber.Subscribe;
-import wtf.opal.utility.misc.chat.ChatUtility;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -28,7 +26,6 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
 
     private final Queue<PacketEntry> packetQueue = new ConcurrentLinkedQueue<>();
     private long disabledStartedAt;
-    private boolean ignoreInitialTeleport;
 
     public CubecraftDisabler(DisablerModule module) {
         super(module);
@@ -54,25 +51,6 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
     }
 
     @Subscribe
-    public void onPreTeleport(PreTeleportEvent event) {
-        if (this.ignoreInitialTeleport) {
-            this.ignoreInitialTeleport = false;
-            return;
-        }
-
-        this.handleLagCorrection();
-    }
-
-    private void handleLagCorrection() {
-        if (!this.isHandlingEvents()) {
-            return;
-        }
-
-        this.flushQueue();
-        ChatUtility.print("CubeCraft Disabler | lag detected, continuing immediately.");
-    }
-
-    @Subscribe
     public void onPreGameTick(PreGameTickEvent event) {
         final long now = System.currentTimeMillis();
         PacketEntry entry;
@@ -84,17 +62,17 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
 
     @Subscribe
     public void onJoinWorld(JoinWorldEvent event) {
-        this.clearState(true);
+        this.clearState();
     }
 
     @Subscribe
     public void onServerDisconnect(ServerDisconnectEvent event) {
-        this.clearState(true);
+        this.clearState();
     }
 
     @Override
     public void onEnable() {
-        this.clearState(mc.player == null || mc.world == null);
+        this.clearState();
         super.onEnable();
     }
 
@@ -132,9 +110,8 @@ public final class CubecraftDisabler extends ModuleMode<DisablerModule> {
         }
     }
 
-    private void clearState(boolean expectInitialTeleport) {
+    private void clearState() {
         this.packetQueue.clear();
-        this.ignoreInitialTeleport = expectInitialTeleport;
         this.disabledStartedAt = System.currentTimeMillis();
     }
 
