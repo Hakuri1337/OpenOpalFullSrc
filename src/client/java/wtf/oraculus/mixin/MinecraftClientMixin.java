@@ -5,12 +5,18 @@ import com.llamalad7.mixinextras.sugar.ref.LocalBooleanRef;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.RunArgs;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.decoration.ArmorStandEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.BlockItem;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
@@ -124,6 +130,28 @@ public abstract class MinecraftClientMixin {
     }
 
     @Redirect(
+            method = "doItemUse",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/network/ClientPlayerInteractionManager;interactEntityAtLocation(Lnet/minecraft/entity/player/PlayerEntity;Lnet/minecraft/entity/Entity;Lnet/minecraft/util/hit/EntityHitResult;Lnet/minecraft/util/Hand;)Lnet/minecraft/util/ActionResult;"
+            )
+    )
+    private ActionResult normalizeLivingEntityInteractionPoint(
+            ClientPlayerInteractionManager interactionManager,
+            PlayerEntity player,
+            Entity entity,
+            EntityHitResult hitResult,
+            Hand hand
+    ) {
+        // Some server/proxy stacks expose the vanilla INTERACT fallback as
+        // INTERACT_AT at the entity origin. Keep both packet positions equal.
+        final EntityHitResult interactionHit = entity instanceof LivingEntity && !(entity instanceof ArmorStandEntity)
+                ? new EntityHitResult(entity)
+                : hitResult;
+        return interactionManager.interactEntityAtLocation(player, entity, interactionHit, hand);
+    }
+
+    @Redirect(
             method = "handleInputEvents",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/PlayerInventory;setSelectedSlot(I)V")
     )
@@ -194,23 +222,11 @@ public abstract class MinecraftClientMixin {
             cancellable = true
     )
     private void hookItemUse(CallbackInfo ci) {
-        if (this.shouldSuppressSyntheticEntityUse()) {
-            ci.cancel();
-            return;
-        }
         final ItemUseEvent event = new ItemUseEvent();
         EventDispatcher.dispatch(event);
         if (event.isCancelled()) {
             ci.cancel();
         }
-    }
-
-    @Unique
-    private boolean shouldSuppressSyntheticEntityUse() {
-        final MouseButton rightButton = MouseHelper.getRightButton();
-        return this.crosshairTarget instanceof EntityHitResult
-                && rightButton.isSyntheticPress()
-                && !rightButton.isPhysicalPressed();
     }
 
     @Inject(
