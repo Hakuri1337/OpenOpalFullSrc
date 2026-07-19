@@ -13,6 +13,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.BlockItem;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.Opcodes;
@@ -193,11 +194,23 @@ public abstract class MinecraftClientMixin {
             cancellable = true
     )
     private void hookItemUse(CallbackInfo ci) {
+        if (this.shouldSuppressSyntheticEntityUse()) {
+            ci.cancel();
+            return;
+        }
         final ItemUseEvent event = new ItemUseEvent();
         EventDispatcher.dispatch(event);
         if (event.isCancelled()) {
             ci.cancel();
         }
+    }
+
+    @Unique
+    private boolean shouldSuppressSyntheticEntityUse() {
+        final MouseButton rightButton = MouseHelper.getRightButton();
+        return this.crosshairTarget instanceof EntityHitResult
+                && rightButton.isSyntheticPress()
+                && !rightButton.isPhysicalPressed();
     }
 
     @Inject(

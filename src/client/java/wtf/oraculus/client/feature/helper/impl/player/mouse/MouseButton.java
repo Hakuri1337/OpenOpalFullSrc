@@ -12,11 +12,13 @@ public final class MouseButton {
     }
 
     private boolean pressed;
+    private boolean syntheticPress;
     private boolean disabled;
     private int holdTicks;
 
     public void setDisabled() {
         this.pressed = false;
+        this.syntheticPress = false;
         this.holdTicks = 0;
         this.disabled = true;
     }
@@ -27,6 +29,7 @@ public final class MouseButton {
 
     public void setPressed(boolean pressed, int holdTicks) {
         this.pressed = pressed;
+        this.syntheticPress = pressed;
         this.holdTicks = holdTicks;
     }
 
@@ -53,6 +56,18 @@ public final class MouseButton {
         return this.pressed;
     }
 
+    /**
+     * True for the current input pass when a module, rather than a physical
+     * mouse press, requested this button.
+     */
+    public boolean isSyntheticPress() {
+        return this.syntheticPress;
+    }
+
+    public boolean isPhysicalPressed() {
+        return this.keyBinding.isPressed();
+    }
+
     public void tick() {
         if (this.holdTicks > 0) {
             this.holdTicks--;
@@ -61,6 +76,7 @@ public final class MouseButton {
             this.showSwings = true;
         }
         this.pressed = false;
+        this.syntheticPress = false;
         this.disabled = false;
     }
 
