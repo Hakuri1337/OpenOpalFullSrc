@@ -1,8 +1,8 @@
 {
 	"schemaVersion": 1,
-	"id": "opal",
-	"version": "stable-b5",
-	"name": "OpenOpal",
+	"id": "oraculus",
+	"version": "${version}",
+	"name": "${display_name}",
 	"description": "we are charlie kirk!!!!!!",
 	"authors": [
 		"tear",
@@ -13,17 +13,17 @@
 		"sources": "yes"
 	},
 	"license": "GPL-3.0",
-	"icon": "assets/opal/icon.png",
+	"icon": "assets/oraculus/icon.png",
 	"environment": "client",
 	"entrypoints": {
 		"client": [
-			"wtf.opal.OpalFabric"
+			"wtf.oraculus.OraculusFabric"
 		]
 	},
 	"mixins": [
-		"opal.mixins.json"
+		"oraculus.mixins.json"
 	],
-	"accessWidener": "opal.accesswidener",
+	"accessWidener": "oraculus.accesswidener",
 	"depends": {
 		"fabricloader": ">=0.18.4",
 		"minecraft": "~1.21.10",

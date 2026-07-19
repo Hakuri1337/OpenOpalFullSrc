@@ -1,9 +1,9 @@
 声明：有未知heypixel 1h ban。
 scaffold改名为BlockFly并且修好了。
-# OpenOpal
+# Oraculus
 
-OpenOpal is a free and open-source Fabric client mod for Minecraft 1.21.10.
-It is based on Opal v2 and focuses on maintaining a usable modern client with
+Oraculus is a free and open-source Fabric client mod for Minecraft 1.21.10.
+It is derived from the original v2 codebase and focuses on maintaining a usable modern client with
 combat, movement, utility, visual, and world modules adapted for the current
 codebase.
 
@@ -22,6 +22,20 @@ AutoBucket, ChestStealer, InventoryMove, FastWeb, AntiTNT, TargetStrafe,
 NoSlow NoC0F, Scaffold-related utilities, ClickGUI behavior, configuration
 loading, and MainPage Visuals.
 
+## Editions
+
+Oraculus is built as two mutually exclusive distributions:
+
+- `Oraculus-Beta-b5.jar` contains the complete module and mode set.
+- `Oraculus-Free-b5.jar` omits FakeLag, SuperKnockBack, TargetStrafe,
+  FastPearl, AntiStaff, AutoRod, Heypixel/Hypixel Disabler modes, and
+  Watchdog/NoC0F NoSlow modes at compile time.
+
+Install exactly one distribution at a time because both use the Fabric mod id
+`oraculus`. Free safely preserves Beta-only module settings and bindings when
+sharing the same configuration directory, so moving back to Beta does not
+discard them.
+
 ## Building
 
 Install JDK 21, then run:
@@ -30,11 +44,18 @@ Install JDK 21, then run:
 .\gradlew.bat build
 ```
 
-The remapped mod jar is generated under:
+One build produces all four release jars:
 
 ```text
-build/libs/
+build/libs/Oraculus-Beta-b5-NoObf.jar
+build/libs/Oraculus-Beta-b5-Obf.jar
+build/libs/Oraculus-Free-b5-NoObf.jar
+build/libs/Oraculus-Free-b5-Obf.jar
 ```
+
+`NoObf` is the canonical remapped Fabric artifact. `Obf` is the equivalent
+ProGuard-processed artifact; its Mixin, Fabric entrypoint, configuration, and
+LiquidGlass runtime interfaces are kept compatible with Minecraft 1.21.10.
 
 On Linux or macOS, use:
 
@@ -44,7 +65,7 @@ On Linux or macOS, use:
 
 ## Configuration
 
-OpenOpal loads the default configuration on startup and saves it on shutdown.
+Oraculus loads the default configuration on startup and saves it on shutdown.
 The in-game command system includes configuration commands through `.c`.
 
 Common commands include:
@@ -55,7 +76,7 @@ Common commands include:
 
 ## Module Areas
 
-OpenOpal currently registers modules across these categories:
+The following complete module list applies to the Beta distribution:
 
 - Combat: KillAura, Criticals, Velocity, Backtrack, CrystalAura, Teams, Reach,
   AutoClicker, AttackDelay, AutoHead, Block, Piercing.
@@ -85,8 +106,8 @@ covered by `.gitignore`.
 
 ## License
 
-OpenOpal is licensed under the GNU General Public License v3.0. See
+Oraculus is licensed under the GNU General Public License v3.0. See
 [LICENSE](LICENSE) for details.
 
 ## More
-If You want to get a business license, which is used to sell your openopal-base client, please submit a “Issues”
+If You want to get a business license, which is used to sell your Oraculus-based client, please submit an issue.
