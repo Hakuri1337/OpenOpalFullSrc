@@ -29,10 +29,18 @@
 # Script-facing surface is dynamically accessed by user scripts.
 -keep class wtf.oraculus.scripting.** { *; }
 
-# ReGlass implements Minecraft's special GUI renderer/state interfaces.  Their
-# runtime method names are mapped by Minecraft itself, so obfuscating the
-# implementations breaks interface dispatch (for example bounds()).
--keep class wtf.oraculus.client.renderer.liquidglass.** { *; }
+# Minecraft and Fabric call these objects through runtime interfaces or
+# overridable methods whose names come from the remapped game JAR. Keep the
+# UI-facing surface conservative: changing an implementation name here causes
+# AbstractMethodError rather than a recoverable missing-method failure.
+-keep class wtf.oraculus.client.renderer.** { *; }
+-keep class wtf.oraculus.client.screen.** { *; }
+-keep class wtf.oraculus.utility.render.** { *; }
+-keep class wtf.oraculus.client.music.** { *; }
+-keep class * extends net.minecraft.** { *; }
+-keep class * implements net.minecraft.** { *; }
+-keep class * extends net.fabricmc.** { *; }
+-keep class * implements net.fabricmc.** { *; }
 
 # The catalog builds modules and their persisted settings. Class names can be
 # safely shortened, but field names must remain stable for existing configs and

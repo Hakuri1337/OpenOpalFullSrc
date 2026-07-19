@@ -158,7 +158,7 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
                 targetRotation,
                 this.currentPlacement.clickedFace(),
                 this.currentPlacement.supportPos(),
-                false
+                true
         );
         if (!this.canBuildNow && !this.isPlacementReachable(this.currentPlacement)) {
             return;
@@ -318,6 +318,10 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
 
         final int placeableSlot = this.slotController.selectPlaceableSlot();
         BlockFlyRenderSpoof.update(this.settings.renderItemSpoof(), this.slotController.originalSlot());
+        if (placeableSlot == -1) {
+            this.setEnabled(false);
+            return;
+        }
         final boolean jumpHeld = this.keyController.isPhysicalJumpDown();
         if (this.targetYLevel == -1
                 || this.targetYLevel > MathHelper.floor(mc.player.getY()) - 1
@@ -401,8 +405,8 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
         if (!BlockFlyDelayedTickQueue.isEmpty()) {
             return;
         }
-        final BlockFlyRotation rotationToBlock = BlockFlyRotationUtil.rotationToBlock(
-                this.currentPlacement.supportPos(), 1.0F);
+        final BlockFlyRotation rotationToBlock = BlockFlyRotationUtil.rotationFromVec(
+                getHitVec(this.currentPlacement.supportPos(), this.currentPlacement.clickedFace()));
         final BlockFlyPlacementTarget delayedPlacement = this.currentPlacement;
         this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
         BlockFlyRotationHandler.setTargetRotation(this.rotations);
@@ -445,16 +449,15 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
             eye = new Vec3d(eye.x, Math.max(simulator.y() + mc.player.getEyeHeight(mc.player.getPose()), eye.y), eye.z);
         }
         final BlockFlyPlacementTarget target = BlockFlyPlacementSearch.findShellTarget(eye, this.targetYLevel);
-        if (target != null) {
-            this.currentPlacement = target;
-        }
+        this.currentPlacement = target;
     }
 
     private BlockFlyRotation getPlayerYawRotation() {
         if (this.currentPlacement == null) {
             return new BlockFlyRotation();
         }
-        return BlockFlyRotationUtil.rotationToBlock(this.currentPlacement.supportPos(), 0.0F);
+        return BlockFlyRotationUtil.rotationFromVec(
+                getHitVec(this.currentPlacement.supportPos(), this.currentPlacement.clickedFace()));
     }
 
     private BlockFlyRotation getTargetRotation(final boolean firstGroundTick) {
@@ -558,7 +561,8 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
 
     private void doSnap() {
         if (this.currentPlacement == null || mc.player == null || mc.interactionManager == null
-                || !BlockFlyBlockUtil.isPlaceable(this.slotController.selectedStack())) {
+                || !BlockFlyBlockUtil.isPlaceable(this.slotController.selectedStack())
+                || !this.isCurrentPlacementValid()) {
             return;
         }
         final Direction face = this.currentPlacement.clickedFace();
@@ -571,6 +575,15 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
             return;
         }
         if (!this.shouldBuild()) {
+            return;
+        }
+        final BlockFlyRotation targetRotation = BlockFlyRotationHandler.targetRotation();
+        if (!BlockFlyRayTraceUtil.canRayTrace(
+                targetRotation,
+                face,
+                this.currentPlacement.supportPos(),
+                true
+        )) {
             return;
         }
         final BlockHitResult hit = new BlockHitResult(
@@ -591,15 +604,32 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
     }
 
     private boolean isPlacementReachable(final BlockFlyPlacementTarget target) {
-        final BlockFlyRotation currentTarget = BlockFlyRotationHandler.targetRotation();
-        if (target == null || currentTarget == null || mc.player == null) {
+        if (target == null || mc.player == null) {
             return false;
         }
         final Vec3d faceNormal = Vec3d.of(target.clickedFace().getVector());
-        final Vec3d hitPoint = Vec3d.ofCenter(target.supportPos()).add(faceNormal.multiply(0.5D));
+        final Vec3d hitPoint = getHitVec(target.supportPos(), target.clickedFace());
         final Vec3d delta = hitPoint.subtract(mc.player.getEyePos());
         return delta.lengthSquared() <= 20.25D
                 && delta.normalize().dotProduct(faceNormal.multiply(-1.0D).normalize()) >= 0.0D;
+    }
+
+    private boolean isCurrentPlacementValid() {
+        if (this.currentPlacement == null || mc.player == null || mc.world == null) {
+            return false;
+        }
+        final BlockPos supportPos = this.currentPlacement.supportPos();
+        final Direction clickedFace = this.currentPlacement.clickedFace();
+        if (!BlockFlyBlockUtil.isAir(this.currentPlacement.placePos())
+                || !BlockFlyBlockUtil.isSupportFace(supportPos, clickedFace)) {
+            return false;
+        }
+        final Vec3d hitPoint = getHitVec(supportPos, clickedFace);
+        final Vec3d eyeToFace = hitPoint.subtract(mc.player.getEyePos());
+        if (eyeToFace.lengthSquared() > 20.25D) {
+            return false;
+        }
+        return eyeToFace.dotProduct(Vec3d.of(clickedFace.getVector())) < 0.0D;
     }
 
     private void resetSnap() {
@@ -724,17 +754,13 @@ public final class BlockFlyModule extends Module implements IslandTrigger {
         double x = pos.getX() + 0.5D;
         double y = pos.getY() + 0.5D;
         double z = pos.getZ() + 0.5D;
-        if (direction != Direction.UP && direction != Direction.DOWN) {
-            y += BlockFlyMathUtil.randomDouble(0.3D, -0.3D);
-        } else {
-            x += BlockFlyMathUtil.randomDouble(0.3D, -0.3D);
-            z += BlockFlyMathUtil.randomDouble(0.3D, -0.3D);
-        }
-        if (direction == Direction.WEST || direction == Direction.EAST) {
-            z += BlockFlyMathUtil.randomDouble(0.3D, -0.3D);
-        }
-        if (direction == Direction.SOUTH || direction == Direction.NORTH) {
-            x += BlockFlyMathUtil.randomDouble(0.3D, -0.3D);
+        switch (direction) {
+            case DOWN -> y = pos.getY() + 0.001D;
+            case UP -> y = pos.getY() + 0.999D;
+            case NORTH -> z = pos.getZ() + 0.001D;
+            case SOUTH -> z = pos.getZ() + 0.999D;
+            case WEST -> x = pos.getX() + 0.001D;
+            case EAST -> x = pos.getX() + 0.999D;
         }
         return new Vec3d(x, y, z);
     }

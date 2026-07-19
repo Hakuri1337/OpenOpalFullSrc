@@ -115,13 +115,14 @@ public final class BlockFlyPlacementSearch {
             final Vec3d normal = Vec3d.of(sourceDirection.getVector());
             final Vec3d facePoint = center.add(normal.multiply(0.5D));
             final BlockPos supportPos = placePos.offset(sourceDirection);
-            if (!BlockFlyBlockUtil.isSupportFace(supportPos, sourceDirection)) {
+            final Direction clickedFace = sourceDirection.getOpposite();
+            if (!BlockFlyBlockUtil.isSupportFace(supportPos, clickedFace)) {
                 continue;
             }
             final Vec3d delta = facePoint.subtract(eye);
             if (delta.lengthSquared() <= 20.25D
                     && delta.normalize().dotProduct(normal.normalize()) >= 0.0D) {
-                return new BlockFlyPlacementTarget(supportPos.toImmutable(), sourceDirection.getOpposite());
+                return new BlockFlyPlacementTarget(supportPos.toImmutable(), clickedFace);
             }
         }
         return null;

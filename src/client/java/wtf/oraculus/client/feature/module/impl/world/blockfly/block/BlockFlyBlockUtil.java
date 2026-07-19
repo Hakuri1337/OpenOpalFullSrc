@@ -33,7 +33,7 @@ public final class BlockFlyBlockUtil {
     }
 
     public static boolean isPlaceable(final ItemStack stack) {
-        if (stack == null || stack.isEmpty() || stack.getCount() <= 1
+        if (stack == null || stack.isEmpty() || stack.getCount() <= 0
                 || !(stack.getItem() instanceof BlockItem blockItem)
                 || stack.getItem() instanceof PlayerHeadItem) {
             return false;
