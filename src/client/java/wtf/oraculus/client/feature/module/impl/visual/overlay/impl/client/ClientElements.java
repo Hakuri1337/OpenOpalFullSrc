@@ -24,6 +24,7 @@ import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.utility.player.MoveUtility;
 import wtf.oraculus.utility.render.ColorUtility;
+import wtf.oraculus.utility.render.ClientTheme;
 
 import java.util.Locale;
 
@@ -56,6 +57,11 @@ public final class ClientElements implements IOverlayElement {
         final Window window = mc.getWindow();
         final float scaledWidth = window.getScaledWidth();
         final float scaledHeight = window.getScaledHeight();
+
+        if (ColorUtility.getClientTheme().first.equals(ClientTheme.SIGMA.getColors().first)) {
+            BOLD_FONT.drawStringWithShadow("SIGMA", 8, 14, 11, colors.first);
+            REGULAR_FONT.drawStringWithShadow("Jello Style", 8, 25, 7, 0xff718096);
+        }
 
         // Bottom left
         {

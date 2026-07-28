@@ -13,7 +13,7 @@ import wtf.oraculus.event.subscriber.Subscribe;
 
 import static wtf.oraculus.client.Constants.mc;
 
-/** OpenZen AutoRod's held-button switch/use/restore flow. */
+/** Oraculus AutoRod's held-button switch/use/restore flow. */
 public final class AutoRodModule extends Module {
 
     private final ModeProperty<ButtonMode> button = new ModeProperty<>("Button", ButtonMode.MOUSE4);

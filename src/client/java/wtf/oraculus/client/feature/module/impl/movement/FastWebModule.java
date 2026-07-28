@@ -22,7 +22,7 @@ public final class FastWebModule extends Module {
     private boolean exitRecoveryPending;
 
     public FastWebModule() {
-        super("FastWeb", "Reduces cobweb slowdown using the OpenZen FastWeb flow.", ModuleCategory.MOVEMENT);
+        super("FastWeb", "Reduces cobweb slowdown using the Oraculus FastWeb flow.", ModuleCategory.MOVEMENT);
     }
 
     @Override

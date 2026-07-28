@@ -6,6 +6,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.Packet;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 import net.minecraft.util.ActionResult;
@@ -29,6 +30,7 @@ import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MoveInputEvent;
 import wtf.oraculus.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
+import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
 import wtf.oraculus.mixin.ClientPlayerInteractionManagerAccessor;
 import wtf.oraculus.utility.player.RotationUtility;
@@ -42,7 +44,8 @@ public final class AutoBucketModule extends Module {
     private static final float MAX_PICKUP_PITCH = 90.0F;
     private static final int PICKUP_PREPARE_TICKS = 3;
     private static final int PICKUP_CONFIRM_TICKS = 10;
-    private static final int PICKUP_MAX_ATTEMPTS = 12;
+    private static final int PICKUP_MAX_ATTEMPTS = 24;
+    private static final int PICKUP_SOURCE_APPEAR_WAIT_TICKS = 20;
     private static final int PICKUP_BLOCKED_RETRY_TICKS = 20;
     private static final int PLAYER_SCREEN_HOTBAR_START = 36;
 
@@ -55,6 +58,9 @@ public final class AutoBucketModule extends Module {
             .hideIf(() -> !this.mlg.getValue());
     private final BooleanProperty recovery = new BooleanProperty("Recovery", true)
             .hideIf(() -> !this.mlg.getValue());
+    private final NumberProperty pickupDelay = new NumberProperty(
+            "Pickup Delay", "ms", 100.0D, 5.0D, 500.0D, 5.0D
+    ).hideIf(() -> !this.mlg.getValue() || !this.recovery.getValue());
     private final BooleanProperty extinguish = new BooleanProperty("Extinguish", true);
 
     private int restoreSlot = -1;
@@ -77,7 +83,8 @@ public final class AutoBucketModule extends Module {
 
     public AutoBucketModule() {
         super("AutoBucket", "Handles water bucket MLG and helper recovery.", ModuleCategory.UTILITY);
-        this.addProperties(this.mlg, this.fallDistance, this.predictTicks, this.solidCheck, this.recovery, this.extinguish);
+        this.addProperties(this.mlg, this.fallDistance, this.predictTicks, this.solidCheck,
+                this.recovery, this.pickupDelay, this.extinguish);
     }
 
     @Subscribe
@@ -130,6 +137,18 @@ public final class AutoBucketModule extends Module {
 
         if (this.confirmsWaterBucket(event.getPacket(), task.bucketSlot)) {
             task.serverConfirmed = true;
+        }
+    }
+
+    @Subscribe
+    public void onRenderWorld(final RenderWorldEvent event) {
+        final PickupTask task = this.pickupTask;
+        if (task != null
+                && task.cause == PickupCause.MLG
+                && task.confirmTicks == 0
+                && task.delayTicks <= 0
+                && System.nanoTime() >= task.rightClickAtNanos) {
+            this.handlePickupTask();
         }
     }
 
@@ -288,15 +307,12 @@ public final class AutoBucketModule extends Module {
             return;
         }
 
-        if (task.waitForSafeLanding && !this.isSafeToRecoverMlgWater()) {
-            if (--task.landingWaitTicks <= 0) {
-                this.clearPickupTask();
-            }
-            return;
-        }
-
-        if (task.serverConfirmed
-                && task.bucketSlot >= 0
+        // interactItem() updates the local hotbar before a server inventory
+        // packet is guaranteed to arrive.  Treat that visible state as a
+        // completed pickup as well: otherwise an MLG recovery can keep
+        // retrying until its attempt budget expires despite already holding
+        // the recovered water bucket.
+        if (task.bucketSlot >= 0
                 && mc.player.getInventory().getStack(task.bucketSlot).isOf(Items.WATER_BUCKET)) {
             this.finishPickupTask();
             return;
@@ -315,22 +331,61 @@ public final class AutoBucketModule extends Module {
             return;
         }
 
+        if (task.cause == PickupCause.MLG && System.nanoTime() < task.rightClickAtNanos) {
+            return;
+        }
+
         final int bucketSlot = this.findEmptyBucketSlot();
         if (bucketSlot == -1) {
             this.retryPickupTask();
             return;
         }
 
-        final BlockPos waterSource = this.findRecoverableWaterSource(task.expectedWaterPos, 1);
-        if (waterSource == null) {
-            this.retryPickupTask();
+        if (task.cause == PickupCause.MLG) {
+            final Vec2f rotation = this.getPickupRotation(task.expectedWaterPos);
+            this.requestRotation(rotation);
+            if (!this.selectActionSlot(bucketSlot, Items.BUCKET)
+                    || !this.simulateBucketRightClick(rotation)) {
+                this.retryPickupTask();
+                return;
+            }
+
+            task.bucketSlot = bucketSlot;
+            task.confirmTicks = PICKUP_CONFIRM_TICKS;
+            task.serverConfirmed = false;
             return;
         }
 
+        if (task.waitForSafeLanding && !this.isSafeToRecoverMlgWater()) {
+            if (--task.landingWaitTicks <= 0) {
+                this.clearPickupTask();
+            }
+            return;
+        }
+
+        final BlockPos waterSource = this.findRecoverableWaterSource(task.expectedWaterPos, 2);
+        if (waterSource == null) {
+            // The place interaction can be accepted before the water source is
+            // visible in the local world. Do not spend all recovery attempts
+            // while waiting for the server block update to arrive.
+            if (++task.sourceAppearWaitTicks >= PICKUP_SOURCE_APPEAR_WAIT_TICKS) {
+                this.retryPickupTask();
+            }
+            return;
+        }
+
+        task.sourceAppearWaitTicks = 0;
         task.expectedWaterPos = waterSource.toImmutable();
         final Vec2f rotation = this.getPickupRotation(task.expectedWaterPos);
         this.requestRotation(rotation);
-        if (!this.isRotationReady(rotation) || !this.isServerRotationReady(rotation)) {
+        // Once an MLG landing is safe, the instant rotation has already been
+        // applied client-side and the fluid raycast below verifies the exact
+        // source.  Waiting for a matching PostMovementPacket here is fragile:
+        // a landing may stop movement packets, leaving recovery permanently
+        // blocked even though the player is safely standing in the water.
+        final boolean locallyAimed = this.isRotationReady(rotation);
+        final boolean requiresServerRotation = !task.waitForSafeLanding;
+        if (!locallyAimed || (requiresServerRotation && !this.isServerRotationReady(rotation))) {
             if (++task.rotationWaitTicks >= 8) {
                 this.retryPickupTask();
             }
@@ -448,7 +503,7 @@ public final class AutoBucketModule extends Module {
         BlockPos closest = null;
         double closestDistance = Double.POSITIVE_INFINITY;
 
-        for (int y = -1; y <= 1; y++) {
+        for (int y = -2; y <= 2; y++) {
             for (int x = -4; x <= 4; x++) {
                 for (int z = -4; z <= 4; z++) {
                     final BlockPos candidate = playerPos.add(x, y, z);
@@ -641,7 +696,8 @@ public final class AutoBucketModule extends Module {
         if (waterPos == null) {
             return;
         }
-        this.pickupTask = new PickupTask(waterPos.toImmutable(), cause, waitForSafeLanding);
+        final long delayMs = cause == PickupCause.MLG ? this.pickupDelay.getValue().longValue() : 0L;
+        this.pickupTask = new PickupTask(waterPos.toImmutable(), cause, waitForSafeLanding, delayMs);
     }
 
     private boolean hasPickupTask(final PickupCause cause) {
@@ -659,6 +715,7 @@ public final class AutoBucketModule extends Module {
         task.delayTicks = 1;
         task.rotationWaitTicks = 0;
         task.blockedWaitTicks = 0;
+        task.sourceAppearWaitTicks = 0;
         task.serverConfirmed = false;
         if (--task.attemptsLeft <= 0) {
             this.clearPickupTask();
@@ -811,12 +868,48 @@ public final class AutoBucketModule extends Module {
                     || !this.isWaterSource(hit.getBlockPos())) {
                 return false;
             }
+
+            // After an MLG landing the player can be stationary, so no normal
+            // movement packet may carry the recovery rotation before use-item.
+            // The server raycasts buckets from its last received look angle;
+            // explicitly synchronize it before attempting to collect the
+            // source under the player's feet.
+            if (mc.getNetworkHandler() == null) {
+                return false;
+            }
+            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                    rotation.x, rotation.y, mc.player.isOnGround(), mc.player.horizontalCollision));
+            this.lastSentYaw = rotation.x;
+            this.lastSentPitch = rotation.y;
+
             final ActionResult itemResult = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
             if (itemResult.isAccepted()) {
                 mc.player.swingHand(Hand.MAIN_HAND);
                 return true;
             }
             return false;
+        } finally {
+            mc.player.setYaw(originalYaw);
+            mc.player.setPitch(originalPitch);
+        }
+    }
+
+    private boolean simulateBucketRightClick(final Vec2f rotation) {
+        if (!this.isHolding(Items.BUCKET) || mc.getNetworkHandler() == null) {
+            return false;
+        }
+
+        final float originalYaw = mc.player.getYaw();
+        final float originalPitch = mc.player.getPitch();
+        mc.player.setYaw(rotation.x);
+        mc.player.setPitch(rotation.y);
+
+        try {
+            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                    rotation.x, rotation.y, mc.player.isOnGround(), mc.player.horizontalCollision));
+            this.lastSentYaw = rotation.x;
+            this.lastSentPitch = rotation.y;
+            return this.useItem(Items.BUCKET);
         } finally {
             mc.player.setYaw(originalYaw);
             mc.player.setPitch(originalPitch);
@@ -948,19 +1041,24 @@ public final class AutoBucketModule extends Module {
         private BlockPos expectedWaterPos;
         private final PickupCause cause;
         private final boolean waitForSafeLanding;
-        private int landingWaitTicks = 40;
-        private int delayTicks = PICKUP_PREPARE_TICKS;
+        private int landingWaitTicks = 100;
+        private int delayTicks;
         private int confirmTicks;
         private int rotationWaitTicks;
         private int blockedWaitTicks;
+        private int sourceAppearWaitTicks;
         private int attemptsLeft = PICKUP_MAX_ATTEMPTS;
         private int bucketSlot = -1;
         private boolean serverConfirmed;
+        private final long rightClickAtNanos;
 
-        private PickupTask(final BlockPos expectedWaterPos, final PickupCause cause, final boolean waitForSafeLanding) {
+        private PickupTask(final BlockPos expectedWaterPos, final PickupCause cause,
+                           final boolean waitForSafeLanding, final long rightClickDelayMs) {
             this.expectedWaterPos = expectedWaterPos;
             this.cause = cause;
             this.waitForSafeLanding = waitForSafeLanding;
+            this.delayTicks = cause == PickupCause.MLG ? 0 : PICKUP_PREPARE_TICKS;
+            this.rightClickAtNanos = System.nanoTime() + rightClickDelayMs * 1_000_000L;
         }
     }
 }

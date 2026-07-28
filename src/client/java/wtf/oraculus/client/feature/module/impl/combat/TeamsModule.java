@@ -12,7 +12,7 @@ import java.util.Objects;
 
 import static wtf.oraculus.client.Constants.mc;
 
-/** OpenZen Teams adapted to Oraculus's module and property APIs. */
+/** Oraculus team detection module. */
 public final class TeamsModule extends Module {
 
     private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", Mode.SCOREBOARD);

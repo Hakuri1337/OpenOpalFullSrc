@@ -18,6 +18,7 @@ import java.util.List;
 
 public final class FadingBlockHelper implements IHelper {
 
+    private static final Vec3d BLOCK_DIMENSIONS = new Vec3d(1, 1, 1);
     private final List<FadingBlock> fadingBlocks = new ArrayList<>();
 
     private FadingBlockHelper() {
@@ -36,9 +37,7 @@ public final class FadingBlockHelper implements IHelper {
             final float outlineAlpha = ((fadingBlock.outlineColor >> 24) & 0xFF) / 255.F;
 
             final Vec3d startVec = new Vec3d(fadingBlock.blockPos.getX(), fadingBlock.blockPos.getY(), fadingBlock.blockPos.getZ());
-            final Vec3d dimensions = new Vec3d(1, 1, 1);
-
-            rc.drawFilledCube(event.matrixStack(), CustomRenderLayers.getPositionColorQuads(true), startVec, dimensions, ColorUtility.applyOpacity(fadingBlock.fillColor, fillAlpha * progress));
+            rc.drawFilledCube(event.matrixStack(), CustomRenderLayers.getPositionColorQuads(true), startVec, BLOCK_DIMENSIONS, ColorUtility.applyOpacity(fadingBlock.fillColor, fillAlpha * progress));
         }
 
         vcp.draw();

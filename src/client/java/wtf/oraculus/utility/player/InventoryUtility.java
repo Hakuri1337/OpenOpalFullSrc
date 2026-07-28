@@ -244,7 +244,7 @@ public final class InventoryUtility {
                 || isGodAxe(itemStack);
     }
 
-    public static boolean isOpenZenUsefulItem(final ItemStack itemStack) {
+    public static boolean isOraculusUsefulItem(final ItemStack itemStack) {
         if (itemStack == null || itemStack.isEmpty() || !isUsable(itemStack)) {
             return false;
         }
@@ -280,7 +280,7 @@ public final class InventoryUtility {
     }
 
     public static boolean isGoodItem(final ItemStack itemStack) {
-        return isOpenZenUsefulItem(itemStack);
+        return isOraculusUsefulItem(itemStack);
     }
 
     public static double getSwordDamage(final ItemStack itemStack) {

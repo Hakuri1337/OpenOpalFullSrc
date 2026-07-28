@@ -9,6 +9,7 @@ import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.screen.click.OraculusPanelComponent;
 import wtf.oraculus.utility.misc.HoverUtility;
 import wtf.oraculus.utility.render.ColorUtility;
+import wtf.oraculus.utility.render.ClientTheme;
 import wtf.oraculus.utility.render.Scroller;
 import wtf.oraculus.utility.render.animation.Animation;
 import wtf.oraculus.utility.render.animation.Easing;
@@ -60,7 +61,9 @@ public final class CategoryPanel extends OraculusPanelComponent {
         NVGRenderer.globalAlpha(openAnimationValue);
         NVGRenderer.scissor(x, y, width, scissorHeight, () -> {
             NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, 0, 0, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, 0, 0, ColorUtility.applyOpacity(0xff0f0f0f, 0.85F));
+            final boolean sigmaStyle = ColorUtility.getClientTheme().first.equals(ClientTheme.SIGMA.getColors().first);
+            final int panelColor = sigmaStyle ? 0xeef7fbff : 0xd90f0f0f;
+            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, 0, 0, panelColor);
             FontRepository.getFont("productsans-bold").drawString(category.getName(), x + 5, y + scrollOffset + 13, 9, -1);
             FontRepository.getFont("materialicons-outlined").drawString(category.getIcon(), x + width - 15.5F, y + scrollOffset + 15, 10, -1);
 

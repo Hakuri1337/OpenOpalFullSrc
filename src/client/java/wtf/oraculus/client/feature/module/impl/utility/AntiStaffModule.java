@@ -2,12 +2,13 @@ package wtf.oraculus.client.feature.module.impl.utility;
 
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.text.Text;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
-import wtf.oraculus.client.feature.module.impl.utility.antistaff.OpenZenStaffList;
+import wtf.oraculus.client.feature.module.impl.utility.antistaff.OraculusStaffList;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
@@ -59,7 +60,7 @@ public final class AntiStaffModule extends Module {
             return;
         }
 
-        if (event.getPacket() instanceof EntitySpawnS2CPacket packet && packet.getEntityType().isSummonable()) {
+        if (event.getPacket() instanceof EntitySpawnS2CPacket packet && packet.getEntityType() == EntityType.PLAYER) {
             final PlayerEntity player = mc.world.getPlayers().stream()
                     .filter(worldPlayer -> worldPlayer.getId() == packet.getEntityId())
                     .findFirst()
@@ -103,7 +104,7 @@ public final class AntiStaffModule extends Module {
     }
 
     private boolean isStaffName(final String name) {
-        return OpenZenStaffList.contains(name);
+        return OraculusStaffList.contains(name);
     }
 
     private String extractProfileName(final Object profile) {

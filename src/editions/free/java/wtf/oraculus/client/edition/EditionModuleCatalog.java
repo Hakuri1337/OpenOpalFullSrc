@@ -40,7 +40,7 @@ public final class EditionModuleCatalog {
                 new CriticalsModule(), new VelocityModule(), new AutoHeadModule(), new AutoThrowModule(),
                 new CrystalAuraModule(),
 
-                new ClickGUIModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
+                new ClickGUIModule(), new SigmaStyleModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
                 new OverlayModule(), new ChamsModule(), new ESPModule(), new BreakProgressModule(), new CapeModule(),
                 new AmbienceModule(), new AttackEffectsModule(), new TabGUIModule(), new StreamerModeModule(),
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),

@@ -59,7 +59,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import static wtf.oraculus.client.Constants.mc;
 
 /**
- * OpenZen NoXZ port. Horizontal knockback is reduced only by real attacks;
+ * Oraculus NoXZ. Horizontal knockback is reduced only by real attacks;
  * this mode never directly zeros or scales an incoming velocity packet.
  */
 public final class NoXZVelocity extends VelocityMode {

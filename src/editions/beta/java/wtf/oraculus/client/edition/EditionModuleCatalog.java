@@ -40,7 +40,7 @@ public final class EditionModuleCatalog {
                 new SuperKnockBackModule(), new CriticalsModule(), new VelocityModule(), new FakeLagModule(),
                 new AutoHeadModule(), new FastPearlModule(), new AutoThrowModule(), new CrystalAuraModule(),
 
-                new ClickGUIModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
+                new ClickGUIModule(), new SigmaStyleModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
                 new OverlayModule(), new ChamsModule(), new ESPModule(), new BreakProgressModule(), new CapeModule(),
                 new AmbienceModule(), new AttackEffectsModule(), new TabGUIModule(), new StreamerModeModule(),
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
@@ -55,7 +55,7 @@ public final class EditionModuleCatalog {
                 new StrafeModule(), new PhysicsModule(), new SpiderModule(), new ClipperModule(), new SafeWalkModule(),
                 new StuckModule(),
 
-                new FastUseModule(), new AutoRodModule(), new MusicPlayerModule(), new NoFallModule(),
+                new FastUseModule(), new AutoRodModule(), new MiddlePearlModule(), new MusicPlayerModule(), new NoFallModule(),
                 new AutoBucketModule(), new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(),
                 new DisablerModule(), new FastPlaceModule(), new AntiVoidModule(), new AutoToolModule(),
                 new AntiTNTModule(), new AutoChestModule(), new AutoHypixelModule(), new BlinkModule(),

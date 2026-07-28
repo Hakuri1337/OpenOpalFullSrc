@@ -83,7 +83,7 @@ public final class TargetList {
 
     public <T extends Target<?>> List<T> collectTargets(final int flags, @Nullable final Class<T> clazzType) {
         final Iterator<Target<?>> iterator = this.targetMap.values().iterator();
-        final List<T> list = new ArrayList<>();
+        final List<T> list = new ArrayList<>(this.targetMap.size());
         while (iterator.hasNext()) {
             final Target<?> target = iterator.next();
             if (clazzType != null && !clazzType.isAssignableFrom(target.getClass())) {

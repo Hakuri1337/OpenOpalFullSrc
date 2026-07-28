@@ -17,6 +17,7 @@ import wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI;
 import wtf.oraculus.client.screen.click.dropdown.panel.property.PropertyProvider;
 import wtf.oraculus.utility.misc.HoverUtility;
 import wtf.oraculus.utility.render.ColorUtility;
+import wtf.oraculus.utility.render.ClientTheme;
 import wtf.oraculus.utility.render.animation.Animation;
 import wtf.oraculus.utility.render.animation.Easing;
 
@@ -56,7 +57,8 @@ public final class ModulePanel extends OraculusPanelComponent {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         handleAnimations(mouseX, mouseY);
 
-        final int baseColor = 0xff1e1e2d;
+        final boolean sigmaStyle = ColorUtility.getClientTheme().first.equals(ClientTheme.SIGMA.getColors().first);
+        final int baseColor = sigmaStyle ? 0xfff4f8fc : 0xff1e1e2d;
 
         final String font = module.isEnabled() ? "productsans-bold" : "productsans-medium";
 
@@ -74,7 +76,7 @@ public final class ModulePanel extends OraculusPanelComponent {
         }
 
         NVGRenderer.scissor(x, y, width, height, () -> {
-            final int color = module.isEnabled() ? -1 : ColorUtility.darker(-1, 0.2F);
+            final int color = module.isEnabled() ? (sigmaStyle ? 0xff1e5fa8 : -1) : (sigmaStyle ? 0xff52606d : ColorUtility.darker(-1, 0.2F));
 
             FontRepository.getFont(font).drawString(module.getName(), x + 6, y + 12.5F, 8, color);
 

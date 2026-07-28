@@ -7,6 +7,7 @@ import java.awt.*;
 
 public enum ClientTheme {
 
+    SIGMA("Sigma Style", new Color(77, 167, 255), new Color(42, 104, 214)),
     ORACULUS("Oraculus", new Color(45, 191, 254), new Color(36, 153, 203)),
     SPEARMINT("Spearmint", new Color(97, 194, 162), new Color(65, 130, 108)),
     JADE_GREEN("Jade Green", new Color(0, 168, 107), new Color(0, 105, 66)),

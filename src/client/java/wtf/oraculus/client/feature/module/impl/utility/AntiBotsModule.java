@@ -12,6 +12,7 @@ import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
+import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.event.impl.game.JoinWorldEvent;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
@@ -27,8 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static wtf.oraculus.client.Constants.mc;
 
 /**
- * OpenZen AntiBots adapted to Yarn packet names. Detection intentionally follows
- * OpenZen's PlayerInfo ADD_PLAYER -> player spawn confirmation flow.
+ * Oraculus AntiBots adapted to Yarn packet names.
  */
 public final class AntiBotsModule extends Module {
 
@@ -38,19 +38,28 @@ public final class AntiBotsModule extends Module {
     private static final Set<Integer> CONFIRMED_BOT_IDS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, Long> PLAYER_ADD_TIMES = new ConcurrentHashMap<>();
 
+    private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", this, Mode.NONE);
     private final NumberProperty newPlayerTimeout =
             new NumberProperty("Respawn Time", 2500.0D, 0.0D, 10000.0D, 100.0D);
     private final BooleanProperty debug = new BooleanProperty("Debug", true);
 
     public AntiBotsModule() {
         super("AntiBots", "Prevents bots from being targeted.", ModuleCategory.COMBAT);
-        this.addProperties(this.newPlayerTimeout, this.debug);
+        this.addProperties(this.mode, this.newPlayerTimeout, this.debug);
     }
 
     public static boolean shouldFilter(final Entity entity) {
         final AntiBotsModule module = getModule();
-        return module != null && module.isEnabled() && entity != null
-                && (isBot(entity) || isBedWarsBot(entity));
+        if (module == null || !module.isEnabled() || entity == null) {
+            return false;
+        }
+        return module.mode.getValue() == Mode.HEYPIXEL
+                ? isOraculusBot(entity)
+                : isBot(entity) || isBedWarsBot(entity);
+    }
+
+    private static boolean isOraculusBot(final Entity entity) {
+        return isBot(entity) || isBedWarsBot(entity);
     }
 
     public static boolean isBot(final Entity entity) {
@@ -169,5 +178,21 @@ public final class AntiBotsModule extends Module {
             return null;
         }
         return client.getModuleRepository().getModule(AntiBotsModule.class);
+    }
+
+    public enum Mode {
+        NONE("None"),
+        HEYPIXEL("Heypixel");
+
+        private final String name;
+
+        Mode(final String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
     }
 }

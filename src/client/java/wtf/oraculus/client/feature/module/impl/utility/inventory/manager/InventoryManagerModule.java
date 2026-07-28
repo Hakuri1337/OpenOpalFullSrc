@@ -900,6 +900,6 @@ public final class InventoryManagerModule extends Module {
             return stack != InventoryUtility.getArrowStack();
         }
 
-        return InventoryUtility.isOpenZenUsefulItem(stack);
+        return InventoryUtility.isOraculusUsefulItem(stack);
     }
 }
