@@ -35,13 +35,19 @@
 # AbstractMethodError rather than a recoverable missing-method failure.
 -keep class wtf.oraculus.client.renderer.** { *; }
 -keep class wtf.oraculus.client.screen.** { *; }
--keep class wtf.oraculus.client.auth.** { *; }
 -keep class wtf.oraculus.utility.render.** { *; }
 -keep class wtf.oraculus.client.music.** { *; }
 -keep class * extends net.minecraft.** { *; }
 -keep class * implements net.minecraft.** { *; }
 -keep class * extends net.fabricmc.** { *; }
 -keep class * implements net.fabricmc.** { *; }
+
+# Only the login screen itself is retained by the Minecraft-superclass rule
+# above. All non-UI authentication code is statically linked, uses explicit
+# JSON keys rather than reflective DTOs, and can therefore be fully renamed.
+# This intentionally covers AuthApiClient, AuthBootstrap, AuthRuntimeGate,
+# AuthService, AuthSessionStore, AuthSnapshot, AuthState and the fingerprint
+# provider without destabilising the Fabric or Mixin bootstrap surfaces.
 
 # The catalog builds modules and their persisted settings. Class names can be
 # safely shortened, but field names must remain stable for existing configs and

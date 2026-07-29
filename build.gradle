@@ -291,8 +291,17 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "fabric.mod.json",
                 "oraculus.mixins.json",
                 "oraculus.accesswidener",
-                "wtf/oraculus/OraculusFabric.class",
-                "wtf/oraculus/client/auth/AuthService.class"
+                "wtf/oraculus/OraculusFabric.class"
+        ]
+        def authClassesExpectedToBeRenamed = [
+                "wtf.oraculus.client.auth.AuthApiClient",
+                "wtf.oraculus.client.auth.AuthBootstrap",
+                "wtf.oraculus.client.auth.AuthRuntimeGate",
+                "wtf.oraculus.client.auth.AuthService",
+                "wtf.oraculus.client.auth.AuthSessionStore",
+                "wtf.oraculus.client.auth.AuthSnapshot",
+                "wtf.oraculus.client.auth.AuthState",
+                "wtf.oraculus.client.auth.DeviceFingerprintProvider"
         ]
         def forbiddenFreeClassPrefixes = [
                 "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
@@ -324,6 +333,14 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                         throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
                     }
                 }
+                if (artifact == noObfEditionJar.get().asFile
+                        && archive.getEntry("wtf/oraculus/client/auth/AuthService.class") == null) {
+                    throw new GradleException("${artifact.name} is missing the unobfuscated authentication service")
+                }
+                if (artifact == obfuscatedEditionJar.get().asFile
+                        && archive.getEntry("wtf/oraculus/client/auth/AuthService.class") != null) {
+                    throw new GradleException("${artifact.name} leaked an unobfuscated AuthService class")
+                }
                 if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
                     throw new GradleException("${artifact.name} is missing bundled dependency JARs")
                 }
@@ -343,8 +360,15 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
         }
 
         def mapping = proguardMapping.get().asFile
-        if (!mapping.isFile() || !mapping.readLines("UTF-8").any { it.contains(" -> ") && !it.trim().endsWith(":") }) {
+        def mappingLines = mapping.isFile() ? mapping.readLines("UTF-8") : []
+        if (!mapping.isFile() || !mappingLines.any { it.contains(" -> ") && !it.trim().endsWith(":") }) {
             throw new GradleException("ProGuard did not emit a usable member mapping for ${editionDisplayName}")
+        }
+        authClassesExpectedToBeRenamed.each { sourceName ->
+            def entry = mappingLines.find { it.startsWith("${sourceName} -> ") }
+            if (entry == null || entry == "${sourceName} -> ${sourceName}:") {
+                throw new GradleException("ProGuard did not rename authentication class ${sourceName} for ${editionDisplayName}")
+            }
         }
     }
 }
