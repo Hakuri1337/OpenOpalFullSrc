@@ -11,4 +11,8 @@ public final class EditionBuildInfo {
     public static boolean isFree() {
         return true;
     }
+
+    public static String getApiName() {
+        return "FREE";
+    }
 }

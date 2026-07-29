@@ -77,7 +77,7 @@ public abstract class MinecraftClientMixin {
             at = @At("TAIL")
     )
     private void postInitialization(final RunArgs args, final CallbackInfo ci) {
-        OraculusClient.getInstance().runPostInitializations();
+        OraculusClient.getInstance().runBootstrapInitializations();
     }
 
     @Inject(
@@ -234,7 +234,9 @@ public abstract class MinecraftClientMixin {
             at = @At(value = "FIELD", target = "Lnet/minecraft/client/option/GameOptions;useKey:Lnet/minecraft/client/option/KeyBinding;", ordinal = 1)
     )
     private void onItemUseMouseHandle(CallbackInfo ci) {
-        final AnimationsModule animationsModule = OraculusClient.getInstance().getModuleRepository().getModule(AnimationsModule.class);
+        final OraculusClient oraculus = OraculusClient.getInstance();
+        if (!oraculus.isPostInitialization() || oraculus.getModuleRepository() == null) return;
+        final AnimationsModule animationsModule = oraculus.getModuleRepository().getModule(AnimationsModule.class);
         final MouseButton leftButton = MouseHelper.getLeftButton();
         if (animationsModule.isEnabled() && animationsModule.isSwingWhileUsing() && leftButton.isPressed() && leftButton.isShowSwings()) {
             if ((this.crosshairTarget != null && this.crosshairTarget.getType() == HitResult.Type.BLOCK) || leftButton.wasPressed()) {

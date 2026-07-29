@@ -1,6 +1,8 @@
 package wtf.oraculus.client;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import wtf.oraculus.client.auth.AuthBootstrap;
+import wtf.oraculus.client.auth.AuthService;
 import wtf.oraculus.client.binding.repository.BindRepository;
 import wtf.oraculus.client.edition.EditionModuleCatalog;
 import wtf.oraculus.client.command.impl.config.ConfigCommand;
@@ -72,16 +74,38 @@ public final class OraculusClient {
     private ScriptRepository scriptRepository;
     private MusicService musicService;
 
+    private boolean bootstrapInitialization;
     private boolean postInitialization;
+    private boolean runtimeInitialized;
+    private boolean shutdownHookRegistered;
 
     private OraculusClient() {
         this.notificationManager = new NotificationManager();
         this.bindRepository = new BindRepository();
     }
 
-    public void runPostInitializations() {
+    public synchronized void runBootstrapInitializations() {
+        if (this.bootstrapInitialization) {
+            return;
+        }
         this.runHelperInitializations();
-//        this.registerFabricEvents();
+        this.bootstrapInitialization = true;
+        if (!this.shutdownHookRegistered) {
+            Runtime.getRuntime().addShutdownHook(new Thread(this::onShutdown, "Oraculus-Shutdown"));
+            this.shutdownHookRegistered = true;
+        }
+        AuthBootstrap.initialize(this);
+    }
+
+    public synchronized void runAuthenticatedInitializations() {
+        if (!this.bootstrapInitialization) {
+            this.runBootstrapInitializations();
+        }
+        if (this.runtimeInitialized) {
+            SaveUtility.loadConfigFile("default");
+            this.postInitialization = true;
+            return;
+        }
 
         if (this.musicService == null) {
             this.musicService = new MusicService();
@@ -115,13 +139,35 @@ public final class OraculusClient {
             this.scriptRepository = new ScriptRepository();
         }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(this::onShutdown));
-
+        this.runtimeInitialized = true;
         this.postInitialization = true;
         EventDispatcher.dispatch(new PostClientInitializationEvent());
 
         PayloadTypeRegistry.playS2C().register(PhysicsModule.ResyncPhysicsPayload.ID, PhysicsModule.ResyncPhysicsPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(MinibloxDisabler.MovePayload.ID, MinibloxDisabler.MovePayload.CODEC);
+    }
+
+    @Deprecated
+    public void runPostInitializations() {
+        this.runAuthenticatedInitializations();
+    }
+
+    public synchronized void stopAuthenticatedRuntime() {
+        if (this.moduleRepository == null) {
+            this.postInitialization = false;
+            return;
+        }
+        try (SaveUtility.AutoSaveScope ignored = SaveUtility.suppressAutoSave()) {
+            for (final var module : this.moduleRepository.getModules()) {
+                if (module.isEnabled()) {
+                    try {
+                        module.setEnabled(false);
+                    } catch (RuntimeException ignoredFailure) {
+                    }
+                }
+            }
+        }
+        this.postInitialization = false;
     }
 
 
@@ -148,16 +194,26 @@ public final class OraculusClient {
 
 
     private void onShutdown() {
-        MiniBloxHelperService.getInstance().close();
-        this.moduleRepository.getModule(ClickGUIModule.class).setEnabled(false);
-        this.moduleRepository.getModule(MusicPlayerModule.class).setEnabled(false);
+        if (this.bootstrapInitialization) {
+            MiniBloxHelperService.getInstance().close();
+        }
+        final AuthService authService = AuthBootstrap.getService();
+        if (authService != null) {
+            authService.close();
+        }
+        if (this.moduleRepository != null) {
+            this.moduleRepository.getModule(ClickGUIModule.class).setEnabled(false);
+            this.moduleRepository.getModule(MusicPlayerModule.class).setEnabled(false);
+        }
 
         if (this.musicService != null) {
             this.musicService.close();
         }
 
-        SaveUtility.saveConfig("default");
-        SaveUtility.saveBindings();
+        if (this.runtimeInitialized && this.moduleRepository != null) {
+            SaveUtility.saveConfig("default");
+            SaveUtility.saveBindings();
+        }
     }
 
 

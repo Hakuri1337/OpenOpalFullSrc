@@ -1,0 +1,19 @@
+{
+  "ListenHost": "0.0.0.0",
+  "HttpPort": 80,
+  "HttpsPort": 443,
+  "EnableHttp": false,
+  "PublicBaseUrl": "https://auth.hakuri.tech",
+  "AllowedHosts": ["auth.hakuri.tech"],
+  "DataDirectory": "C:\\ProgramData\\OraculusAuth",
+  "AccessTokenMinutes": 10,
+  "RefreshTokenDays": 7,
+  "WebSessionHours": 8,
+  "SecureCookies": true,
+  "RequireHttps": true,
+  "RegistrationEnabled": true,
+  "AllowedClientVersions": ["b5"],
+  "AllowedBuildIds": ["b5-free", "b5-beta"],
+  "TlsCertificatePath": "C:\\ProgramData\\OraculusAuth\\certificates\\auth.hakuri.tech.crt",
+  "TlsPrivateKeyPath": "C:\\ProgramData\\OraculusAuth\\certificates\\auth.hakuri.tech.key"
+}

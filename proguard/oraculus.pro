@@ -35,6 +35,7 @@
 # AbstractMethodError rather than a recoverable missing-method failure.
 -keep class wtf.oraculus.client.renderer.** { *; }
 -keep class wtf.oraculus.client.screen.** { *; }
+-keep class wtf.oraculus.client.auth.** { *; }
 -keep class wtf.oraculus.utility.render.** { *; }
 -keep class wtf.oraculus.client.music.** { *; }
 -keep class * extends net.minecraft.** { *; }

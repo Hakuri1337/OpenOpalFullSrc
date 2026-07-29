@@ -31,6 +31,7 @@ tools/
 .settings/
 .vscode/
 bin/
+obj/
 .classpath
 .project
 
@@ -41,6 +42,13 @@ bin/
 # fabric
 
 run/
+
+# authentication server local/runtime state
+
+auth-server/server.json
+auth-server/data/
+auth-server/publish/
+auth-server/.cache/
 
 # java
 

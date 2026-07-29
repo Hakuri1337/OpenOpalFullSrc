@@ -11,4 +11,8 @@ public final class ReleaseInfo {
         return EditionBuildInfo.getDisplayName();
     }
 
+    public static String getBuildId() {
+        return VERSION + "-" + EditionBuildInfo.getApiName().toLowerCase();
+    }
+
 }

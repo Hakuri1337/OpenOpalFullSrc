@@ -19,6 +19,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import wtf.oraculus.client.auth.AuthBootstrap;
+import wtf.oraculus.client.auth.AuthService;
+import wtf.oraculus.client.auth.AuthState;
+import wtf.oraculus.client.auth.OraculusLoginScreen;
 import wtf.oraculus.client.renderer.menu.ClientBootTransition;
 import wtf.oraculus.client.renderer.menu.MenuVideoBackground;
 import wtf.oraculus.client.renderer.menu.OraculusMenuRenderer;
@@ -35,6 +39,21 @@ public final class TitleScreenMixin {
     private boolean doBackgroundFade;
 
     private TitleScreenMixin() {
+    }
+
+    @Inject(method = "init", at = @At("TAIL"))
+    private void requireOraculusAuthentication(final CallbackInfo ci) {
+        final AuthService auth = AuthBootstrap.getService();
+        if (auth == null || auth.snapshot().state() == AuthState.READY
+                || auth.snapshot().state() == AuthState.NETWORK_GRACE) {
+            return;
+        }
+        final TitleScreen current = (TitleScreen) (Object) this;
+        MinecraftClient.getInstance().execute(() -> {
+            if (MinecraftClient.getInstance().currentScreen == current) {
+                MinecraftClient.getInstance().setScreen(new OraculusLoginScreen(current));
+            }
+        });
     }
 
     @WrapOperation(

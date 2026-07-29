@@ -92,6 +92,7 @@ if (activeEdition == "free") {
                     "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/WatchdogNoSlow.java",
                     "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/DisablerModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler.java"
@@ -286,7 +287,21 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "fabric.mod.json",
                 "oraculus.mixins.json",
                 "oraculus.accesswidener",
-                "wtf/oraculus/OraculusFabric.class"
+                "wtf/oraculus/OraculusFabric.class",
+                "wtf/oraculus/client/auth/AuthService.class"
+        ]
+        def forbiddenFreeClassPrefixes = [
+                "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
+                "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule",
+                "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule",
+                "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule",
+                "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/NoC0FNoSlow",
+                "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/WatchdogNoSlow",
+                "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule",
+                "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule",
+                "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule",
+                "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler",
+                "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler"
         ]
 
         [noObfEditionJar.get().asFile, obfuscatedEditionJar.get().asFile].each { artifact ->
@@ -303,6 +318,16 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 }
                 if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
                     throw new GradleException("${artifact.name} is missing bundled dependency JARs")
+                }
+                if (activeEdition == "free") {
+                    def leakedEntry = archive.entries().find { entry ->
+                        forbiddenFreeClassPrefixes.any { prefix ->
+                            entry.name == "${prefix}.class" || entry.name.startsWith("${prefix}\$")
+                        }
+                    }
+                    if (leakedEntry != null) {
+                        throw new GradleException("${artifact.name} contains Beta-only class ${leakedEntry.name}")
+                    }
                 }
             } finally {
                 archive.close()

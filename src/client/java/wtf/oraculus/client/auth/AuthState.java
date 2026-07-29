@@ -1,0 +1,13 @@
+package wtf.oraculus.client.auth;
+
+public enum AuthState {
+    UNINITIALIZED,
+    CHECKING_SAVED_SESSION,
+    LOGIN_REQUIRED,
+    AUTHENTICATING,
+    AUTHENTICATED,
+    RUNTIME_STARTING,
+    READY,
+    NETWORK_GRACE,
+    ACCESS_REVOKED
+}
