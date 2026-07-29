@@ -21,13 +21,13 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 
 public final class MusicApiClient {
     public static final URI DEFAULT_BASE_URI = URI.create("https://nextmusic.toubiec.cn");
 
     private final HttpClient httpClient;
     private final URI baseUri;
+    private CompletableFuture<String> clientIpFuture;
 
     public MusicApiClient() {
         this(DEFAULT_BASE_URI);
@@ -125,7 +125,11 @@ public final class MusicApiClient {
     }
 
     public CompletableFuture<Long> getPublishTime(final long songId) {
-        return post("song/wiki", withId(songId)).thenApply(root -> number(asObject(data(root)), "publishTime"));
+        // The upstream site currently returns code 301 for this optional
+        // metadata endpoint. Keep playback and song details usable meanwhile.
+        return post("song/wiki", withId(songId))
+                .thenApply(root -> number(asObject(data(root)), "publishTime"))
+                .exceptionally(ignored -> 0L);
     }
 
     public CompletableFuture<JsonObject> getServiceStats() {
@@ -177,7 +181,44 @@ public final class MusicApiClient {
     }
 
     private CompletableFuture<JsonObject> post(final String endpoint, final JsonObject body) {
-        body.addProperty("timestamp", System.currentTimeMillis());
+        return resolveClientIp().thenCompose(clientIp -> {
+            final JsonObject requestBody = body.deepCopy();
+            requestBody.addProperty("timestamp", System.currentTimeMillis());
+            requestBody.addProperty("ip", clientIp);
+            return send(endpoint, requestBody);
+        });
+    }
+
+    private synchronized CompletableFuture<String> resolveClientIp() {
+        if (clientIpFuture != null) {
+            return clientIpFuture;
+        }
+
+        final JsonObject handshake = new JsonObject();
+        handshake.addProperty("timestamp", System.currentTimeMillis());
+        final CompletableFuture<String> pending = send("ip", handshake).thenApply(root -> {
+            final String clientIp = string(asObject(data(root)), "ip").trim();
+            if (clientIp.isEmpty() || clientIp.length() > 64) {
+                throw new MusicApiException("Music API returned an invalid IP handshake");
+            }
+            return clientIp;
+        });
+        clientIpFuture = pending;
+        pending.whenComplete((ignored, error) -> {
+            if (error != null) {
+                clearFailedClientIp(pending);
+            }
+        });
+        return pending;
+    }
+
+    private synchronized void clearFailedClientIp(final CompletableFuture<String> failed) {
+        if (clientIpFuture == failed) {
+            clientIpFuture = null;
+        }
+    }
+
+    private CompletableFuture<JsonObject> send(final String endpoint, final JsonObject body) {
         final HttpRequest request = HttpRequest.newBuilder(baseUri.resolve("/api/" + endpoint))
                 .timeout(Duration.ofSeconds(20))
                 .header("Content-Type", "application/json")
@@ -197,7 +238,8 @@ public final class MusicApiClient {
                         final JsonElement parsed = JsonParser.parseString(response.body());
                         final JsonObject root = asObject(parsed);
                         if (root.has("code") && root.get("code").isJsonPrimitive() && root.get("code").getAsInt() != 200) {
-                            throw new MusicApiException("Music API returned code " + root.get("code").getAsInt());
+                            throw new MusicApiException("Music API returned code " + root.get("code").getAsInt()
+                                    + ": " + string(root, "message"));
                         }
                         return root;
                     } catch (final MusicApiException exception) {

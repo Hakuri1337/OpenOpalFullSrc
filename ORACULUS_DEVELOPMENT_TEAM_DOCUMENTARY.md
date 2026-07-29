@@ -421,13 +421,18 @@ Beta 使用公共源码加 `src/editions/beta/java`。两个版本使用相同 F
 - AntiStaff
 - AutoRod
 - MiddlePearl
+- SigmaStyle
 
 Mode 级排除：
 
 - Disabler：Heypixel、HypixelInventory
 - NoSlow：Watchdog/Hypixel、NoC0F
+- Overlay Theme：Sigma
 
-Free 对 `DisablerModule` 和 `NoSlowModule` 提供同 FQN 替代实现，确保被移除的 enum 与实现类不会进入 Free class 文件。
+Free 对 `DisablerModule` 和 `NoSlowModule` 提供同 FQN 替代实现，并通过
+`EditionHooks.getClientThemes()` 移除 Sigma 主题选项。`SigmaStyleModule`
+不会进入 Free class 文件；从 Beta 读取到的 Sigma 配置由
+`EditionConfigCompatibility` 原样保留，避免 Free 保存配置时破坏 Beta 设置。
 
 ### 7.3 新增 Beta-only 功能时
 

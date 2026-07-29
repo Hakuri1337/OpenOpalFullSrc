@@ -42,12 +42,15 @@ public final class EditionConfigCompatibility {
         }
 
         final String moduleId = normalize(getString(module, "name", "id", "module"));
-        final Object mode = getModeValue(module);
+        final Object mode = getPropertyValue(module, "mode");
         if (moduleId.equals("noslow")) {
             return isUnsupportedNoSlowMode(mode);
         }
         if (moduleId.equals("disabler")) {
             return isUnsupportedDisablerMode(mode);
+        }
+        if (moduleId.equals("overlay")) {
+            return isUnsupportedTheme(getPropertyValue(module, "theme"));
         }
         return false;
     }
@@ -172,7 +175,15 @@ public final class EditionConfigCompatibility {
         return value.equals("heypixel") || value.equals("hypixelinventory");
     }
 
-    private static Object getModeValue(final JsonObject module) {
+    private static boolean isUnsupportedTheme(final Object theme) {
+        if (theme instanceof Number number) {
+            return number.intValue() == 0;
+        }
+        final String value = normalize(String.valueOf(theme));
+        return value.equals("sigma") || value.equals("sigmastyle");
+    }
+
+    private static Object getPropertyValue(final JsonObject module, final String propertyName) {
         final JsonElement properties = module.get("properties");
         if (properties == null || !properties.isJsonArray()) {
             return null;
@@ -182,7 +193,7 @@ public final class EditionConfigCompatibility {
                 continue;
             }
             final JsonObject property = element.getAsJsonObject();
-            if (!normalize(getString(property, "name", "id")).equals("mode")) {
+            if (!normalize(getString(property, "name", "id")).equals(normalize(propertyName))) {
                 continue;
             }
             final JsonElement value = property.get("value");

@@ -2,6 +2,8 @@
 
 当前生产实现为无 npm 依赖的 Node.js 服务，部署目标为 Ubuntu。旧的 .NET Framework 源码与 Windows 部署脚本仅保留用于历史参考，不再是推荐生产路径。
 
+其他客户端开发者接入前请完整阅读 [`API_INTEGRATION_ZH.md`](API_INTEGRATION_ZH.md)。
+
 ## 客户端兼容协议
 
 客户端继续使用：

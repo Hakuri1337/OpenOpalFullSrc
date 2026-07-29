@@ -6,6 +6,7 @@ import wtf.oraculus.client.feature.module.impl.movement.TargetStrafeModule;
 import wtf.oraculus.client.feature.module.impl.utility.AutoRodModule;
 import wtf.oraculus.client.feature.module.impl.combat.FakeLagModule;
 import wtf.oraculus.client.feature.module.repository.ModuleRepository;
+import wtf.oraculus.utility.render.ClientTheme;
 
 import java.util.List;
 
@@ -39,5 +40,9 @@ public final class EditionHooks {
             fakeLag.setEnabled(false);
             disabledModules.add("FakeLag");
         }
+    }
+
+    public static ClientTheme[] getClientThemes() {
+        return ClientTheme.values();
     }
 }

@@ -93,6 +93,7 @@ if (activeEdition == "free") {
                     "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule.java",
+                    "wtf/oraculus/client/feature/module/impl/visual/SigmaStyleModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/DisablerModule.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler.java",
                     "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler.java"
@@ -300,6 +301,7 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule",
                 "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule",
                 "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule",
+                "wtf/oraculus/client/feature/module/impl/visual/SigmaStyleModule",
                 "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler",
                 "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler"
         ]

@@ -2,6 +2,7 @@ package wtf.oraculus.client.feature.module.impl.visual.overlay;
 
 import net.minecraft.util.Colors;
 import wtf.oraculus.client.OraculusClient;
+import wtf.oraculus.client.edition.EditionHooks;
 import wtf.oraculus.client.feature.helper.impl.render.ScaleProperty;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
@@ -31,7 +32,8 @@ public final class
 OverlayModule extends Module {
 
     // Theme
-    private final ModeProperty<ClientTheme> themeMode = new ModeProperty<>("Theme", ClientTheme.ORACULUS, true)
+    private final ModeProperty<ClientTheme> themeMode = new ModeProperty<>(
+            "Theme", ClientTheme.ORACULUS, EditionHooks.getClientThemes(), true)
             .alias("Opal", ClientTheme.ORACULUS);
     public static final ColorProperty primaryColorProperty = new ColorProperty("Primary color", Colors.BLACK);
     public static final ColorProperty secondaryColorProperty = new ColorProperty("Secondary color", Colors.BLACK);
