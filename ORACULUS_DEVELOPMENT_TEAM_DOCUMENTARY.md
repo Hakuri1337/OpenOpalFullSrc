@@ -2,7 +2,7 @@
 
 > Oraculus 开发团队协作文档
 > 适用仓库：`https://github.com/Hakuri1337/OpenOpal.git`
-> 当前基线：Minecraft 1.21.10、Fabric、Java 21、Oraculus b5
+> 当前基线：Minecraft 1.21.10、Fabric、Java 21、Oraculus b6
 > 最后核对日期：2026-07-29
 
 ## 1. 文档目标
@@ -34,7 +34,7 @@ Oraculus 是 Minecraft 1.21.10 的 Fabric 客户端 Mod。项目采用纯客户�
 | Fabric Loom | `1.14.6` | `gradle.properties` |
 | Gradle Wrapper | `9.2.0` | `gradle/wrapper/gradle-wrapper.properties` |
 | Java | `21` | `build.gradle`、`fabric.mod.json` |
-| Mod 版本 | `b5` | `gradle.properties`、`ReleaseInfo.java` |
+| Mod 版本 | `b6` | `gradle.properties`、`ReleaseInfo.java` |
 | Maven Group | `wtf.oraculus` | `gradle.properties` |
 | License | GPL-3.0 | `LICENSE` |
 
@@ -340,10 +340,10 @@ Linux/macOS 将 `.\gradlew.bat` 替换为 `./gradlew`，首次使用先执行 `c
 普通 `build` 是正式发布入口，最终在 `build/libs/` 收集：
 
 ```text
-Oraculus-Beta-b5-NoObf.jar
-Oraculus-Beta-b5-Obf.jar
-Oraculus-Free-b5-NoObf.jar
-Oraculus-Free-b5-Obf.jar
+Oraculus-Beta-b6-NoObf.jar
+Oraculus-Beta-b6-Obf.jar
+Oraculus-Free-b6-NoObf.jar
+Oraculus-Free-b6-Obf.jar
 ```
 
 - `NoObf`：Loom remap 后的标准 Fabric JAR，适合开发定位与调试。
@@ -427,11 +427,13 @@ Mode 级排除：
 
 - Disabler：Heypixel、HypixelInventory
 - NoSlow：Watchdog/Hypixel、NoC0F
+- AntiKB/Velocity：HypixelReduce、Intave
 - Overlay Theme：Sigma
 
-Free 对 `DisablerModule` 和 `NoSlowModule` 提供同 FQN 替代实现，并通过
+Free 对 `DisablerModule`、`NoSlowModule` 和 `VelocityModule` 提供同 FQN 替代实现，并通过
 `EditionHooks.getClientThemes()` 移除 Sigma 主题选项。`SigmaStyleModule`
-不会进入 Free class 文件；从 Beta 读取到的 Sigma 配置由
+以及两个 Beta-only Velocity Mode 的实现类不会进入 Free class 文件；从 Beta 读取到的
+Sigma 或 Beta-only Velocity Mode 配置由
 `EditionConfigCompatibility` 原样保留，避免 Free 保存配置时破坏 Beta 设置。
 
 ### 7.3 新增 Beta-only 功能时
@@ -770,7 +772,7 @@ git diff --check
 检查 Free 内容示例：
 
 ```powershell
-jar tf build\libs\Oraculus-Free-b5-NoObf.jar | Select-String "FakeLagModule|TargetStrafeModule|AutoRodModule"
+jar tf build\libs\Oraculus-Free-b6-NoObf.jar | Select-String "FakeLagModule|TargetStrafeModule|AutoRodModule"
 ```
 
 正常结果应为空。

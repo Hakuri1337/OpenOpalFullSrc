@@ -133,7 +133,9 @@ public final class SaveUtility {
                     final JsonObject bindableJson = bindableElement.getAsJsonObject();
 
                     if (bindableJson.has("module")) {
-                        final String moduleID = bindableJson.get("module").getAsString();
+                        final String moduleID = ScaffoldConfigCompatibility.normalizeBindingModuleId(
+                                bindableJson.get("module").getAsString()
+                        );
                         try {
                             final Module module = OraculusClient.getInstance().getModuleRepository().getModule(moduleID);
                             BINDING_SERVICE.register(keyCode, module, inputType);
@@ -165,7 +167,8 @@ public final class SaveUtility {
             final Path configPath = getConfigPath(normalizedName);
             final JsonArray modules = GSON.toJsonTree(OraculusClient.getInstance().getModuleRepository().getModules())
                     .getAsJsonArray();
-            Files.writeString(configPath, GSON.toJson(EditionConfigCompatibility.mergeConfig(normalizedName, modules)));
+            final JsonArray mergedModules = EditionConfigCompatibility.mergeConfig(normalizedName, modules);
+            Files.writeString(configPath, GSON.toJson(ScaffoldConfigCompatibility.normalizeModules(mergedModules)));
             return true;
         } catch (IOException e) {
             e.printStackTrace();
@@ -268,7 +271,8 @@ public final class SaveUtility {
 
             EditionConfigCompatibility.beginConfigLoad(configName);
 
-            for (final JsonElement jsonModuleElement : rootElement.getAsJsonArray()) {
+            final JsonArray normalizedModules = ScaffoldConfigCompatibility.normalizeModules(rootElement.getAsJsonArray());
+            for (final JsonElement jsonModuleElement : normalizedModules) {
                 if (!jsonModuleElement.isJsonObject()) {
                     continue;
                 }

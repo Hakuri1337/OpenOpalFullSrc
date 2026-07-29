@@ -21,7 +21,7 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.movement.StuckModule;
 import wtf.oraculus.client.feature.module.impl.utility.AntiBotsModule;
 import wtf.oraculus.client.feature.module.impl.utility.BlinkModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.BlockFlyModule;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
@@ -217,10 +217,10 @@ public final class AutoThrowModule extends Module {
         }
 
         final var repository = OraculusClient.getInstance().getModuleRepository();
-        final BlockFlyModule blockFly = repository.getModule(BlockFlyModule.class);
+        final ScaffoldModule scaffold = repository.getModule(ScaffoldModule.class);
         final StuckModule stuck = repository.getModule(StuckModule.class);
         final BlinkModule blink = repository.getModule(BlinkModule.class);
-        return blockFly != null && blockFly.isEnabled()
+        return scaffold != null && scaffold.isEnabled()
                 || stuck != null && stuck.isEnabled()
                 || blink != null && blink.isEnabled();
     }

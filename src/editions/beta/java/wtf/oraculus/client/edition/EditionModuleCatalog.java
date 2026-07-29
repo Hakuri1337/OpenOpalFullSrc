@@ -24,9 +24,9 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.impl.world.ChestAuraModule;
 import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.BlockFlyModule;
-import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
+import wtf.oraculus.client.feature.module.impl.world.legittelly.LegitTellyModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
+import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.oraculus.client.music.MusicPlayerModule;
 
 public final class EditionModuleCatalog {
@@ -46,7 +46,7 @@ public final class EditionModuleCatalog {
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
                 new PostProcessingModule(), new MotionBlurModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(),
 
-                new ScaffoldModule(), new BlockFlyModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
+                new ScaffoldModule(), new LegitTellyModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
                 new ChestAuraModule(), new AntiStaffModule(),
 
                 new FlightModule(), new SpeedModule(), new JumpCooldownModule(), new SprintModule(),

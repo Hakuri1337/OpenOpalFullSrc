@@ -12,87 +12,80 @@ import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.animation.Animation;
 import wtf.oraculus.utility.render.animation.Easing;
 
-import static wtf.oraculus.client.Constants.mc;
-
 public final class ScaffoldIsland {
-
     private final ScaffoldModule parent;
+    private Animation blockCounterAnimation;
+    private float width = 140.0F;
 
-    public ScaffoldIsland(ScaffoldModule parent) {
+    public ScaffoldIsland(final ScaffoldModule parent) {
         this.parent = parent;
     }
 
-    private float width;
-
-    private Animation blockCounterAnimation;
-
-    public void render(DrawContext context, float posX, float posY) {
+    public void render(final DrawContext context, final float posX, final float posY) {
         final NVGTextRenderer titleFont = FontRepository.getFont("productsans-bold");
         final NVGTextRenderer footerFont = FontRepository.getFont("productsans-medium");
-
-        final float titleTextSize = 8;
-        final float secondaryTextSize = 6;
-
-        final ItemStack handStack = mc.player.getMainHandStack().getItem() instanceof BlockItem ?
-                mc.player.getMainHandStack() : mc.player.getOffHandStack();
-        final boolean isBlock = handStack.getItem() instanceof BlockItem;
-
-        final int stackSize = isBlock ? handStack.getCount() : 0;
+        final ItemStack stack = this.parent.getDisplayedBlockStack();
+        final int stackSize = stack.getItem() instanceof BlockItem ? stack.getCount() : 0;
         final String stackText = stackSize + " ";
-        final String postStackText = "block" + (stackSize != 1 ? "s" : "");
-        final String bpsText = MoveUtility.getBlocksPerSecond() + " b/s";
+        final String suffix = "block" + (stackSize == 1 ? "" : "s");
+        final String speedText = MoveUtility.getBlocksPerSecond() + " b/s";
+        final float titleSize = 8.0F;
+        final float footerSize = 6.0F;
 
-        width = 130 + Math.max(titleFont.getStringWidth(stackText, titleTextSize) + footerFont.getStringWidth(postStackText, titleTextSize), footerFont.getStringWidth(bpsText, secondaryTextSize));
+        this.width = 130.0F + Math.max(
+                titleFont.getStringWidth(stackText, titleSize) + footerFont.getStringWidth(suffix, titleSize),
+                footerFont.getStringWidth(speedText, footerSize)
+        );
 
-        // TODO: replace with scaffold block
         int color = -1;
-        if (isBlock) {
-            color = ColorUtility.applyOpacity(((BlockItem) handStack.getItem()).getBlock().getDefaultMapColor().color, 255);
+        if (stack.getItem() instanceof BlockItem blockItem) {
+            color = ColorUtility.applyOpacity(blockItem.getBlock().getDefaultMapColor().color, 255);
         }
 
-        final float prevGlobalAlpha = NVGRenderer.globalAlpha;
-        NVGRenderer.globalAlpha(1);
-        NVGRenderer.roundedRect(posX + 5.5f, posY + 4f, 17, 17, 8.25f, ColorUtility.applyOpacity(color, 120));
-        NVGRenderer.globalAlpha(prevGlobalAlpha);
+        final float previousAlpha = NVGRenderer.globalAlpha;
+        NVGRenderer.globalAlpha(1.0F);
+        NVGRenderer.roundedRect(posX + 5.5F, posY + 4.0F, 17.0F, 17.0F, 8.25F,
+                ColorUtility.applyOpacity(color, 120));
+        NVGRenderer.globalAlpha(previousAlpha);
 
-        if (handStack.getItem() instanceof BlockItem) {
+        if (!stack.isEmpty()) {
             MinecraftRenderer.addToQueue(() -> {
                 context.getMatrices().pushMatrix();
-                context.getMatrices().translate(posX + 8.f, posY + 6.5f);
-                context.getMatrices().scale(0.75f, 0.75f);
-                context.drawItem(mc.player, handStack, 0, 0, 0);
+                context.getMatrices().translate(posX + 8.0F, posY + 6.5F);
+                context.getMatrices().scale(0.75F, 0.75F);
+                context.drawItem(stack, 0, 0);
                 context.getMatrices().popMatrix();
             });
         }
 
-        NVGRenderer.roundedRect(posX + 28, posY + 11.5f, 85, 2.5f, 1.5f, ColorUtility.darker(color, 0.55f));
-
-        final float scaledWidth = (Math.min(stackSize, 64) / 64f) * 85;
+        NVGRenderer.roundedRect(posX + 28.0F, posY + 11.5F, 85.0F, 2.5F, 1.5F,
+                ColorUtility.darker(color, 0.55F));
+        final float progressWidth = Math.min(stackSize, 64) / 64.0F * 85.0F;
         if (this.blockCounterAnimation == null) {
             this.blockCounterAnimation = new Animation(Easing.EASE_OUT_EXPO, 200);
-            this.blockCounterAnimation.setValue(scaledWidth);
+            this.blockCounterAnimation.setValue(progressWidth);
         } else {
-            this.blockCounterAnimation.run(scaledWidth);
+            this.blockCounterAnimation.run(progressWidth);
         }
         if (stackSize > 0) {
-            NVGRenderer.roundedRectGradient(posX + 28, posY + 11.5f, this.blockCounterAnimation.getValue(), 2.5f, 1.25f, ColorUtility.darker(color, 0.4f), color, 0);
+            NVGRenderer.roundedRectGradient(posX + 28.0F, posY + 11.5F,
+                    this.blockCounterAnimation.getValue(), 2.5F, 1.25F,
+                    ColorUtility.darker(color, 0.4F), color, 0);
         }
 
-        titleFont.drawString(stackText, posX + 28 + 85 + 7, posY + 12, titleTextSize, color);
-        footerFont.drawString(postStackText, posX + 28 + 85 + 7 + titleFont.getStringWidth(stackText, titleTextSize), posY + 12, titleTextSize, -1);
-
-        footerFont.drawString(bpsText, posX + 28 + 85 + 7, posY + 12 + titleTextSize - 1, secondaryTextSize, ColorUtility.MUTED_COLOR);
+        titleFont.drawString(stackText, posX + 120.0F, posY + 12.0F, titleSize, color);
+        footerFont.drawString(suffix,
+                posX + 120.0F + titleFont.getStringWidth(stackText, titleSize),
+                posY + 12.0F, titleSize, -1);
+        footerFont.drawString(speedText, posX + 120.0F, posY + 19.0F, footerSize,
+                ColorUtility.MUTED_COLOR);
     }
 
-    public void onDisable() {
+    public void reset() {
         this.blockCounterAnimation = null;
     }
 
-    public float getWidth() {
-        return width;
-    }
-
-    public float getHeight() {
-        return 25;
+    public float width() {
+        return this.width;
     }
 }

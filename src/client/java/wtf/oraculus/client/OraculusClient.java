@@ -7,6 +7,7 @@ import wtf.oraculus.client.binding.repository.BindRepository;
 import wtf.oraculus.client.edition.EditionModuleCatalog;
 import wtf.oraculus.client.command.impl.config.ConfigCommand;
 import wtf.oraculus.client.command.impl.misc.DashboardCommand;
+import wtf.oraculus.client.command.impl.misc.IrcCommand;
 import wtf.oraculus.client.command.impl.misc.ScriptCommand;
 import wtf.oraculus.client.command.impl.module.BindCommand;
 import wtf.oraculus.client.command.impl.module.DeprecatedModulesCommand;
@@ -50,12 +51,11 @@ import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.ChestAuraModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.BlockFlyModule;
-import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.repository.ModuleRepository;
 import wtf.oraculus.client.notification.NotificationManager;
 import wtf.oraculus.client.music.MusicPlayerModule;
 import wtf.oraculus.client.music.MusicService;
+import wtf.oraculus.client.irc.IrcService;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.client.PostClientInitializationEvent;
 
@@ -73,6 +73,7 @@ public final class OraculusClient {
     private ModuleRepository moduleRepository;
     private ScriptRepository scriptRepository;
     private MusicService musicService;
+    private IrcService ircService;
 
     private boolean bootstrapInitialization;
     private boolean postInitialization;
@@ -103,6 +104,9 @@ public final class OraculusClient {
         }
         if (this.runtimeInitialized) {
             SaveUtility.loadConfigFile("default");
+            if (this.ircService != null) {
+                this.ircService.start();
+            }
             this.postInitialization = true;
             return;
         }
@@ -130,6 +134,7 @@ public final class OraculusClient {
                             new HClipCommand(),
                             new UsernameCommand(),
                             new DashboardCommand(),
+                            new IrcCommand(),
                             new FriendCommand(),
                             new ScriptCommand()
                     ).build();
@@ -141,6 +146,10 @@ public final class OraculusClient {
 
         this.runtimeInitialized = true;
         this.postInitialization = true;
+        if (this.ircService == null) {
+            this.ircService = new IrcService(AuthBootstrap.getService());
+        }
+        this.ircService.start();
         EventDispatcher.dispatch(new PostClientInitializationEvent());
 
         PayloadTypeRegistry.playS2C().register(PhysicsModule.ResyncPhysicsPayload.ID, PhysicsModule.ResyncPhysicsPayload.CODEC);
@@ -153,6 +162,9 @@ public final class OraculusClient {
     }
 
     public synchronized void stopAuthenticatedRuntime() {
+        if (this.ircService != null) {
+            this.ircService.stop();
+        }
         if (this.moduleRepository == null) {
             this.postInitialization = false;
             return;
@@ -209,6 +221,9 @@ public final class OraculusClient {
         if (this.musicService != null) {
             this.musicService.close();
         }
+        if (this.ircService != null) {
+            this.ircService.close();
+        }
 
         if (this.runtimeInitialized && this.moduleRepository != null) {
             SaveUtility.saveConfig("default");
@@ -239,6 +254,10 @@ public final class OraculusClient {
 
     public MusicService getMusicService() {
         return musicService;
+    }
+
+    public IrcService getIrcService() {
+        return ircService;
     }
 
     private static OraculusClient instance;

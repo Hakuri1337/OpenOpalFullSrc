@@ -52,6 +52,9 @@ public final class EditionConfigCompatibility {
         if (moduleId.equals("overlay")) {
             return isUnsupportedTheme(getPropertyValue(module, "theme"));
         }
+        if (moduleId.equals("antikb")) {
+            return isUnsupportedVelocityMode(mode);
+        }
         return false;
     }
 
@@ -181,6 +184,15 @@ public final class EditionConfigCompatibility {
         }
         final String value = normalize(String.valueOf(theme));
         return value.equals("sigma") || value.equals("sigmastyle");
+    }
+
+    private static boolean isUnsupportedVelocityMode(final Object mode) {
+        if (mode instanceof Number number) {
+            // Beta appends HypixelReduce and Intave after all legacy values.
+            return number.intValue() == 7 || number.intValue() == 8;
+        }
+        final String value = normalize(String.valueOf(mode));
+        return value.equals("hypixelreduce") || value.equals("intave");
     }
 
     private static Object getPropertyValue(final JsonObject module, final String propertyName) {

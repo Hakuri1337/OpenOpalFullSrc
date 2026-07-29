@@ -15,7 +15,7 @@ import net.minecraft.util.math.Vec2f;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.helper.impl.player.packet.blockage.impl.OutboundNetworkBlockage;
 import wtf.oraculus.client.feature.module.impl.utility.disabler.DisablerModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.BlockFlyModule;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode;
@@ -371,8 +371,8 @@ public final class HeypixelDisabler extends ModuleMode<DisablerModule> {
             return false;
         }
 
-        final BlockFlyModule blockFly = repository.getModule(BlockFlyModule.class);
-        return blockFly != null && blockFly.isEnabled();
+        final ScaffoldModule scaffold = repository.getModule(ScaffoldModule.class);
+        return scaffold != null && scaffold.isEnabled();
     }
 
     private boolean shouldResetForPlayerState() {

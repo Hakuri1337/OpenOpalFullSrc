@@ -27,7 +27,7 @@ import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.oraculus.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.oraculus.client.feature.module.impl.visual.AnimationsModule;
 import wtf.oraculus.client.feature.module.impl.visual.SilenceItemRotationModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.render.BlockFlyRenderSpoof;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.render.ScaffoldRenderSpoof;
 import wtf.oraculus.duck.PlayerEntityAccess;
 import wtf.oraculus.utility.player.BlockUtility;
 
@@ -319,6 +319,6 @@ public abstract class HeldItemRendererMixin {
     )
     private ItemStack getMainHandStack(ClientPlayerEntity instance) {
         final ItemStack stack = SlotHelper.getInstance().getMainHandStack(instance);
-        return BlockFlyRenderSpoof.mainHandStackOr(instance, stack);
+        return ScaffoldRenderSpoof.mainHandStackOr(instance, stack);
     }
 }

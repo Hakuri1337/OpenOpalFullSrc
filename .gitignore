@@ -62,3 +62,9 @@ replay_*.log
 __pycache__/
 promotional/**/*.mp4
 /*OpalLegacy.bat
+
+# Website build cache and local package-verification extraction
+website/tsconfig.tsbuildinfo
+website/publish/_verify_windows2012r2_package/
+website/publish/OraculusWebsite-Windows2012R2/
+website/publish/*.zip

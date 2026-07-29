@@ -1,1526 +1,778 @@
 package wtf.oraculus.client.feature.module.impl.world.scaffold;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.OtherClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.BufferAllocator;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemUsageContext;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.network.packet.s2c.play.ItemPickupAnimationS2CPacket;
+import net.minecraft.network.ClientConnection;
+import net.minecraft.network.packet.Packet;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
+import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.*;
-import net.minecraft.util.shape.VoxelShape;
-import wtf.oraculus.client.OraculusClient;
-import wtf.oraculus.duck.ClientPlayerEntityAccess;
-import wtf.oraculus.event.EventDispatcher;
-import wtf.oraculus.client.feature.helper.impl.LocalDataWatch;
-import wtf.oraculus.client.feature.helper.impl.player.mouse.MouseButton;
-import wtf.oraculus.client.feature.helper.impl.player.mouse.MouseHelper;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationHelper;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.handler.RotationMouseHandler;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.model.EnumRotationModel;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.model.IRotationModel;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.model.impl.HypixelRotationModel;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.model.impl.InstantRotationModel;
-import wtf.oraculus.client.feature.helper.impl.player.slot.SlotHelper;
-import wtf.oraculus.client.feature.helper.impl.player.swing.SwingDelay;
-import wtf.oraculus.client.feature.helper.impl.render.FadingBlockHelper;
-import wtf.oraculus.client.feature.helper.impl.server.impl.HypixelServer;
+import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
-import wtf.oraculus.client.feature.module.DeprecatedModule;
-import wtf.oraculus.client.feature.module.impl.movement.StuckModule;
-import wtf.oraculus.client.feature.module.impl.movement.flight.FlightModule;
-import wtf.oraculus.client.feature.module.impl.movement.longjump.LongJumpModule;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger;
-import wtf.oraculus.client.feature.module.impl.world.scaffold.mode.HeypixelScaffold;
-import wtf.oraculus.client.feature.module.repository.ModuleRepository;
-import wtf.oraculus.client.feature.simulation.PlayerSimulation;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.block.ScaffoldBlockUtil;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.block.ScaffoldPlacementSearch;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.input.ScaffoldKeyStateController;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.inventory.ScaffoldSlotController;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.math.ScaffoldMathUtil;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.motion.ScaffoldMotionSimulator;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.movement.ScaffoldMovementUtil;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.raycast.ScaffoldRayTraceUtil;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.render.ScaffoldRenderSpoof;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotation;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationBridge;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationHandler;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationUtil;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.state.ScaffoldPlacementTarget;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.tick.ScaffoldDelayedTickQueue;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
+import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.world.WorldRenderer;
+import wtf.oraculus.duck.ClientConnectionAccess;
+import wtf.oraculus.event.impl.game.JoinWorldEvent;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
 import wtf.oraculus.event.impl.game.input.MoveInputEvent;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
-import wtf.oraculus.event.impl.game.player.interaction.block.BlockPlacedEvent;
+import wtf.oraculus.event.impl.game.player.movement.JumpEvent;
+import wtf.oraculus.event.impl.game.player.movement.PostMovementPacketEvent;
+import wtf.oraculus.event.impl.game.player.movement.PreMovementPacketEvent;
+import wtf.oraculus.event.impl.game.server.ServerDisconnectEvent;
+import wtf.oraculus.event.impl.render.RenderScreenEvent;
 import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
-import wtf.oraculus.mixin.ClientPlayerInteractionManagerAccessor;
 import wtf.oraculus.mixin.LivingEntityAccessor;
-import wtf.oraculus.utility.misc.chat.ChatUtility;
-import wtf.oraculus.utility.player.*;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.CustomRenderLayers;
 
-import java.awt.*;
-import java.util.*;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static wtf.oraculus.client.Constants.mc;
 
-/**
- * @deprecated Legacy Scaffold remains available for existing configurations, but is hidden from module GUIs by default.
- */
-@Deprecated
-public final class ScaffoldModule extends Module implements IslandTrigger, DeprecatedModule {
-    private static final Direction[] DIRECTIONS = Direction.values();
-    private static final double MAX_PLACEMENT_DISTANCE_SQUARED = 20.25D;
-    private static final int NORMAL_SEARCH_DEPTH = 4;
-    private static final int TELLY_SEARCH_DEPTH = 3;
-    private static final int NORMAL_VISIT_BUDGET = 160;
-    private static final int TELLY_VISIT_BUDGET = 96;
-    private static final int NORMAL_RAYTRACE_BUDGET = 48;
-    private static final int TELLY_RAYTRACE_BUDGET = 24;
-    private static final int TELLY_TARGET_CANDIDATE_BUDGET = 48;
-    private static final int RECENT_SUPPORT_QUARANTINE_TICKS = 1;
-    private static final int RECENT_PLACED_BLOCK_TTL = 6;
-    private static final int MAX_LAST_PLACED_BLOCKS = 4;
-    private static final double[] FOOT_OFFSETS = {0.0D, 0.301D, -0.301D};
-    private static final double[] LOOKAHEAD_STEPS = {0.0D, 0.35D, 0.7D, 1.05D, 1.4D};
-    private static final double[] HIT_OFFSETS = {0.0D, 0.24D, -0.24D};
+public final class ScaffoldModule extends Module implements IslandTrigger {
+    private final ScaffoldSettings settings = new ScaffoldSettings();
+    private final ScaffoldSlotController slotController = new ScaffoldSlotController();
+    private final ScaffoldKeyStateController keyController = new ScaffoldKeyStateController();
+    private final ScaffoldIsland island = new ScaffoldIsland(this);
+    private final CopyOnWriteArrayList<CopyOnWriteArrayList<Packet<?>>> packetBatches = new CopyOnWriteArrayList<>();
 
-    private final ScaffoldIsland dynamicIsland = new ScaffoldIsland(this);
-    private final ScaffoldSettings settings = new ScaffoldSettings(this);
+    private final ScaffoldRotation correctRotation = new ScaffoldRotation();
+    private final ScaffoldRotation rotations = new ScaffoldRotation();
+    private final ScaffoldRotation lastRotations = new ScaffoldRotation();
 
-    public BlockData blockCache;
-    private int sameYPos;
-
-    private Vec3d preExpandPos;
-    private RaytracedRotation rotation;
-    private boolean skipTickRecoveryActive;
-    private boolean skipTickRecoveryFailed;
-    private int skipTickRecoveryCandidateTicks;
-    private BlockPos skipTickRecoveryBlockPos;
-    private Direction skipTickRecoveryFace;
-    private boolean upTellyBypassActive;
-    private boolean upTellyBypassRecovering;
-    private boolean upTellyBypassPendingGroundJump;
-    private boolean onTickRotationApplied;
-
-    private Map<Integer, Integer> realStackSizeMap;
-    private int autoJumpTicks;
-    private int autoJumpGroundTicks;
-    private int autoJumpAirTicks;
-    private int lastAutoJumpAge;
-    private int lastAutoJumpStateAge;
-    private final Map<BlockPos, Integer> recentPlacedBlocks = new HashMap<>();
-    private final ArrayDeque<BlockPos> lastPlacedBlocks = new ArrayDeque<>();
-    private BlockPos lastSearchOrigin;
-    private BlockData lastSearchData;
-    private int lastSearchAge = -1;
+    private ScaffoldPlacementTarget currentPlacement;
+    private int targetYLevel = -1;
+    private int velocityDelay;
+    private int eagleTimer;
+    private int groundTicks;
+    private int airTicks;
+    private int rotationDelay;
+    private int jitterCounter;
+    private double yawDifference;
+    private double pitchDifference;
+    private double lastYawDifference = Double.NaN;
+    private double lastPitchDifference = Double.NaN;
+    private boolean canBuildNow = true;
+    private boolean runtimeInitialized;
 
     public ScaffoldModule() {
-        super("Scaffold", "Automatically places blocks under you.", ModuleCategory.WORLD);
-        this.setVisible(false);
-    }
-
-    @Override
-    protected void onDisable() {
-        RotationHelper.getHandler().reset();
-        RotationInjector.clear();
-        this.onTickRotationApplied = false;
-        SlotHelper.getInstance().stop();
-        this.dynamicIsland.onDisable();
-        this.realStackSizeMap = null;
-        this.intelligentRotation = null;
-        this.placeTick = 0;
-        this.rotation = null;
-        this.blockCache = null;
-        this.recentPlacedBlocks.clear();
-        this.lastPlacedBlocks.clear();
-        this.lastSearchOrigin = null;
-        this.lastSearchData = null;
-        this.lastSearchAge = -1;
-        this.skipTickRecoveryActive = false;
-        this.skipTickRecoveryFailed = false;
-        this.skipTickRecoveryCandidateTicks = 0;
-        this.skipTickRecoveryBlockPos = null;
-        this.skipTickRecoveryFace = null;
-        this.upTellyBypassActive = false;
-        this.upTellyBypassRecovering = false;
-        this.upTellyBypassPendingGroundJump = false;
-        SkipTickUtility.reset();
-        this.resetAutoJumpState();
-
-        super.onDisable();
+        super("Scaffold", "Places blocks below you using OpenZen's complete scaffold flow.", ModuleCategory.WORLD);
+        this.addProperties(
+                this.settings.implementationMarkerProperty(),
+                this.settings.modeProperty(),
+                this.settings.eagleProperty(),
+                this.settings.sneakProperty(),
+                this.settings.snapProperty(),
+                this.settings.renderItemSpoofProperty(),
+                this.settings.rotationTickProperty(),
+                this.settings.clutchProperty()
+        );
     }
 
     @Override
     protected void onEnable() {
+        this.initializeRuntime();
         super.onEnable();
+    }
 
-        blockCache = null;
-        rotation = null;
-        this.lastPlacedBlocks.clear();
-        this.lastSearchOrigin = null;
-        this.lastSearchData = null;
-        this.lastSearchAge = -1;
-        this.resetAutoJumpState();
-        this.skipTickRecoveryFailed = false;
-        this.skipTickRecoveryCandidateTicks = 0;
-        this.skipTickRecoveryBlockPos = null;
-        this.skipTickRecoveryFace = null;
-        this.upTellyBypassActive = false;
-        this.upTellyBypassRecovering = false;
-        this.upTellyBypassPendingGroundJump = false;
+    @Override
+    protected void onDisable() {
+        this.cleanupRuntime(true);
+        super.onDisable();
+    }
 
-        this.realStackSizeMap = new HashMap<>();
+    @Override
+    public String getSuffix() {
+        return this.settings.mode().toString();
+    }
 
-        if (mc.player == null) return;
-        sameYPos = MathHelper.floor(mc.player.getY());
+    @Subscribe(priority = 100)
+    public void onPreGameTick(final PreGameTickEvent event) {
+        if (mc.player == null || mc.world == null || mc.interactionManager == null) {
+            this.cleanupRuntime(false);
+            return;
+        }
+        if (!this.runtimeInitialized) {
+            this.initializeRuntime();
+        }
+        this.runTick();
     }
 
     @Subscribe
-    public void onBlockPlaced(BlockPlacedEvent event) {
-        if (!mc.interactionManager.getCurrentGameMode().isCreative()) {
-            int selectedSlot = mc.player.getInventory().getSelectedSlot();
-            this.realStackSizeMap.put(selectedSlot, this.realStackSizeMap.getOrDefault(selectedSlot, mc.player.getMainHandStack().getCount() + 1) - 1);
+    public void onReceivePacket(final ReceivePacketEvent event) {
+        if (mc.player == null || mc.world == null) {
+            return;
         }
+        if (event.getPacket() instanceof EntityVelocityUpdateS2CPacket velocityPacket
+                && velocityPacket.getEntityId() == mc.player.getId()) {
+            final Vec3d velocity = velocityPacket.getVelocity();
+            if (Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) >= 1.5D) {
+                this.velocityDelay = 60;
+            }
+        }
+    }
 
-        if (this.isTellyMode()) {
-            final BlockHitResult hitResult = event.getBlockHitResult();
-            final BlockPos placed = hitResult.getBlockPos().offset(hitResult.getSide()).toImmutable();
-            this.recentPlacedBlocks.put(placed, mc.player.age);
-            this.trackPlacedBlock(placed);
+    @Subscribe(priority = 100)
+    public void onMouseHandleInput(final MouseHandleInputEvent event) {
+        event.setCancelled();
+        if (mc.currentScreen != null || mc.player == null || this.currentPlacement == null) {
+            return;
+        }
+        if (this.isTellyMode() && this.airTicks < 1) {
+            return;
+        }
+        final ScaffoldRotation targetRotation = ScaffoldRotationHandler.targetRotation();
+        final boolean canRayTrace = ScaffoldRayTraceUtil.canRayTrace(
+                targetRotation,
+                this.currentPlacement.clickedFace(),
+                this.currentPlacement.supportPos(),
+                false
+        );
+        if (!this.canBuildNow && !this.isPlacementReachable(this.currentPlacement)) {
+            return;
+        }
+        if (this.rotationDelay <= 0 && this.settings.mode() != ScaffoldMode.OLD_TELLY && !canRayTrace) {
+            return;
+        }
+        this.doSnap();
+    }
+
+    @Subscribe(priority = 100)
+    public void onJump(final JumpEvent event) {
+        if (!this.canBuildNow && this.currentPlacement != null && this.rotationDelay > 0) {
+            event.setCancelled();
+        }
+    }
+
+    @Subscribe(priority = -100)
+    public void onMoveInput(final MoveInputEvent event) {
+        if (ScaffoldRotationHandler.isOwningRotation()) {
+            ScaffoldMovementUtil.correctInput(event, ScaffoldRotationBridge.logicalYawOr(mc.player.getYaw()));
+        }
+    }
+
+    @Subscribe(priority = -100)
+    public void onPreMovementPacket(final PreMovementPacketEvent event) {
+        ScaffoldRotationHandler.applyToMovementPacket(event);
+    }
+
+    @Subscribe
+    public void onPostMovementPacket(final PostMovementPacketEvent event) {
+        if (mc.player == null) {
+            return;
+        }
+        if (mc.player.isOnGround()) {
+            this.airTicks = 0;
+            this.groundTicks++;
         } else {
-            this.trackPlacedBlock(event.getBlockHitResult().getBlockPos().offset(event.getBlockHitResult().getSide()).toImmutable());
+            this.groundTicks = 0;
+            this.airTicks++;
         }
     }
 
     @Subscribe
     public void onRenderWorld(final RenderWorldEvent event) {
-        if (mc.crosshairTarget instanceof BlockHitResult blockHitResult
-                && blockHitResult.getType() == HitResult.Type.BLOCK
-                && rotation != null
-                && settings.isBlockOverlayEnabled()
-                && !mc.world.getBlockState(blockHitResult.getBlockPos()).isAir()) {
-            final Vec3d startVec = new Vec3d(blockHitResult.getBlockPos().getX(), blockHitResult.getBlockPos().getY(), blockHitResult.getBlockPos().getZ());
-            final Vec3d dimensions = new Vec3d(1, 1, 1);
-
-            VertexConsumerProvider.Immediate vcp = VertexConsumerProvider.immediate(new BufferAllocator(1024));
-            WorldRenderer rc = new WorldRenderer(vcp);
-
-            rc.drawFilledCube(event.matrixStack(), CustomRenderLayers.getPositionColorQuads(true), startVec, dimensions, ColorUtility.applyOpacity(ColorUtility.getClientTheme().first, 0.25F));
-
-            vcp.draw();
-        }
-    }
-
-    @Subscribe(priority = 1)
-    public void onMoveInput(final MoveInputEvent event) {
-        if (this.upTellyBypassRecovering) {
-            event.setForward(0.0F);
-            event.setSideways(0.0F);
-
-            if (this.upTellyBypassPendingGroundJump && mc.player.isOnGround()) {
-                ((LivingEntityAccessor) mc.player).setJumpingCooldown(0);
-                event.setJump(true);
-                this.upTellyBypassPendingGroundJump = false;
-            }
+        if (this.currentPlacement == null || mc.gameRenderer == null) {
             return;
         }
-
-        if (this.isUitemsMode()) {
-            return;
-        }
-
-        if (this.isSilenceTellyMode()) {
-            return;
-        }
-
-        if (this.settings.getMode().is(ScaffoldSettings.Mode.TELLY)) {
-            return;
-        }
-        this.updateAutoJumpTicks();
-        if (this.shouldAutoJump(event)) {
-            ((LivingEntityAccessor) mc.player).setJumpingCooldown(0);
-            event.setJump(true);
-            this.lastAutoJumpAge = mc.player.age;
-        }
-    }
-
-    @Subscribe(priority = 1)
-    public void onHandleInput(final MouseHandleInputEvent event) {
-        if (this.isUitemsMode()) {
-            return;
-        }
-
-        if (this.isSilenceTellyMode()) {
-            return;
-        }
-
-        final MouseButton rightButton = MouseHelper.getRightButton();
-        final boolean isBlock = this.hasHeldPlaceableBlock();
-        if (this.blockCache != null) {
-            final BlockHitResult tellyHitResult = this.isTellyMode() ? this.getCurrentTellyHitResult() : null;
-            if (rotation != null && settings.isOverrideRaycast()) {
-                if (this.isTellyMode()) {
-                    if (tellyHitResult != null) {
-                        mc.crosshairTarget = tellyHitResult;
-                    }
-                } else {
-                    mc.crosshairTarget = this.rotation.hitResult();
-                }
-            }
-
-            final Block blockOver = PlayerUtility.getBlockOver();
-            final BlockHitResult hitResult = this.isTellyMode()
-                    ? tellyHitResult
-                    : mc.crosshairTarget instanceof BlockHitResult currentHit ? currentHit : null;
-            final boolean canPlaceCache = this.isTellyMode()
-                    ? hitResult != null && this.isValidPlacementHit(hitResult, true)
-                    : hitResult != null && this.isLookingAtBlockCache() && this.canPlaceCurrentCache();
-
-            if (this.shouldDelayAutoJumpPlacement()) {
-                rightButton.setDisabled();
-            } else if (!InventoryUtility.isBlockInteractable(blockOver) && isBlock && canPlaceCache) {
-                if (this.placeBlock(hitResult)) {
-                    this.placeTick = mc.player.age;
-
-                    if (settings.isBlockOverlayEnabled()) {
-                        FadingBlockHelper.getInstance().addFadingBlock(
-                                new FadingBlockHelper.FadingBlock(
-                                        blockCache.blockWithDirection.blockPos,
-                                        Color.BITMASK,
-                                        ColorUtility.applyOpacity(ColorUtility.getClientTheme().first, 0.25F),
-                                        300
-                                )
-                        );
-                    }
-                }
-                rightButton.setDisabled();
-            } else {
-                rightButton.setDisabled();
-            }
-        } else {
-            if (!isBlock || !this.simulateClick()) {
-                rightButton.setDisabled();
-            } else {
-                rightButton.setDisabled();
-            }
-        }
-
-        if (preExpandPos != null) {
-            mc.player.setPos(preExpandPos.x, preExpandPos.y, preExpandPos.z);
-            preExpandPos = null;
-        }
-    }
-
-    private boolean simulateClick() {
-        if (!SwingDelay.isSwingAvailable(this.settings.getSimulationCps(), false)) {
-            return false;
-        }
-        if (mc.crosshairTarget != null) {
-            if (mc.crosshairTarget instanceof BlockHitResult blockHitResult) {
-//                if(!this.settings.isOverrideRaycast() && (this.blockCache.blockWithDirection.blockPos() != blockHitResult.getBlockPos() || this.blockCache.blockWithDirection.direction() != blockHitResult.getSide())) {
-//                    return false;
-//                }
-                if (!this.isValidPlacementHit(blockHitResult, false)) {
-                    return false;
-                }
-
-                if (!this.placeBlock(blockHitResult)) {
-                    return false;
-                }
-                this.settings.getSimulationCps().resetClick();
-                SwingDelay.reset();
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Vec2f intelligentRotation;
-
-    @Subscribe(priority = 1)
-    public void onPreGameTick(final PreGameTickEvent event) {
-        if (mc.player == null) {
-            blockCache = null;
-            return;
-        }
-        this.pruneRecentPlacedBlocks();
-        this.updateUitemsBypassState();
-        this.tryArmSkipTickRecovery();
-        this.updateSkipTickRecoveryGroundState();
-
-        final ScaffoldSettings.Mode effectiveMode = this.getEffectiveMode();
-        if (effectiveMode == ScaffoldSettings.Mode.HEYPIXEL || effectiveMode == ScaffoldSettings.Mode.HYPIXEL) {
-            return;
-        }
-
-        if (effectiveMode == ScaffoldSettings.Mode.SILENCE_TELLY) {
-            return;
-        }
-
-        if (this.settings.isSameYEnabled() && this.settings.isAutoJump() && mc.player.isOnGround()
-                && LocalDataWatch.get().groundTicks > 0
-                && (this.upTellyBypassActive || this.upTellyBypassRecovering)) {
-            RotationMouseHandler handler = RotationHelper.getHandler();
-            if (rotation != null) {
-                handler.rotate(new Vec2f(mc.gameRenderer.getCamera().getYaw() + (44f * Math.signum(rotation.rotation().x)), mc.gameRenderer.getCamera().getPitch()), InstantRotationModel.INSTANCE);
-            }
-            this.rotation = null;
-            return;
-        }
-
-        if (this.isTellyMode()) {
-            this.updateHeldBlockSlot();
-            return;
-        }
-        this.updateAutoJumpTicks();
-            // Expand
-        Vec3d expandOffset = null;
-//        if (LocalDataWatch.get().getKnownServerManager().getCurrentServer() instanceof HypixelServer) {
-//            expandOffset = mc.player.getVelocity().withAxis(Direction.Axis.Y, 0.0D);
-//        }
-
-        if (expandOffset != null) {
-            preExpandPos = mc.player.getEntityPos();
-
-            mc.player.setPos(mc.player.getX() + expandOffset.getX(), mc.player.getY() + expandOffset.getY(), mc.player.getZ() + expandOffset.getZ());
-        }
-
-        if (!this.updateHeldBlockSlot()) {
-            return;
-        }
-
-        final ModuleRepository moduleRepository = OraculusClient.getInstance().getModuleRepository();
-        final boolean autoJumpActive = this.isSameYAutoJumpActive();
-        final boolean manualJump = PlayerUtility.isKeyPressed(mc.options.jumpKey);
-        final boolean updateY = !settings.isSameYEnabled()
-              //  || mc.options.useKey.isPressed()
-                || (this.settings.isAutoJump() && manualJump && !this.isRecentAutoJump())
-                || (mc.player.isOnGround() && !autoJumpActive)
-                || Math.abs(Math.floor(mc.player.getY() - sameYPos)) > 3
-                || moduleRepository.getModule(LongJumpModule.class).isEnabled()
-                || moduleRepository.getModule(FlightModule.class).isEnabled();
-
-        if (updateY) {
-            sameYPos = MathHelper.floor(mc.player.getY());
-        }
-
-        this.intelligentRotation = null;
-
-        final boolean watchdog = effectiveMode == ScaffoldSettings.Mode.WATCHDOG;
-        if (autoJumpActive || !watchdog || !mc.player.input.playerInput.jump() ||
-                !mc.player.isOnGround() && (mc.player.getVelocity().getY() >= 0.0D || PlayerUtility.isBoxEmpty(mc.player.getBoundingBox().offset(0.0D, mc.player.getVelocity().getY(), 0.0D)))) {
-            this.updateMovementIntelligence();
-            updateData();
-            this.updateMovementIntelligence();
-            // TODO: when for sneak
-//            if ((mc.player.input.playerInput.sneak()) &&
-//                    (int) (mc.player.getY() + mc.player.getVelocity().getY()) == (int) mc.player.getY() && (mc.player.getVelocity().getY() >= 0.2D || !updateY)) { // telly check bypass, doesn't run jumping else you fall off lol
-//                this.blockCache = null;
-//            }
-        } else {
-            this.blockCache = null;
-            this.rotation = null;
-        }
-
-        if (rotation != null) {
-            if (!settings.isSnapRotationsEnabled() || blockCache != null) {
-                final IRotationModel model = effectiveMode == this.settings.getMode().getValue()
-                        ? ((LocalDataWatch.get().getKnownServerManager().getCurrentServer() instanceof HypixelServer && effectiveMode == ScaffoldSettings.Mode.WATCHDOG) ? new HypixelRotationModel() : this.settings.createRotationModel())
-                        : this.createEffectiveRotationModel();
-                final Vec2f targetRotation = autoJumpActive ? this.getAutoJumpRotation(rotation.rotation()) : rotation.rotation();
-                if (this.settings.getRotationMode() == RotationInjector.RotationMode.ON_TICK) {
-                    this.onTickRotationApplied = true;
-                } else if (this.onTickRotationApplied) {
-                    RotationInjector.clear();
-                    this.onTickRotationApplied = false;
-                }
-                RotationInjector.applyRotation(
-                        targetRotation,
-                        this.settings.getRotationMode(),
-                        model
-                );
-            }
-        } else if (this.onTickRotationApplied && RotationInjector.isActive()) {
-            RotationInjector.startReturn(RotationUtility.getRotation());
-            this.onTickRotationApplied = false;
-        }
-    }
-
-    private boolean isYawDiagonal() {
-        final float direction = Math.abs(MoveUtility.getDirectionDegrees() % 90);
-        final int range = 30;
-        return direction > 45 - range && direction < 45 + range;
-    }
-
-    private int placeTick;
-
-    private void resetAutoJumpState() {
-        this.autoJumpTicks = 0;
-        this.autoJumpGroundTicks = 0;
-        this.autoJumpAirTicks = 0;
-        this.lastAutoJumpAge = -20;
-        this.lastAutoJumpStateAge = -1;
-    }
-
-    private void updateAutoJumpTicks() {
-        if (mc.player == null || this.lastAutoJumpStateAge == mc.player.age) {
-            return;
-        }
-        this.lastAutoJumpStateAge = mc.player.age;
-        if (!this.isSameYAutoJumpActive()) {
-            this.autoJumpTicks = 0;
-            this.autoJumpGroundTicks = 0;
-            this.autoJumpAirTicks = 0;
-            return;
-        }
-        this.autoJumpTicks++;
-        if (mc.player.isOnGround()) {
-            this.autoJumpGroundTicks++;
-            this.autoJumpAirTicks = 0;
-        } else {
-            this.autoJumpAirTicks++;
-            this.autoJumpGroundTicks = 0;
-        }
-    }
-
-    private boolean shouldAutoJump(final MoveInputEvent event) {
-        if (!this.settings.isSameYEnabled() || !this.settings.isAutoJump() || mc.player == null || mc.world == null) {
-            return false;
-        }
-        if (!mc.player.isOnGround() || mc.player.isSneaking() || event.isSneak() || mc.player.hasStatusEffect(StatusEffects.JUMP_BOOST)) {
-            return false;
-        }
-        if (mc.options.useKey.isPressed()) {
-            return false;
-        }
-        if (this.getPlaceableBlock() == -1 && !(mc.player.getOffHandStack().getItem() instanceof BlockItem blockItem && InventoryUtility.isGoodBlock(blockItem.getBlock()))) {
-            return false;
-        }
-        return Math.abs(event.getForward()) > 1.0E-4F || Math.abs(event.getSideways()) > 1.0E-4F || MoveUtility.isMoving();
-    }
-
-    private boolean hasHeldPlaceableBlock() {
-        if (mc.player == null) {
-            return false;
-        }
-        if (this.isTellyMode()) {
-            return this.hasMainHandPlaceableBlock();
-        }
-        return this.hasMainHandPlaceableBlock() || this.isPlaceableBlockItem(mc.player.getOffHandStack());
-    }
-
-    public boolean hasMainHandPlaceableBlock() {
-        return mc.player != null && this.isPlaceableBlockItem(mc.player.getMainHandStack());
-    }
-
-    public boolean hasHotbarPlaceableBlock() {
-        return mc.player != null && this.getPlaceableBlock() != -1;
-    }
-
-    private boolean isPlaceableBlockItem(final ItemStack stack) {
-        return stack.getItem() instanceof BlockItem blockItem && InventoryUtility.isGoodBlock(blockItem.getBlock());
-    }
-
-    private boolean isSameYAutoJumpActive() {
-        return this.settings.isSameYEnabled()
-                && this.settings.isAutoJump()
-                && (MoveUtility.isMoving() || this.isRecentAutoJump());
-    }
-
-    private boolean isRecentAutoJump() {
-        return mc.player != null && mc.player.age - this.lastAutoJumpAge <= 4;
-    }
-
-    private boolean shouldDelayAutoJumpPlacement() {
-        return this.isSameYAutoJumpActive()
-                && mc.player != null
-                && mc.player.isOnGround()
-                && this.autoJumpGroundTicks <= 2
-                && MoveUtility.isMoving();
-    }
-
-    private boolean isLookingAtBlockCache() {
-        if (this.blockCache == null || !(mc.crosshairTarget instanceof BlockHitResult hitResult)) {
-            return false;
-        }
-        final BlockWithDirection block = this.blockCache.blockWithDirection;
-        return hitResult.getType() == HitResult.Type.BLOCK
-                && hitResult.getBlockPos().equals(block.blockPos)
-                && hitResult.getSide() == block.direction;
-    }
-
-    private boolean canPlaceCurrentCache() {
-        if (!this.isTellyMode()) {
-            return mc.crosshairTarget instanceof BlockHitResult hitResult && this.isValidPlacementHit(hitResult, false);
-        }
-        if (this.rotation == null || this.blockCache == null || mc.player == null || mc.player.isOnGround()) {
-            return false;
-        }
-        final BlockHitResult hitResult = this.getCurrentTellyHitResult();
-        return hitResult != null && this.isValidPlacementHit(hitResult, true);
-    }
-
-    private BlockHitResult getCurrentTellyHitResult() {
-        if (!this.isTellyMode() || this.rotation == null || this.blockCache == null || mc.player == null) {
-            return null;
-        }
-        final Vec2f currentRotation = RotationUtility.getRotation();
-        final HitResult result = RaycastUtility.raycastBlock(mc.player.getBlockInteractionRange(), 1.0F, false, currentRotation.x, currentRotation.y);
-        if (!(result instanceof BlockHitResult hitResult)) {
-            return null;
-        }
-        final BlockWithDirection block = this.blockCache.blockWithDirection;
-        return hitResult.getType() == HitResult.Type.BLOCK
-                && hitResult.getBlockPos().equals(block.blockPos)
-                && hitResult.getSide() == block.direction
-                && this.isValidPlacementSupport(hitResult) ? hitResult : null;
-    }
-
-    private boolean isValidPlacementHit(final BlockHitResult blockHitResult, final boolean checkPredictedCollision) {
-        final PlacementHand placementHand = this.getPlacementHand(!this.isTellyMode());
-        return placementHand != null && this.isValidPlacementHit(blockHitResult, checkPredictedCollision, placementHand);
-    }
-
-    private boolean isValidPlacementHit(final BlockHitResult blockHitResult, final boolean checkPredictedCollision, final PlacementHand placementHand) {
-        if (mc.player == null || mc.world == null) {
-            return false;
-        }
-        if (!this.isValidPlacementSupport(blockHitResult)) {
-            return false;
-        }
-
-        final Block block = mc.world.getBlockState(blockHitResult.getBlockPos()).getBlock();
-        if (InventoryUtility.isBlockInteractable(block)) {
-            return false;
-        }
-
-        final ItemUsageContext itemUsageContext = new ItemUsageContext(mc.player, placementHand.hand, blockHitResult);
-        final ItemPlacementContext placementContext = placementHand.blockItem.getPlacementContext(new ItemPlacementContext(itemUsageContext));
-        if (placementContext == null) {
-            return false;
-        }
-
-        final BlockPos offsetPos = blockHitResult.getBlockPos().offset(blockHitResult.getSide());
-        if (mc.world.isOutOfHeightLimit(offsetPos.getY())) {
-            return false;
-        }
-        final BlockState placementState = placementHand.blockItem.getBlock().getPlacementState(placementContext);
-        if (placementState == null || !mc.world.getBlockState(offsetPos).isReplaceable() || !placementState.canPlaceAt(mc.world, offsetPos)) {
-            return false;
-        }
-
-        final VoxelShape collisionShape = placementState.getCollisionShape(mc.world, offsetPos);
-        if (!collisionShape.isEmpty()) {
-            final Box blockBox = collisionShape.getBoundingBox().offset(offsetPos);
-            if (mc.player.getBoundingBox().intersects(blockBox)) {
-                return false;
-            }
-            if (checkPredictedCollision
-                    && mc.player.getBoundingBox().offset(mc.player.getVelocity()).intersects(blockBox)
-                    && !this.isLandingPlacementCollisionAllowed(blockBox)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private boolean isLandingPlacementCollisionAllowed(final Box blockBox) {
-        if (mc.player == null) {
-            return false;
-        }
-        final Box currentBox = mc.player.getBoundingBox();
-        return mc.player.getVelocity().y <= 0.0D
-                && currentBox.minY >= blockBox.maxY - 1.0E-3D;
-    }
-
-    public boolean placeBlock(final BlockHitResult hitResult) {
-        if (mc.player == null || mc.world == null || mc.interactionManager == null || hitResult == null) {
-            return false;
-        }
-        if (this.placeTick == mc.player.age) {
-            return false;
-        }
-
-        final PlacementHand placementHand = this.getPlacementHand(!this.isTellyMode());
-        if (placementHand == null || !this.isValidPlacementHit(hitResult, this.isTellyMode(), placementHand)) {
-            return false;
-        }
-
-        if (this.settings.isInteractBeforePlace()) {
-            this.sendInteractBlockBeforePlace(placementHand.hand, hitResult);
-        }
-
-        final ActionResult result = mc.interactionManager.interactBlock(mc.player, placementHand.hand, hitResult);
-        if (!result.isAccepted()) {
-            return false;
-        }
-
-        if (this.settings.getSwingMode().getValue() == ScaffoldSettings.SwingMode.SERVER) {
-            ((ClientPlayerEntityAccess) mc.player).oraculus$swingHandServerside(placementHand.hand);
-        } else {
-            mc.player.swingHand(placementHand.hand);
-        }
-        this.placeTick = mc.player.age;
-        EventDispatcher.dispatch(new BlockPlacedEvent(hitResult));
-        return true;
-    }
-
-    public boolean canPlaceAtHit(final BlockHitResult hitResult, final boolean checkPredictedCollision) {
-        return this.isValidPlacementHit(hitResult, checkPredictedCollision);
-    }
-
-    private void sendInteractBlockBeforePlace(final Hand hand, final BlockHitResult hitResult) {
-        if (mc.interactionManager == null || mc.world == null || hand == null || !this.isValidPlacementSupport(hitResult)) {
-            return;
-        }
-
-        final ClientPlayerInteractionManagerAccessor accessor = (ClientPlayerInteractionManagerAccessor) mc.interactionManager;
-        accessor.callSyncSelectedSlot();
-        accessor.callSendSequencedPacket(mc.world, sequence -> new PlayerInteractBlockC2SPacket(hand, hitResult, sequence));
-    }
-
-    private PlacementHand getPlacementHand(final boolean allowOffhand) {
-        if (mc.player == null) {
-            return null;
-        }
-        if (this.isPlaceableBlockItem(mc.player.getMainHandStack())) {
-            return new PlacementHand(Hand.MAIN_HAND, (BlockItem) mc.player.getMainHandStack().getItem());
-        }
-        if (allowOffhand && this.isPlaceableBlockItem(mc.player.getOffHandStack())) {
-            return new PlacementHand(Hand.OFF_HAND, (BlockItem) mc.player.getOffHandStack().getItem());
-        }
-        return null;
-    }
-
-    private Vec2f getAutoJumpRotation(final Vec2f blockRotation) {
-        if (mc.player == null) {
-            return blockRotation;
-        }
-        final int groundTicks = Math.max(this.autoJumpGroundTicks, LocalDataWatch.get().groundTicks);
-        final int airTicks = Math.max(this.autoJumpAirTicks, LocalDataWatch.get().airTicks);
-        if (mc.player.isOnGround() && groundTicks <= 2) {
-            return new Vec2f(MoveUtility.getDirectionDegrees(mc.player.getYaw()), 75.5F);
-        }
-        if (!mc.player.isOnGround() && airTicks == 1) {
-            final float yawDelta = MathHelper.wrapDegrees(blockRotation.x - mc.player.getYaw());
-            return new Vec2f(mc.player.getYaw() + MathHelper.clamp(yawDelta, -90.0F, 90.0F), blockRotation.y);
-        }
-        return blockRotation;
-    }
-
-    private void updateMovementIntelligence() {
-        if (this.settings.isMovementIntelligence()) {
-            if (!this.settings.getMode().is(ScaffoldSettings.Mode.WATCHDOG) || mc.player.isOnGround() ||
-                    !PlayerUtility.isBoxEmpty(mc.player.getBoundingBox().offset(0.0D, mc.player.getVelocity().getY(), 0.0D))) {
-                final Vec2f currentRotation = rotation != null ? rotation.rotation() : RotationUtility.getRotation();
-                this.intelligentRotation = RotationUtility.getPriorityAngle(currentRotation, this.settings.getMovementIntelligenceSteps(), this.settings.isMovementSnapping(), this.settings.isDiagonalMovement());
-            }
-        }
+        final Vec3d min = Vec3d.of(this.currentPlacement.placePos());
+        final Vec3d max = min.add(1.0D, 1.0D, 1.0D);
+        final int fill = ColorUtility.rgbaToHex(74, 144, 226, 64);
+        final int outline = ColorUtility.rgbaToHex(74, 144, 226, 191);
+        final VertexConsumerProvider.Immediate consumers = VertexConsumerProvider.immediate(new BufferAllocator(2048));
+        final WorldRenderer renderer = new WorldRenderer(consumers);
+        renderer.drawFilledCube(event.matrixStack(), CustomRenderLayers.getPositionColorQuads(true), min,
+                new Vec3d(1.0D, 1.0D, 1.0D), fill);
+        this.drawOutline(renderer, event, min, max, outline);
+        consumers.draw();
     }
 
     @Subscribe
-    public void onReceivePacket(final ReceivePacketEvent event) {
-        if (event.getPacket() instanceof ItemPickupAnimationS2CPacket pickup
-                && mc.player != null
-                && pickup.getCollectorEntityId() == mc.player.getId()) {
-            int selectedSlot = mc.player.getInventory().getSelectedSlot();
-            this.realStackSizeMap.put(
-                    selectedSlot,
-                    this.realStackSizeMap.getOrDefault(selectedSlot, mc.player.getMainHandStack().getCount() - pickup.getStackAmount()) + pickup.getStackAmount()
-            );
+    public void onRenderScreen(final RenderScreenEvent event) {
+        if (mc.player == null || mc.world == null) {
+            return;
         }
+        final int blockCount = this.slotController.countAllBlocks();
+        if (blockCount == 0) {
+            return;
+        }
+        final String count = Integer.toString(blockCount);
+        final String suffix = " Blocks";
+        final int x = (mc.getWindow().getScaledWidth() - mc.textRenderer.getWidth(count + suffix)) / 2;
+        final int y = mc.getWindow().getScaledHeight() / 2 - 20;
+        MinecraftRenderer.addToQueue(() -> {
+            event.drawContext().drawText(mc.textRenderer, Text.literal(count), x, y, 0xFF4A90E2, true);
+            event.drawContext().drawText(mc.textRenderer, Text.literal(suffix),
+                    x + mc.textRenderer.getWidth(count), y, -1, true);
+        });
     }
 
-    public int getPlaceableBlock() {
-        for (int i = 0; i < 9; i++) {
-            final ItemStack itemStack = mc.player.getInventory().getMainStacks().get(i);
-            final int stackCount = this.realStackSizeMap == null ? itemStack.getCount() : this.realStackSizeMap.getOrDefault(i, itemStack.getCount());
-            if (itemStack.getItem() instanceof BlockItem blockItem
-                    && stackCount > 0 &&
-                    InventoryUtility.isGoodBlock(blockItem.getBlock())) {
-                return i;
+    @Subscribe
+    public void onJoinWorld(final JoinWorldEvent event) {
+        this.cleanupRuntime(false);
+    }
+
+    @Subscribe
+    public void onDisconnect(final ServerDisconnectEvent event) {
+        this.cleanupRuntime(true);
+        DynamicIslandElement.removeTrigger(this);
+    }
+
+    private void initializeRuntime() {
+        if (mc.player == null) {
+            this.runtimeInitialized = false;
+            return;
+        }
+        this.slotController.capture();
+        this.rotations.set(mc.player.getYaw() - 180.0F, mc.player.getPitch());
+        this.lastRotations.set(mc.player.lastYaw - 180.0F, mc.player.lastPitch);
+        this.correctRotation.set(0.0F, 0.0F);
+        this.currentPlacement = null;
+        this.targetYLevel = 10000;
+        this.velocityDelay = 0;
+        this.eagleTimer = 0;
+        this.groundTicks = 0;
+        this.airTicks = 0;
+        this.rotationDelay = 0;
+        this.jitterCounter = 0;
+        this.yawDifference = 0.0D;
+        this.pitchDifference = 0.0D;
+        this.lastYawDifference = Double.NaN;
+        this.lastPitchDifference = Double.NaN;
+        this.canBuildNow = true;
+        this.packetBatches.clear();
+        this.packetBatches.add(new CopyOnWriteArrayList<>());
+        ScaffoldDelayedTickQueue.clear();
+        ScaffoldRotationHandler.activate(mc.player.getYaw(), mc.player.getPitch());
+        ScaffoldRotationHandler.setTargetRotation(this.rotations);
+        ScaffoldRenderSpoof.update(this.settings.renderItemSpoof(), this.slotController.originalSlot());
+        this.runtimeInitialized = true;
+    }
+
+    private void cleanupRuntime(final boolean restoreSlot) {
+        for (final List<Packet<?>> batch : this.packetBatches) {
+            this.processBatch(batch);
+        }
+        this.packetBatches.clear();
+        if (mc.player != null) {
+            this.keyController.restorePhysicalStates();
+            if (restoreSlot) {
+                this.slotController.restore();
             }
         }
-        return -1;
+        ScaffoldDelayedTickQueue.clear();
+        if (restoreSlot) {
+            this.handoffRotationToVanilla();
+        }
+        ScaffoldRotationHandler.deactivate();
+        ScaffoldRenderSpoof.clear();
+        this.island.reset();
+        this.currentPlacement = null;
+        this.canBuildNow = true;
+        this.runtimeInitialized = false;
     }
 
-    public boolean updateHeldBlockSlot() {
-        final int slot = getPlaceableBlock();
-        if (slot == -1) {
-            return !this.isTellyMode() && mc.player.getOffHandStack().getItem() instanceof BlockItem blockItem && InventoryUtility.isGoodBlock(blockItem.getBlock());
+    private void runTick() {
+        if (mc.player == null || mc.world == null) {
+            return;
         }
-        final SlotHelper.Silence silence;
-        if (this.isTellyMode()) {
-            silence = SlotHelper.Silence.NONE;
+        this.packetBatches.add(new CopyOnWriteArrayList<>());
+        if (this.velocityDelay > 0) {
+            this.velocityDelay--;
+        }
+        if (mc.player.isOnGround() && this.velocityDelay <= 30) {
+            this.velocityDelay = 0;
+        }
+
+        final int placeableSlot = this.slotController.selectPlaceableSlot();
+        ScaffoldRenderSpoof.update(this.settings.renderItemSpoof(), this.slotController.originalSlot());
+        final boolean jumpHeld = this.keyController.isPhysicalJumpDown();
+        if (this.targetYLevel == -1
+                || this.targetYLevel > MathHelper.floor(mc.player.getY()) - 1
+                || mc.player.isOnGround()
+                || !ScaffoldMovementUtil.isMoving()
+                || jumpHeld
+                || this.settings.mode() == ScaffoldMode.NORMAL) {
+            this.targetYLevel = MathHelper.floor(mc.player.getY()) - 1;
+        }
+
+        this.applyRotations();
+        boolean firstGroundTick = false;
+        this.canBuildNow = true;
+        if (this.currentPlacement != null && placeableSlot != -1) {
+            if (this.groundTicks == 1 && mc.options.jumpKey.isPressed()) {
+                firstGroundTick = true;
+            }
+            if (this.settings.clutch() && mc.player.getVelocity().y < -0.1D) {
+                final ScaffoldMotionSimulator simulator = new ScaffoldMotionSimulator(mc.player);
+                simulator.simulateWithFriction(2);
+                if (this.currentPlacement.supportPos().getY() > simulator.y()) {
+                    this.canBuildNow = false;
+                }
+            }
+        }
+        if (mc.player.isOnGround()) {
+            this.canBuildNow = true;
+        }
+
+        final ScaffoldRotation desired = this.settings.mode() == ScaffoldMode.TELLY_BRIDGE && this.canBuildNow
+                ? this.getTargetRotation(firstGroundTick)
+                : this.getPlayerYawRotation();
+        this.correctRotation.set(desired.yaw(), desired.pitch());
+
+        if (this.currentPlacement == null) {
+            ScaffoldDelayedTickQueue.clear();
+        } else if (this.settings.clutch()
+                && (!this.canBuildNow || this.velocityDelay > 0)
+                && this.rotationDelay <= 8) {
+            this.scheduleDelayedPlacement();
         } else {
-            switch (settings.getSwitchMode().getValue()) {
-                case NORMAL -> silence = SlotHelper.Silence.NONE;
-                case FULL -> silence = SlotHelper.Silence.FULL;
-                default -> silence = SlotHelper.Silence.DEFAULT;
+            this.canBuildNow = true;
+            ScaffoldDelayedTickQueue.clear();
+            this.rotationDelay = 0;
+            if (this.settings.mode() == ScaffoldMode.NORMAL && this.settings.snap()) {
+                this.rotations.setYaw(this.correctRotation.yaw());
+            } else {
+                this.rotations.setYaw(ScaffoldRotationUtil.moveTowards(
+                        (float) this.getBlockDistance(),
+                        this.rotations.yaw(),
+                        this.correctRotation.yaw()
+                ));
+            }
+            this.rotations.setPitch(this.correctRotation.pitch());
+            this.applySneakCycle();
+
+            if (this.isTellyMode()) {
+                this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
+                if (this.airTicks < 1 && ScaffoldMovementUtil.isMoving()) {
+                    if (this.settings.mode() == ScaffoldMode.OLD_TELLY) {
+                        this.rotations.setYaw(mc.player.getYaw());
+                    }
+                    this.finishRotationTick();
+                    return;
+                }
+            } else if (this.settings.mode() == ScaffoldMode.KEEP_Y) {
+                this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
+            } else {
+                if (this.settings.eagle()) {
+                    this.keyController.setSneak(mc.player.isOnGround() && isOnBlockEdge(0.3F));
+                }
+                if (this.settings.snap() && !jumpHeld) {
+                    this.resetSnap();
+                }
             }
         }
-        SlotHelper.setCurrentItem(slot).silence(silence);
-        return true;
+        this.finishRotationTick();
     }
 
-    private boolean updateData() {
-        if (this.blockCache != null && this.canReuseCachedBlockData(this.blockCache)) {
-            this.rotation = this.blockCache.rotation();
-            return true;
+    private void scheduleDelayedPlacement() {
+        if (!ScaffoldDelayedTickQueue.isEmpty()) {
+            return;
         }
-
-        blockCache = getBlockData();
-
-        if (blockCache != null) {
-            this.rotation = blockCache.rotation;
-            return true;
-        }
-
-        final PlayerSimulation simulation = new PlayerSimulation(mc.player);
-        final OtherClientPlayerEntity entity = simulation.getSimulatedEntity();
-        for (int i = 0; i < 10; i++) {
-            simulation.simulateTick();
-            final BlockData simulatedData = getBlockData(entity.getBlockPos().down(), entity);
-            if (simulatedData != null) {
-                blockCache = simulatedData;
-                rotation = simulatedData.rotation;
-                break;
+        final ScaffoldRotation rotationToBlock = ScaffoldRotationUtil.rotationToBlock(
+                this.currentPlacement.supportPos(), 1.0F);
+        final ScaffoldPlacementTarget delayedPlacement = this.currentPlacement;
+        this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
+        ScaffoldRotationHandler.setTargetRotation(this.rotations);
+        this.rotationDelay++;
+        ScaffoldDelayedTickQueue.add(() -> {
+            if (mc.player == null) {
+                ScaffoldDelayedTickQueue.clear();
+                return;
             }
-        }
-
-        return blockCache != null;
+            ScaffoldRotationHandler.markSentRotation(rotationToBlock);
+            this.sendPacketSilent(new PlayerMoveC2SPacket.LookAndOnGround(
+                    ScaffoldRotationHandler.wireYaw(rotationToBlock.yaw()),
+                    rotationToBlock.pitch(),
+                    mc.player.isOnGround(),
+                    mc.player.horizontalCollision
+            ));
+        }, true);
+        ScaffoldDelayedTickQueue.add(() -> {
+            if (mc.player == null || mc.world == null) {
+                ScaffoldDelayedTickQueue.clear();
+                return;
+            }
+            this.currentPlacement = delayedPlacement;
+            this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
+            ScaffoldRotationHandler.setTargetRotation(this.rotations);
+            this.doSnap();
+            this.canBuildNow = true;
+            this.rotationDelay = 0;
+        }, false);
     }
 
-    private boolean canReuseCachedBlockData(final BlockData cachedData) {
-        if (cachedData == null || cachedData.rotation() == null || cachedData.blockWithDirection() == null || mc.player == null) {
+    private void applyRotations() {
+        Vec3d eye = mc.player.getEyePos();
+        if (!this.canBuildNow) {
+            eye = eye.add(mc.player.getVelocity().multiply(2.0D));
+        }
+        if (this.settings.clutch() && mc.player.getVelocity().y < 0.01D) {
+            final ScaffoldMotionSimulator simulator = new ScaffoldMotionSimulator(mc.player);
+            simulator.simulateWithFriction(2);
+            eye = new Vec3d(eye.x, Math.max(simulator.y() + mc.player.getEyeHeight(mc.player.getPose()), eye.y), eye.z);
+        }
+        final ScaffoldPlacementTarget target = ScaffoldPlacementSearch.findShellTarget(eye, this.targetYLevel);
+        if (target != null) {
+            this.currentPlacement = target;
+        }
+    }
+
+    private ScaffoldRotation getPlayerYawRotation() {
+        if (this.currentPlacement == null) {
+            return new ScaffoldRotation();
+        }
+        return ScaffoldRotationUtil.rotationToBlock(this.currentPlacement.supportPos(), 0.0F);
+    }
+
+    private ScaffoldRotation getTargetRotation(final boolean firstGroundTick) {
+        if (!ScaffoldMovementUtil.isInputActive()) {
+            return this.getPlayerYawRotation();
+        }
+        if (this.currentPlacement == null) {
+            return new ScaffoldRotation(mc.player.getYaw(), mc.player.getPitch());
+        }
+
+        final Vec3d hitVec = getHitVec(this.currentPlacement.supportPos(), this.currentPlacement.clickedFace());
+        ScaffoldRotation rotation = ScaffoldRotationUtil.rotationFromVec(hitVec);
+        final ScaffoldRotation previous = this.referenceRotation();
+        final double yawDelta = ScaffoldRotationUtil.angleDifference(rotation.yaw(), previous.yaw());
+        if (this.groundTicks > 0) {
+            if (!mc.options.jumpKey.isPressed()) {
+                return new ScaffoldRotation(mc.player.getYaw(), 75.5F);
+            }
+            switch (this.groundTicks) {
+                case 1 -> {
+                    if (!firstGroundTick) {
+                        rotation.setYaw(previous.yaw() + ScaffoldRotationUtil.clampAngle(
+                                (float) yawDelta, (float) (yawDelta / 2.0D)));
+                        rotation.setPitch(75.5F);
+                    } else {
+                        rotation = ScaffoldRotationUtil.rotationFromVec(hitVec);
+                    }
+                    ((LivingEntityAccessor) mc.player).setJumpingCooldown(2);
+                }
+                case 2 -> {
+                    return new ScaffoldRotation(mc.player.getYaw(), 75.5F);
+                }
+                default -> {
+                }
+            }
+        } else {
+            float limit = this.airTicks == 1 ? 90.0F : 50.0F;
+            limit -= ThreadLocalRandom.current().nextFloat(0.001F, 0.006F);
+            rotation.setYaw(previous.yaw()
+                    + ScaffoldRotationUtil.clampAngle((float) yawDelta, limit));
+        }
+        rotation = this.findValidRotation(rotation, firstGroundTick);
+        return this.applyStuckRotationJitter(rotation);
+    }
+
+    private ScaffoldRotation findValidRotation(
+            final ScaffoldRotation rotation,
+            final boolean firstGroundTick
+    ) {
+        if (firstGroundTick) {
+            return rotation;
+        }
+        final ScaffoldRotation reference = this.referenceRotation();
+        final ScaffoldRotation optimal = rotation.copy();
+        final double delta = MathHelper.wrapDegrees(optimal.yaw() - reference.yaw());
+        if (Math.abs(delta) > 90.0D) {
+            optimal.setYaw((float) (reference.yaw() + Math.copySign(90.0D, delta)));
+        }
+        double maximumStep = Math.max(45.0D, 180.0D / Math.max(1.0D, this.settings.rotationTick()));
+        if (this.settings.mode() == ScaffoldMode.TELLY_BRIDGE) {
+            maximumStep = Math.max(maximumStep, 75.0D);
+        }
+        return ScaffoldRotationUtil.smoothRotation(reference, optimal, maximumStep);
+    }
+
+    private ScaffoldRotation applyStuckRotationJitter(ScaffoldRotation rotation) {
+        final ScaffoldRotation reference = this.referenceRotation();
+        this.yawDifference = Math.abs(MathHelper.wrapDegrees(rotation.yaw() - reference.yaw()));
+        this.pitchDifference = Math.abs(rotation.pitch() - reference.pitch());
+        final boolean stuckPitch = this.pitchDifference > 2.0D
+                && !Double.isNaN(this.lastPitchDifference)
+                && Math.abs(this.pitchDifference - this.lastPitchDifference) < 1.0E-4D;
+        final boolean stuckYaw = this.yawDifference > 2.0D
+                && !Double.isNaN(this.lastYawDifference)
+                && Math.abs(this.yawDifference - this.lastYawDifference) < 1.0E-4D;
+        if (stuckPitch || stuckYaw) {
+            rotation = rotation.copy();
+            float yawJitter = ScaffoldMathUtil.randomFloat(0.095F, 0.19F);
+            final float pitchJitter = ScaffoldMathUtil.randomFloat(0.016F, 0.055F);
+            if ((this.jitterCounter++ & 1) == 0) {
+                yawJitter = -yawJitter;
+            }
+            rotation.setYaw(rotation.yaw() + yawJitter);
+            rotation.setPitch(MathHelper.clamp(rotation.pitch() + pitchJitter, -89.5F, 89.5F));
+            this.yawDifference = Math.abs(MathHelper.wrapDegrees(rotation.yaw() - reference.yaw()));
+            this.pitchDifference = Math.abs(rotation.pitch() - reference.pitch());
+        }
+        this.lastYawDifference = this.yawDifference;
+        this.lastPitchDifference = this.pitchDifference;
+        return rotation;
+    }
+
+    private ScaffoldRotation referenceRotation() {
+        final ScaffoldRotation previous = ScaffoldRotationHandler.previousRotation();
+        if (previous != null) {
+            return previous;
+        }
+        final ScaffoldRotation target = ScaffoldRotationHandler.targetRotation();
+        return target != null ? target : new ScaffoldRotation(mc.player.getYaw(), mc.player.getPitch());
+    }
+
+    private void doSnap() {
+        if (this.currentPlacement == null || mc.player == null || mc.interactionManager == null
+                || !ScaffoldBlockUtil.isPlaceable(this.slotController.selectedStack())) {
+            return;
+        }
+        final Direction face = this.currentPlacement.clickedFace();
+        final boolean jumpHeld = this.keyController.isPhysicalJumpDown();
+        if (face == Direction.UP
+                && !mc.player.isOnGround()
+                && ScaffoldMovementUtil.isMoving()
+                && !jumpHeld
+                && this.settings.mode() != ScaffoldMode.NORMAL) {
+            return;
+        }
+        if (!this.shouldBuild()) {
+            return;
+        }
+        final BlockHitResult hit = new BlockHitResult(
+                getHitVec(this.currentPlacement.supportPos(), face),
+                face,
+                this.currentPlacement.supportPos(),
+                false
+        );
+        final ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+        if (result.isAccepted()) {
+            mc.player.swingHand(Hand.MAIN_HAND);
+        }
+    }
+
+    private boolean shouldBuild() {
+        final BlockPos below = BlockPos.ofFloored(mc.player.getX(), mc.player.getY() - 0.5D, mc.player.getZ());
+        return mc.world.isAir(below) && ScaffoldBlockUtil.isPlaceable(this.slotController.selectedStack());
+    }
+
+    private boolean isPlacementReachable(final ScaffoldPlacementTarget target) {
+        final ScaffoldRotation currentTarget = ScaffoldRotationHandler.targetRotation();
+        if (target == null || currentTarget == null || mc.player == null) {
             return false;
         }
-
-        return this.isCachedBlockDataReachable(
-                cachedData.rotation().rotation(),
-                cachedData.blockWithDirection().blockPos(),
-                cachedData.blockWithDirection().direction()
-        );
+        final Vec3d faceNormal = Vec3d.of(target.clickedFace().getVector());
+        final Vec3d hitPoint = Vec3d.ofCenter(target.supportPos()).add(faceNormal.multiply(0.5D));
+        final Vec3d delta = hitPoint.subtract(mc.player.getEyePos());
+        return delta.lengthSquared() <= 20.25D
+                && delta.normalize().dotProduct(faceNormal.multiply(-1.0D).normalize()) >= 0.0D;
     }
 
-    private boolean isCachedBlockDataReachable(final Vec2f rotation, final BlockPos pos, final Direction face) {
-        final HitResult hitResult = RaycastUtility.raycastBlock(mc.player.getBlockInteractionRange(), 1.0F, false, rotation.x, rotation.y);
-        if (hitResult instanceof BlockHitResult blockHitResult) {
-            return blockHitResult.getBlockPos().equals(pos)
-                    && blockHitResult.getSide() == face
-                    && this.isValidPlacementSupport(blockHitResult);
+    private void resetSnap() {
+        if (this.currentPlacement == null) {
+            return;
         }
-        return false;
+        boolean lookingAtBlock = false;
+        final BlockHitResult result = ScaffoldRayTraceUtil.rayTrace(5.0D, this.rotations);
+        if (result != null && result.getType() == HitResult.Type.BLOCK
+                && result.getBlockPos().equals(this.currentPlacement.supportPos())
+                && result.getSide() != Direction.UP) {
+            lookingAtBlock = true;
+        }
+        if (!lookingAtBlock && mc.player.age % 4 == 0) {
+            this.rotations.setYaw(mc.player.getYaw() + ThreadLocalRandom.current().nextFloat(0.0F, 0.5F) - 0.25F);
+        }
     }
 
-    private RaytracedRotation getRotation(BlockWithDirection data, Vec3d start) {
-        final Vec2f sortingAngle = this.getSortingAngle();
-        final RaytracedRotation fastRotation = this.getFastRotation(data, sortingAngle, start);
-        return fastRotation != null ? fastRotation : RotationUtility.getRotationFromRaycastedBlock(data.blockPos, data.direction, sortingAngle, start);
+    private void applySneakCycle() {
+        if (!this.settings.sneak()) {
+            return;
+        }
+        this.eagleTimer++;
+        if (this.eagleTimer == 18) {
+            if (mc.player.isSprinting()) {
+                this.keyController.setSprint(false);
+                mc.player.setSprinting(false);
+            }
+            this.keyController.setSneak(true);
+        } else if (this.eagleTimer >= 21) {
+            this.keyController.setSneak(false);
+            this.eagleTimer = 0;
+        }
     }
 
-    private Vec2f getSortingAngle() {
-        final Vec2f sortingAngle;
-        if (this.intelligentRotation != null) {
-            sortingAngle = this.intelligentRotation;
+    private void finishRotationTick() {
+        this.lastRotations.set(this.rotations.yaw(), this.rotations.pitch());
+        ScaffoldRotationHandler.setTargetRotation(this.rotations);
+    }
+
+    private void handoffRotationToVanilla() {
+        if (mc.player == null || !ScaffoldRotationHandler.isOwningRotation()) {
+            return;
+        }
+
+        final ScaffoldRotation sent = ScaffoldRotationHandler.sentRotation();
+        final ScaffoldRotation target = ScaffoldRotationHandler.targetRotation();
+        final ScaffoldRotation referenceRotation = sent != null ? sent : target;
+        if (referenceRotation == null) {
+            return;
+        }
+
+        final float wireReference = ScaffoldRotationHandler.wireYaw(referenceRotation.yaw());
+        final float exitYaw = wireReference + MathHelper.wrapDegrees(mc.player.getYaw() - wireReference);
+        mc.player.setYaw(exitYaw);
+        mc.player.lastYaw = exitYaw;
+        mc.player.setHeadYaw(exitYaw);
+        mc.player.setBodyYaw(exitYaw);
+    }
+
+    private double getBlockDistance() {
+        if (this.settings.mode() == ScaffoldMode.OLD_TELLY) {
+            return 180.0D;
+        }
+        return Math.max(Math.max(60.0D, 360.0D / this.settings.rotationTick()), 180.0D);
+    }
+
+    private boolean isTellyMode() {
+        return this.settings.mode() == ScaffoldMode.TELLY_BRIDGE
+                || this.settings.mode() == ScaffoldMode.OLD_TELLY;
+    }
+
+    private void processBatch(final List<Packet<?>> batch) {
+        for (final Packet<?> packet : List.copyOf(batch)) {
+            batch.remove(packet);
+            this.sendPacketSilent(packet);
+        }
+    }
+
+    private void sendPacketSilent(final Packet<?> packet) {
+        if (packet == null || mc.getNetworkHandler() == null) {
+            return;
+        }
+        final ClientConnection connection = mc.getNetworkHandler().getConnection();
+        ((ClientConnectionAccess) connection).oraculus$sendPacketSilent(packet);
+    }
+
+    private void drawOutline(
+            final WorldRenderer renderer,
+            final RenderWorldEvent event,
+            final Vec3d min,
+            final Vec3d max,
+            final int color
+    ) {
+        final Vec3d[] corners = {
+                new Vec3d(min.x, min.y, min.z), new Vec3d(max.x, min.y, min.z),
+                new Vec3d(max.x, min.y, max.z), new Vec3d(min.x, min.y, max.z),
+                new Vec3d(min.x, max.y, min.z), new Vec3d(max.x, max.y, min.z),
+                new Vec3d(max.x, max.y, max.z), new Vec3d(min.x, max.y, max.z)
+        };
+        final int[][] edges = {
+                {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                {0, 4}, {1, 5}, {2, 6}, {3, 7}
+        };
+        for (final int[] edge : edges) {
+            renderer.drawLine(event.matrixStack(), CustomRenderLayers.getLines(1.5F, true),
+                    corners[edge[0]], corners[edge[1]], color);
+        }
+    }
+
+    public ItemStack getDisplayedBlockStack() {
+        final ItemStack selected = this.slotController.selectedStack();
+        if (selected.getItem() instanceof net.minecraft.item.BlockItem) {
+            return selected;
+        }
+        final int slot = this.slotController.findPlaceableSlot();
+        return slot == -1 || mc.player == null ? ItemStack.EMPTY : mc.player.getInventory().getStack(slot);
+    }
+
+    public static Vec3d getHitVec(final BlockPos pos, final Direction direction) {
+        double x = pos.getX() + 0.5D;
+        double y = pos.getY() + 0.5D;
+        double z = pos.getZ() + 0.5D;
+        if (direction != Direction.UP && direction != Direction.DOWN) {
+            y += ScaffoldMathUtil.randomDouble(0.3D, -0.3D);
         } else {
-            sortingAngle = rotation != null ? rotation.rotation() : RotationUtility.getRotation();
+            x += ScaffoldMathUtil.randomDouble(0.3D, -0.3D);
+            z += ScaffoldMathUtil.randomDouble(0.3D, -0.3D);
         }
-        return sortingAngle;
-    }
-
-    private RaytracedRotation getFastRotation(final BlockWithDirection data, final Vec2f sortingAngle, final Vec3d start) {
-        RaytracedRotation best = null;
-        double bestDifference = Double.MAX_VALUE;
-
-        for (final double firstOffset : HIT_OFFSETS) {
-            for (final double secondOffset : HIT_OFFSETS) {
-                final Vec3d hitVec = this.getFaceHitVec(data, firstOffset, secondOffset);
-                final Vec2f rotation = RotationUtility.getVanillaRotation(RotationUtility.getRotationFromPosition(start, hitVec));
-                final HitResult result = RaycastUtility.raycastBlock(mc.player.getBlockInteractionRange(), false, rotation.x, rotation.y, start);
-                if (!(result instanceof BlockHitResult blockHitResult)
-                        || blockHitResult.getType() != HitResult.Type.BLOCK
-                        || !blockHitResult.getBlockPos().equals(data.blockPos)
-                        || blockHitResult.getSide() != data.direction
-                        || !this.isValidPlacementSupport(blockHitResult)) {
-                    continue;
-                }
-
-                final double difference = RotationUtility.getRotationDifference(rotation, sortingAngle);
-                if (difference < bestDifference) {
-                    bestDifference = difference;
-                    best = new RaytracedRotation(rotation, blockHitResult);
-                }
-            }
+        if (direction == Direction.WEST || direction == Direction.EAST) {
+            z += ScaffoldMathUtil.randomDouble(0.3D, -0.3D);
         }
-
-        return best;
-    }
-
-    private Vec3d getFaceHitVec(final BlockWithDirection data, final double firstOffset, final double secondOffset) {
-        final Direction direction = data.direction;
-        double x = data.blockPos.getX() + 0.5D + direction.getOffsetX() * 0.5D;
-        double y = data.blockPos.getY() + 0.5D + direction.getOffsetY() * 0.5D;
-        double z = data.blockPos.getZ() + 0.5D + direction.getOffsetZ() * 0.5D;
-
-        switch (direction.getAxis()) {
-            case X -> {
-                y += firstOffset;
-                z += secondOffset;
-            }
-            case Y -> {
-                x += firstOffset;
-                z += secondOffset;
-            }
-            case Z -> {
-                x += firstOffset;
-                y += secondOffset;
-            }
+        if (direction == Direction.SOUTH || direction == Direction.NORTH) {
+            x += ScaffoldMathUtil.randomDouble(0.3D, -0.3D);
         }
-
         return new Vec3d(x, y, z);
     }
 
-    private BlockData getBlockData() {
-        final BlockPos base = mc.player.getBlockPos().withY(sameYPos).down();
-        for (final BlockPos target : this.getTargetBlockCandidates(base, mc.player)) {
-            final BlockData data = this.getBlockData(target, mc.player);
-            if (data != null) {
-                return data;
-            }
-        }
-        return null;
-    }
-
-    private List<BlockPos> getTargetBlockCandidates(final BlockPos base, final PlayerEntity entity) {
-        final LinkedHashSet<BlockPos> candidates = new LinkedHashSet<>();
-        candidates.add(base.toImmutable());
-        this.addLastPlacedCandidate(candidates, base);
-
-        final Vec3d velocity = entity.getVelocity();
-        for (final double step : LOOKAHEAD_STEPS) {
-            this.addFootCandidates(candidates, entity.getEntityPos().add(velocity.x * step, 0.0D, velocity.z * step), base.getY());
-        }
-
-        if (MoveUtility.isMoving()) {
-            final float direction = MoveUtility.getDirectionDegrees();
-            final double radians = Math.toRadians(direction);
-            final double dirX = -MathHelper.sin((float) radians);
-            final double dirZ = MathHelper.cos((float) radians);
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 0.35D, 0.0D, dirZ * 0.35D), base.getY());
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 0.65D, 0.0D, dirZ * 0.65D), base.getY());
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 1.05D, 0.0D, dirZ * 1.05D), base.getY());
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 1.45D, 0.0D, dirZ * 1.45D), base.getY());
-
-            final double sideX = MathHelper.cos((float) radians);
-            final double sideZ = MathHelper.sin((float) radians);
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 0.85D + sideX * 0.32D, 0.0D, dirZ * 0.85D + sideZ * 0.32D), base.getY());
-            this.addFootCandidates(candidates, entity.getEntityPos().add(dirX * 0.85D - sideX * 0.32D, 0.0D, dirZ * 0.85D - sideZ * 0.32D), base.getY());
-        }
-
-        return new ArrayList<>(candidates);
-    }
-
-    private void addLastPlacedCandidate(final Set<BlockPos> candidates, final BlockPos base) {
-        if (this.lastPlacedBlocks.size() < 2) {
-            return;
-        }
-
-        final Iterator<BlockPos> iterator = this.lastPlacedBlocks.descendingIterator();
-        final BlockPos last = iterator.next();
-        final BlockPos previous = iterator.next();
-        final int dx = Integer.compare(last.getX() - previous.getX(), 0);
-        final int dz = Integer.compare(last.getZ() - previous.getZ(), 0);
-        if (dx != 0 || dz != 0) {
-            candidates.add(new BlockPos(last.getX() + dx, base.getY(), last.getZ() + dz));
-        }
-    }
-
-    private void addFootCandidates(final Set<BlockPos> candidates, final Vec3d pos, final int y) {
-        for (final double xOffset : FOOT_OFFSETS) {
-            for (final double zOffset : FOOT_OFFSETS) {
-                candidates.add(BlockPos.ofFloored(pos.x + xOffset, y, pos.z + zOffset));
-            }
-        }
-    }
-
-    public BlockData findBlockDataFor(final int x, final int y, final int z) {
-        return this.getBlockData(new BlockPos(x, y, z), mc.player);
-    }
-
-    public BlockData findBestTellyBlockData(final int y) {
+    public static boolean isOnBlockEdge(final float inflate) {
         if (mc.player == null || mc.world == null) {
-            return null;
-        }
-
-        final BlockPos base = mc.player.getBlockPos().withY(y);
-        final Vec3d eyePos = mc.player.getEntityPos().add(0.0D, mc.player.getStandingEyeHeight(), 0.0D);
-        int checked = 0;
-        for (final BlockPos target : this.getTargetBlockCandidates(base, mc.player)) {
-            if (checked++ >= TELLY_TARGET_CANDIDATE_BUDGET) {
-                break;
-            }
-
-            final BlockData data = this.getDirectBlockData(target, eyePos);
-            if (data != null) {
-                return data;
-            }
-        }
-        return this.getBlockData(base, mc.player);
-    }
-
-    private BlockData getDirectBlockData(final BlockPos targetBlockPos, final Vec3d eyePos) {
-        if (!this.isReplaceable(targetBlockPos)) {
-            return null;
-        }
-
-        int raytraceCount = 0;
-        final Vec2f sortingAngle = this.getSortingAngle();
-        for (final BlockWithDirection block : this.getSortedSupports(targetBlockPos, targetBlockPos)) {
-            if (raytraceCount++ >= TELLY_RAYTRACE_BUDGET) {
-                break;
-            }
-
-            final RaytracedRotation rotation = this.getFastRotation(block, sortingAngle, eyePos);
-            if (rotation != null) {
-                return new BlockData(block, rotation);
-            }
-        }
-        return null;
-    }
-
-    public void setRotation(final RaytracedRotation rotation) {
-        this.rotation = rotation;
-    }
-
-    public boolean isTellyMode() {
-        return this.settings.getMode().is(ScaffoldSettings.Mode.TELLY);
-    }
-
-    public boolean isSilenceTellyMode() {
-        return this.getEffectiveMode() == ScaffoldSettings.Mode.SILENCE_TELLY;
-    }
-
-    private boolean isReplaceable(final BlockPos pos) {
-        return !mc.world.isOutOfHeightLimit(pos.getY()) && mc.world.getBlockState(pos).isReplaceable();
-    }
-
-    private boolean isValidSupportBlock(final BlockPos pos) {
-        if (mc.world == null || mc.world.isOutOfHeightLimit(pos.getY())) {
             return false;
         }
-        final BlockState state = mc.world.getBlockState(pos);
-        return !state.isAir()
-                && !state.isReplaceable()
-                && state.getFluidState().isEmpty()
-                && !InventoryUtility.isBlockInteractable(state.getBlock())
-                && !state.getCollisionShape(mc.world, pos).isEmpty()
-                && !this.isRecentlyPlacedTellySupport(pos);
-    }
-
-    public boolean isSolidAndNonInteractive(final BlockState state, final BlockPos pos) {
-        return mc.world != null
-                && !state.getCollisionShape(mc.world, pos).isEmpty()
-                && state.createScreenHandlerFactory(mc.world, pos) == null;
-    }
-
-    private boolean isValidPlacementSupport(final BlockHitResult hitResult) {
-        return hitResult != null
-                && hitResult.getType() == HitResult.Type.BLOCK
-                && hitResult.getSide() != null
-                && this.isValidSupportBlock(hitResult.getBlockPos());
-    }
-
-    private Direction[] getPlacementDirections() {
-        return new Direction[]{
-                Direction.DOWN,
-                Direction.EAST,
-                Direction.WEST,
-                Direction.NORTH,
-                Direction.SOUTH,
-                Direction.UP
-        };
-    }
-
-    private int getDirectionPriority(final Direction direction) {
-        return switch (direction) {
-            case UP -> 0;
-            case WEST, EAST, NORTH, SOUTH -> 1;
-            case DOWN -> 2;
-        };
-    }
-
-    private BlockData getBlockData(final BlockPos targetBlockPos, final PlayerEntity entity) {
-        if (!mc.world.getBlockState(targetBlockPos).isReplaceable()) {
-            return null;
-        }
-
-        final boolean canUseCache = entity == mc.player;
-        if (canUseCache
-                && this.lastSearchAge == entity.age
-                && targetBlockPos.equals(this.lastSearchOrigin)
-                && this.isCachedBlockDataUsable(this.lastSearchData, targetBlockPos)) {
-            return this.lastSearchData;
-        }
-
-        final Vec3d eyePos = entity.getEntityPos().add(0.0D, entity.getStandingEyeHeight(), 0.0D);
-        final BlockData data = this.searchPlacementTarget(targetBlockPos, eyePos);
-        if (canUseCache) {
-            this.lastSearchOrigin = targetBlockPos.toImmutable();
-            this.lastSearchData = data;
-            this.lastSearchAge = entity.age;
-        }
-        return data;
-    }
-
-    private boolean isCachedBlockDataUsable(final BlockData data, final BlockPos targetBlockPos) {
-        if (data == null || mc.world == null) {
-            return false;
-        }
-        final BlockWithDirection block = data.blockWithDirection;
-        return block.blockPos.offset(block.direction).equals(targetBlockPos)
-                && this.isReplaceable(targetBlockPos)
-                && this.isValidSupportBlock(block.blockPos);
-    }
-
-    private BlockData searchPlacementTarget(final BlockPos origin, final Vec3d eyePos) {
-        final Queue<PlacementCandidate> queue = new PriorityQueue<>(Comparator
-                .comparingDouble((PlacementCandidate candidate) -> candidate.pos.getSquaredDistance(origin))
-                .thenComparingInt(candidate -> candidate.depth));
-        final Set<BlockPos> visited = new HashSet<>();
-        final Set<BlockWithDirection> checkedTargets = new HashSet<>();
-        final int maxDepth = this.isTellyMode() ? TELLY_SEARCH_DEPTH : NORMAL_SEARCH_DEPTH;
-        final int visitBudget = this.isTellyMode() ? TELLY_VISIT_BUDGET : NORMAL_VISIT_BUDGET;
-        final int raytraceBudget = this.isTellyMode() ? TELLY_RAYTRACE_BUDGET : NORMAL_RAYTRACE_BUDGET;
-        int visitedCount = 0;
-        int raytraceCount = 0;
-
-        queue.add(new PlacementCandidate(origin, 0));
-        visited.add(origin);
-
-        while (!queue.isEmpty() && visitedCount++ < visitBudget) {
-            final PlacementCandidate candidate = queue.poll();
-            if (candidate.depth > maxDepth || candidate.pos.getSquaredDistance(origin) > MAX_PLACEMENT_DISTANCE_SQUARED || !isReplaceable(candidate.pos)) {
-                continue;
-            }
-
-            final List<BlockWithDirection> supports = this.getSortedSupports(candidate.pos, origin);
-            for (final BlockWithDirection block : supports) {
-                if (!checkedTargets.add(block)) {
-                    continue;
-                }
-                if (raytraceCount++ >= raytraceBudget) {
-                    return null;
-                }
-
-                final RaytracedRotation rotation = this.getRotation(block, eyePos);
-                if (rotation != null) {
-                    return new BlockData(block, rotation);
-                }
-            }
-
-            if (candidate.depth >= maxDepth) {
-                continue;
-            }
-
-            for (Direction direction : getPlacementDirections()) {
-                final BlockPos next = candidate.pos.offset(direction);
-                if (visited.size() >= visitBudget || next.getSquaredDistance(origin) > MAX_PLACEMENT_DISTANCE_SQUARED || !visited.add(next) || !this.isReplaceable(next)) {
-                    continue;
-                }
-                queue.add(new PlacementCandidate(next, candidate.depth + 1));
-            }
-        }
-
-        return null;
-    }
-
-    private List<BlockWithDirection> getSortedSupports(final BlockPos targetPos, final BlockPos origin) {
-        final List<BlockWithDirection> targets = new ArrayList<>();
-        for (Direction direction : getPlacementDirections()) {
-            final BlockPos support = targetPos.offset(direction);
-            if (isValidSupportBlock(support)) {
-                targets.add(new BlockWithDirection(support, direction.getOpposite()));
-            }
-        }
-        targets.sort(Comparator
-                .comparingDouble((BlockWithDirection data) -> data.blockPos.offset(data.direction).getSquaredDistance(origin))
-                .thenComparingInt(data -> getDirectionPriority(data.direction)));
-        return targets;
-    }
-
-    private boolean isRecentlyPlacedTellySupport(final BlockPos pos) {
-        if (!this.isTellyMode() || mc.player == null) {
-            return false;
-        }
-        final Integer placedAge = this.recentPlacedBlocks.get(pos);
-        return placedAge != null && mc.player.age - placedAge <= RECENT_SUPPORT_QUARANTINE_TICKS;
-    }
-
-    private void pruneRecentPlacedBlocks() {
-        if (mc.player == null || mc.world == null || this.recentPlacedBlocks.isEmpty()) {
-            return;
-        }
-        this.recentPlacedBlocks.entrySet().removeIf(entry ->
-                mc.player.age - entry.getValue() > RECENT_PLACED_BLOCK_TTL
-                        || mc.world.getBlockState(entry.getKey()).isReplaceable());
-    }
-
-    private void trackPlacedBlock(final BlockPos pos) {
-        if (pos == null) {
-            return;
-        }
-        this.lastPlacedBlocks.remove(pos);
-        this.lastPlacedBlocks.addLast(pos.toImmutable());
-        while (this.lastPlacedBlocks.size() > MAX_LAST_PLACED_BLOCKS) {
-            this.lastPlacedBlocks.removeFirst();
-        }
-        this.lastSearchOrigin = null;
-        this.lastSearchData = null;
-    }
-
-    public record BlockWithDirection(BlockPos blockPos, Direction direction) {
-    }
-
-    public record BlockData(BlockWithDirection blockWithDirection, RaytracedRotation rotation) {
-    }
-
-    private record PlacementCandidate(BlockPos pos, int depth) {
-    }
-
-    private record PlacementHand(Hand hand, BlockItem blockItem) {
+        final Box box = mc.player.getBoundingBox().offset(0.0D, -0.5D, 0.0D)
+                .expand(-inflate, 0.0D, -inflate);
+        return !mc.world.getBlockCollisions(mc.player, box).iterator().hasNext();
     }
 
     @Override
-    public void renderIsland(DrawContext context, float posX, float posY, float width, float height, float progress) {
-        this.dynamicIsland.render(context, posX, posY);
-    }
-
-    public ScaffoldSettings getSettings() {
-        return settings;
-    }
-
-    public ScaffoldSettings.Mode getEffectiveMode() {
-        return (this.upTellyBypassActive || this.upTellyBypassRecovering)
-                ? ScaffoldSettings.Mode.VANILLA
-                : this.settings.getMode().getValue();
-    }
-
-    public IRotationModel createEffectiveRotationModel() {
-        return (this.upTellyBypassActive || this.upTellyBypassRecovering)
-                ? InstantRotationModel.INSTANCE
-                : this.settings.createRotationModel();
-    }
-
-    private boolean isUitemsMode() {
-        final ScaffoldSettings.Mode mode = this.getEffectiveMode();
-        return mode == ScaffoldSettings.Mode.HEYPIXEL || mode == ScaffoldSettings.Mode.HYPIXEL;
-    }
-
-    private void updateUitemsBypassState() {
-        final boolean shouldBypass = shouldUseUpTellyBypass();
-        if (shouldBypass) {
-            this.upTellyBypassActive = true;
-            this.upTellyBypassRecovering = false;
-            this.upTellyBypassPendingGroundJump = false;
-        } else if (this.upTellyBypassActive) {
-            this.upTellyBypassActive = false;
-            this.upTellyBypassRecovering = true;
-            this.upTellyBypassPendingGroundJump = true;
-        }
-
-        if (this.upTellyBypassRecovering && !this.upTellyBypassPendingGroundJump && mc.player != null && !mc.player.isOnGround()) {
-            this.upTellyBypassRecovering = false;
-        }
-    }
-
-    private boolean shouldUseUpTellyBypass() {
-        if (mc.player == null) {
-            return false;
-        }
-
-        if (!this.settings.isUpTellyBypass()) {
-            return false;
-        }
-
-        if (!this.settings.getMode().is(ScaffoldSettings.Mode.HEYPIXEL)) {
-            return false;
-        }
-
-        if (!this.settings.isRotationModel(EnumRotationModel.HEYPIXEL)) {
-            return false;
-        }
-
-        if (!this.settings.isTelly() || !mc.options.jumpKey.isPressed()) {
-            return false;
-        }
-
-        return mc.options.forwardKey.isPressed()
-                || mc.options.backKey.isPressed()
-                || mc.options.leftKey.isPressed()
-                || mc.options.rightKey.isPressed();
-    }
-
-    private void updateSkipTickRecoveryGroundState() {
-        final StuckModule stuckModule = OraculusClient.getInstance().getModuleRepository().getModule(StuckModule.class);
-        if (!stuckModule.isEnabled() && !this.skipTickRecoveryActive) {
-            return;
-        }
-
-        boolean groundBelow = mc.player.isOnGround();
-        if (!groundBelow) {
-            for (double offset = 0.01; offset <= 1.5; offset += 0.5) {
-                if (!mc.world.getBlockState(BlockPos.ofFloored(mc.player.getX(), mc.player.getY() - offset, mc.player.getZ())).isAir()) {
-                    groundBelow = true;
-                    break;
-                }
-            }
-        }
-
-        if (groundBelow) {
-            if (stuckModule.isEnabled()) {
-                stuckModule.setEnabled(false);
-            }
-            this.skipTickRecoveryActive = false;
-            SkipTickUtility.reset();
-            this.skipTickRecoveryFailed = false;
-        }
-    }
-
-    private BlockPos findRecoveryBlock() {
-        if (mc.player == null || mc.world == null) return null;
-
-        BlockPos playerPos = mc.player.getBlockPos();
-        for (int y = 0; y >= -3; y--) {
-            for (int x = -2; x <= 2; x++) {
-                for (int z = -2; z <= 2; z++) {
-                    BlockPos target = playerPos.add(x, y, z);
-                    if (mc.world.getBlockState(target).isReplaceable()) {
-                        for (Direction dir : DIRECTIONS) {
-                            BlockPos neighbor = target.offset(dir);
-                            if (!mc.world.getBlockState(neighbor).isAir() && !mc.world.getBlockState(neighbor).isReplaceable()) {
-                                return target;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private SkipTickRecoveryTarget findReadySkipTickRecoveryTarget() {
-        if (mc.player == null || mc.world == null) {
-            return null;
-        }
-
-        final Vec2f currentRotation = getCurrentClientRotation();
-        if (currentRotation == null) {
-            return null;
-        }
-
-        final Vec3d eyePos = mc.player.getEyePos();
-        final BlockPos playerPos = mc.player.getBlockPos();
-        SkipTickRecoveryTarget bestTarget = null;
-
-        for (int y = 0; y >= -3; y--) {
-            for (int x = -2; x <= 2; x++) {
-                for (int z = -2; z <= 2; z++) {
-                    final BlockPos targetPos = playerPos.add(x, y, z);
-                    if (!mc.world.getBlockState(targetPos).isReplaceable()) {
-                        continue;
-                    }
-
-                    for (Direction direction : DIRECTIONS) {
-                        final BlockPos supportPos = targetPos.offset(direction);
-                        if (!isSolidAndNonInteractive(mc.world.getBlockState(supportPos), supportPos)) {
-                            continue;
-                        }
-
-                        final Direction face = direction.getOpposite();
-                        final Vec2f rotation = RotationUtility.getRotationFromBlock(supportPos, face);
-                        final float rotationDifference = RotationUtility.getRotationDifference(currentRotation, rotation);
-                        if (rotationDifference > 16.0F) {
-                            continue;
-                        }
-
-                        final Vec3d supportCenter = new Vec3d(
-                                supportPos.getX() + 0.5D,
-                                supportPos.getY() + 0.5D,
-                                supportPos.getZ() + 0.5D
-                        );
-                        final double dx = eyePos.getX() - supportCenter.getX();
-                        final double dy = eyePos.getY() - supportCenter.getY();
-                        final double dz = eyePos.getZ() - supportCenter.getZ();
-                        final double distanceSq = dx * dx + dy * dy + dz * dz;
-                        if (distanceSq > 4.85D * 4.85D) {
-                            continue;
-                        }
-
-                        if (bestTarget == null
-                                || distanceSq < bestTarget.distanceSq
-                                || (Math.abs(distanceSq - bestTarget.distanceSq) < 1.0E-4D
-                                && rotationDifference < bestTarget.rotationDifference)) {
-                            bestTarget = new SkipTickRecoveryTarget(targetPos, supportPos, face, rotation, rotationDifference, distanceSq);
-                        }
-                    }
-                }
-            }
-        }
-
-        return bestTarget;
-    }
-
-    private Vec2f getCurrentClientRotation() {
-        if (mc.player == null) {
-            return null;
-        }
-        return RotationHelper.getClientHandler().getRotation();
-    }
-
-    private boolean isFallingIntoVoid() {
-        if (mc.player == null || mc.world == null) return false;
-        if (mc.player.getY() < -5) return true;
-
-        BlockPos pos = mc.player.getBlockPos();
-        for (int y = (int) mc.player.getY(); y > -64; y--) {
-            if (!mc.world.getBlockState(new BlockPos(pos.getX(), y, pos.getZ())).isAir()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean shouldTriggerSkipTickRecovery() {
-        if (mc.player == null || mc.world == null || this.skipTickRecoveryActive || this.skipTickRecoveryFailed) {
-            return false;
-        }
-
-        if (this.settings.getSelfRescueMode() != ScaffoldSettings.SelfRescueMode.SKIP_TICK) {
-            return false;
-        }
-
-        if (this.getEffectiveMode() == ScaffoldSettings.Mode.HEYPIXEL || this.getEffectiveMode() == ScaffoldSettings.Mode.HYPIXEL) {
-            final var activeMode = this.getActiveMode();
-            if (activeMode instanceof HeypixelScaffold heypixelScaffold && heypixelScaffold.shouldSuppressSkipTickRecoveryTrigger()) {
-                return false;
-            }
-        }
-
-        final boolean overVoid = isFallingIntoVoid();
-        final boolean fallingFast = mc.player.getVelocity().y < -0.35D;
-        final boolean hardFall = mc.player.fallDistance > 2.0F;
-        if (!overVoid && !fallingFast && !hardFall) {
-            return false;
-        }
-        return getPlaceableBlock() != -1 || mc.player.getMainHandStack().getItem() instanceof BlockItem;
-    }
-
-    private void tryArmSkipTickRecovery() {
-        if (!shouldTriggerSkipTickRecovery()) {
-            this.skipTickRecoveryCandidateTicks = 0;
-            this.skipTickRecoveryBlockPos = null;
-            this.skipTickRecoveryFace = null;
-            return;
-        }
-
-        if (this.settings.getMode().is(ScaffoldSettings.Mode.HEYPIXEL) && this.settings.isTelly() && mc.player != null && !mc.player.isOnGround() && mc.player.getVelocity().y > -0.16D) {
-            this.skipTickRecoveryCandidateTicks = 0;
-            this.skipTickRecoveryBlockPos = null;
-            this.skipTickRecoveryFace = null;
-            return;
-        }
-
-        if (findRecoveryBlock() == null) {
-            this.skipTickRecoveryCandidateTicks = 0;
-            this.skipTickRecoveryBlockPos = null;
-            this.skipTickRecoveryFace = null;
-            return;
-        }
-
-        final SkipTickRecoveryTarget recoveryTarget = findReadySkipTickRecoveryTarget();
-        if (recoveryTarget == null) {
-            this.skipTickRecoveryCandidateTicks = 0;
-            this.skipTickRecoveryBlockPos = null;
-            this.skipTickRecoveryFace = null;
-            return;
-        }
-
-        this.skipTickRecoveryBlockPos = recoveryTarget.supportPos();
-        this.skipTickRecoveryFace = recoveryTarget.face();
-
-        this.skipTickRecoveryCandidateTicks = Math.min(this.skipTickRecoveryCandidateTicks + 1, 2);
-        if (this.skipTickRecoveryCandidateTicks < 2) {
-            return;
-        }
-
-        if (this.skipTickRecoveryActive) {
-            return;
-        }
-
-        this.skipTickRecoveryActive = true;
-        this.skipTickRecoveryCandidateTicks = 0;
-        SkipTickUtility.reset();
-        SkipTickUtility.addSkipTicks(12);
-
-        final StuckModule stuckModule = OraculusClient.getInstance().getModuleRepository().getModule(StuckModule.class);
-        if (stuckModule.isEnabled()) {
-            stuckModule.setEnabled(false);
-        }
-    }
-
-    public BlockPos getSkipTickRecoveryBlockPos() {
-        return skipTickRecoveryBlockPos;
-    }
-
-    public Direction getSkipTickRecoveryFace() {
-        return skipTickRecoveryFace;
-    }
-
-    public boolean isSkipTickRecoveryActive() {
-        return skipTickRecoveryActive;
-    }
-
-    public void setSkipTickRecoveryActive(final boolean skipTickRecoveryActive) {
-        this.skipTickRecoveryActive = skipTickRecoveryActive;
-        if (!skipTickRecoveryActive) {
-            SkipTickUtility.reset();
-        }
-        this.skipTickRecoveryCandidateTicks = 0;
-        this.skipTickRecoveryBlockPos = null;
-        this.skipTickRecoveryFace = null;
-    }
-
-    public void markSkipTickRecoveryFailed() {
-        this.skipTickRecoveryFailed = true;
-        this.skipTickRecoveryActive = false;
-        SkipTickUtility.reset();
-        this.skipTickRecoveryCandidateTicks = 0;
-        this.skipTickRecoveryBlockPos = null;
-        this.skipTickRecoveryFace = null;
-    }
-
-    private record SkipTickRecoveryTarget(BlockPos targetPos, BlockPos supportPos, Direction face, Vec2f rotation, float rotationDifference, double distanceSq) {
+    public void renderIsland(
+            final DrawContext context,
+            final float posX,
+            final float posY,
+            final float width,
+            final float height,
+            final float progress
+    ) {
+        this.island.render(context, posX, posY);
     }
 
     @Override
     public float getIslandWidth() {
-        return this.dynamicIsland.getWidth();
+        return this.island.width();
     }
 
     @Override
     public float getIslandHeight() {
-        return this.dynamicIsland.getHeight();
+        return 25.0F;
     }
 
     @Override
     public int getIslandPriority() {
-        return 1;
+        return 2;
     }
-
 }

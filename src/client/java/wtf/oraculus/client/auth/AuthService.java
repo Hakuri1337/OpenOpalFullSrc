@@ -72,6 +72,14 @@ public final class AuthService implements AutoCloseable {
         return snapshot.get();
     }
 
+    /**
+     * Returns the current short-lived bearer token only while the authenticated
+     * runtime is allowed to operate. Callers must never persist or log it.
+     */
+    public String ircAccessToken() {
+        return snapshot.get().allowsRuntime() && accessExpiresAt > now() ? accessToken : "";
+    }
+
     public String savedUsername() {
         return store.loadUsername();
     }

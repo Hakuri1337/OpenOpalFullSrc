@@ -86,6 +86,9 @@ if (activeEdition == "free") {
                     "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule.java",
                     "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule.java",
                     "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/VelocityModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/IntaveVelocity.java",
                     "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule.java",
                     "wtf/oraculus/client/feature/module/impl/movement/noslow/NoSlowModule.java",
                     "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/NoC0FNoSlow.java",
@@ -295,6 +298,8 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
                 "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule",
                 "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule",
+                "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity",
+                "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/IntaveVelocity",
                 "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule",
                 "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/NoC0FNoSlow",
                 "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/WatchdogNoSlow",
@@ -302,6 +307,7 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule",
                 "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule",
                 "wtf/oraculus/client/feature/module/impl/visual/SigmaStyleModule",
+                "wtf/oraculus/client/feature/module/impl/world/legittelly/LegitTellyModule",
                 "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler",
                 "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler"
         ]

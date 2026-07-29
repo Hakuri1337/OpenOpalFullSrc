@@ -44,7 +44,12 @@ import static wtf.oraculus.client.Constants.mc;
 
 public final class BreakerModule extends Module {
 
-    private static final Direction[] DIRECTIONS = new Direction[]{Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
+    private static final Direction[] SURROUNDING_DIRECTIONS = {
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.WEST,
+            Direction.EAST
+    };
 
     private final ModeProperty<SwingMode> swingMode = new ModeProperty<>("Swing mode", SwingMode.CLIENT);
     private final NumberProperty range = new NumberProperty("Range", 4.5F, 0.5F, 6F, 0.5F);
@@ -238,7 +243,7 @@ public final class BreakerModule extends Module {
             return;
         }
 
-        List<BlockCandidate> adjacentCandidates = Arrays.stream(DIRECTIONS)
+        List<BlockCandidate> adjacentCandidates = Arrays.stream(SURROUNDING_DIRECTIONS)
                 .map(closestCandidate::offset)
                 .collect(Collectors.toList());
 
@@ -247,7 +252,7 @@ public final class BreakerModule extends Module {
         if (bedState.getBlock() instanceof BedBlock) {
             final BlockCandidate otherBedPart = closestCandidate.offset(BedBlock.getOppositePartDirection(bedState));
 
-            Arrays.stream(DIRECTIONS)
+            Arrays.stream(SURROUNDING_DIRECTIONS)
                     .map(otherBedPart::offset)
                     .forEach(adjacentCandidates::add);
         }

@@ -1,5 +1,5 @@
 声明：有未知heypixel 1h ban。
-scaffold改名为BlockFly并且修好了。
+Scaffold 已替换为原 BlockFly 实现；旧 Scaffold 源码已经删除。
 # Oraculus
 
 Oraculus is a free and open-source Fabric client mod for Minecraft 1.21.10.
@@ -26,8 +26,8 @@ loading, and MainPage Visuals.
 
 Oraculus is built as two mutually exclusive distributions:
 
-- `Oraculus-Beta-b5.jar` contains the complete module and mode set.
-- `Oraculus-Free-b5.jar` omits FakeLag, SuperKnockBack, TargetStrafe,
+- `Oraculus-Beta-b6.jar` contains the complete module and mode set.
+- `Oraculus-Free-b6.jar` omits FakeLag, SuperKnockBack, TargetStrafe,
   FastPearl, AntiStaff, AutoRod, Heypixel/Hypixel Disabler modes, and
   Watchdog/NoC0F NoSlow modes at compile time.
 
@@ -41,16 +41,16 @@ discard them.
 Install JDK 21, then run:
 
 ```powershell
-.\gradlew.bat build
+gradle build
 ```
 
 One build produces all four release jars:
 
 ```text
-build/libs/Oraculus-Beta-b5-NoObf.jar
-build/libs/Oraculus-Beta-b5-Obf.jar
-build/libs/Oraculus-Free-b5-NoObf.jar
-build/libs/Oraculus-Free-b5-Obf.jar
+build/libs/Oraculus-Beta-b6-NoObf.jar
+build/libs/Oraculus-Beta-b6-Obf.jar
+build/libs/Oraculus-Free-b6-NoObf.jar
+build/libs/Oraculus-Free-b6-Obf.jar
 ```
 
 `NoObf` is the canonical remapped Fabric artifact. `Obf` is the equivalent
@@ -60,13 +60,16 @@ LiquidGlass runtime interfaces are kept compatible with Minecraft 1.21.10.
 On Linux or macOS, use:
 
 ```sh
-./gradlew build
+gradle build
 ```
 
 ## Configuration
 
 Oraculus loads the default configuration on startup and saves it on shutdown.
 The in-game command system includes configuration commands through `.c`.
+Legacy `blockfly` settings migrate to the new `scaffold` module automatically.
+Configurations belonging to the removed Scaffold implementation are separated
+by an internal implementation marker and are not applied to the new module.
 
 Common commands include:
 

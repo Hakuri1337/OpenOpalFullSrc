@@ -6,6 +6,8 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.BufferJumpResetVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.CubeCraftVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.Heypixel3Velocity;
+import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.HypixelReduceVelocity;
+import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.IntaveVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.JumpResetVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.NoXZVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.NormalVelocity;
@@ -28,7 +30,9 @@ public final class VelocityModule extends Module {
                 new BufferJumpResetVelocity(this),
                 new CubeCraftVelocity(this),
                 new JumpResetVelocity(this),
-                new NoXZVelocity(this)
+                new NoXZVelocity(this),
+                new HypixelReduceVelocity(this),
+                new IntaveVelocity(this)
         );
     }
 
@@ -78,7 +82,9 @@ public final class VelocityModule extends Module {
         CUBECRAFT("CubeCraft"),
         ATTACK_REDUCE("AttackReduce (Disabled)"),
         JUMP_RESET("JumpReset"),
-        NO_XZ("NoXZ");
+        NO_XZ("NoXZ"),
+        HYPIXEL_REDUCE("HypixelReduce"),
+        INTAVE("Intave");
 
         private final String name;
 

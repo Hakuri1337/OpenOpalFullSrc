@@ -26,7 +26,7 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
 import wtf.oraculus.client.feature.module.impl.movement.StuckModule;
 import wtf.oraculus.client.feature.module.impl.utility.AutoBucketModule;
-import wtf.oraculus.client.feature.module.impl.world.blockfly.BlockFlyModule;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.duck.ClientConnectionAccess;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
@@ -202,11 +202,11 @@ public final class ChestAuraModule extends Module implements DeprecatedModule {
 
     private boolean shouldPause() {
         final var repository = OraculusClient.getInstance().getModuleRepository();
-        final BlockFlyModule blockFly = repository.getModule(BlockFlyModule.class);
+        final ScaffoldModule scaffold = repository.getModule(ScaffoldModule.class);
         final KillAuraModule killAura = repository.getModule(KillAuraModule.class);
         final AutoBucketModule autoBucket = repository.getModule(AutoBucketModule.class);
         final StuckModule stuck = repository.getModule(StuckModule.class);
-        return blockFly != null && blockFly.isEnabled()
+        return scaffold != null && scaffold.isEnabled()
                 || killAura != null && killAura.isEnabled()
                 || autoBucket != null && autoBucket.isEnabled()
                 || stuck != null && stuck.isEnabled();
