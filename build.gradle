@@ -377,6 +377,39 @@ tasks.named("build") {
     dependsOn(verifyEditionReleaseArtifacts)
 }
 
+// `-Pedition=beta build` writes its intermediate files below build/beta, while
+// players naturally pick a mod from build/libs. Keep that canonical hand-off
+// folder current so a previously built B5 artifact cannot be mistaken for the
+// latest release.
+def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}ReleaseArtifacts") {
+    dependsOn(verifyEditionReleaseArtifacts)
+    inputs.files(noObfEditionJar, obfuscatedEditionJar)
+    outputs.files(
+            file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}-NoObf.jar"),
+            file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}-Obf.jar")
+    )
+
+    doLast {
+        def canonicalDirectory = file("build/libs")
+        canonicalDirectory.mkdirs()
+        delete(fileTree(canonicalDirectory) {
+            // A standalone edition build is a hand-off build: leave no stale
+            // artifact from another edition/version for users to select. The
+            // aggregate release task intentionally retains both current
+            // editions and already performs its own clean/collect sequence.
+            include aggregateEditions ? "Oraculus-${editionDisplayName}-*.jar" : "Oraculus-*.jar"
+        })
+        copy {
+            from(noObfEditionJar.get().asFile, obfuscatedEditionJar.get().asFile)
+            into(canonicalDirectory)
+        }
+    }
+}
+
+tasks.named("build") {
+    finalizedBy(syncCurrentEditionArtifacts)
+}
+
 if (aggregateEditions) {
     tasks.register("buildFreeEdition", GradleBuild) {
         dir = projectDir

@@ -37,6 +37,36 @@ public record WorldRenderer(Camera camera, VertexConsumerProvider vcp) {
                 x + 0, y + dimensions.y, z + 0, r, g, b, a);
     }
 
+    public void drawFilledQuad(MatrixStack stack, RenderLayer layer,
+                               Vec3d first, Vec3d second, Vec3d third, Vec3d fourth,
+                               int color) {
+        VertexConsumer buffer = vcp.getBuffer(layer);
+        MatrixStack.Entry transform = stack.peek();
+        Vector3f a = first.subtract(camera.getPos()).toVector3f();
+        Vector3f b = second.subtract(camera.getPos()).toVector3f();
+        Vector3f c = third.subtract(camera.getPos()).toVector3f();
+        Vector3f d = fourth.subtract(camera.getPos()).toVector3f();
+
+        final int[] rgba = ColorUtility.hexToRGBA(color);
+        float r = rgba[0] / 255f;
+        float g = rgba[1] / 255f;
+        float blue = rgba[2] / 255f;
+        float alpha = rgba[3] / 255f;
+
+        // Emit both windings. Position-color render layers use face culling,
+        // while guidance planes can be observed from either side.
+        Emitter._emit_quad__4xposition_color(transform, buffer,
+                a.x, a.y, a.z, r, g, blue, alpha,
+                b.x, b.y, b.z, r, g, blue, alpha,
+                c.x, c.y, c.z, r, g, blue, alpha,
+                d.x, d.y, d.z, r, g, blue, alpha);
+        Emitter._emit_quad__4xposition_color(transform, buffer,
+                d.x, d.y, d.z, r, g, blue, alpha,
+                c.x, c.y, c.z, r, g, blue, alpha,
+                b.x, b.y, b.z, r, g, blue, alpha,
+                a.x, a.y, a.z, r, g, blue, alpha);
+    }
+
     public void drawFilledCube(MatrixStack stack, RenderLayer layer, Vec3d position, Vec3d dimensions, int color) {
         VertexConsumer buffer = vcp.getBuffer(layer);
         MatrixStack.Entry transform = stack.peek();

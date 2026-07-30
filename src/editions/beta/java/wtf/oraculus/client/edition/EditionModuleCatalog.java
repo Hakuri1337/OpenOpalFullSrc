@@ -56,7 +56,7 @@ public final class EditionModuleCatalog {
                 new StuckModule(),
 
                 new FastUseModule(), new AutoRodModule(), new MiddlePearlModule(), new MusicPlayerModule(), new NoFallModule(),
-                new AutoBucketModule(), new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(),
+                new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(),
                 new DisablerModule(), new FastPlaceModule(), new AntiVoidModule(), new AutoToolModule(),
                 new AntiTNTModule(), new AutoChestModule(), new AutoHypixelModule(), new BlinkModule(),
                 new PingSpoofModule(), new ServerPackSpoofModule(), new AntiBotsModule(), new KillSayModule(),

@@ -73,7 +73,9 @@ public final class SilenceItemRotationModule extends Module {
             return false;
         }
 
-        if (sword && hand == Hand.MAIN_HAND && (player.handSwinging || mc.options.jumpKey.isPressed())) {
+        if (sword && hand == Hand.MAIN_HAND
+                && (player.handSwinging
+                || !this.allowRotationWhileMoving.getValue() && mc.options.jumpKey.isPressed())) {
             return false;
         }
 

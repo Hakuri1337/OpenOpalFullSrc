@@ -18,7 +18,6 @@ public final class ScaffoldSettings {
             .hideIf(() -> !this.mode.is(ScaffoldMode.NORMAL));
     private final BooleanProperty renderItemSpoof = new BooleanProperty("Render Item Spoof", true);
     private final NumberProperty rotationTick = new NumberProperty("Rotation Tick", 3.0D, 1.0D, 6.0D, 1.0D);
-    private final BooleanProperty clutch = new BooleanProperty("Clutch", true);
 
     public BooleanProperty implementationMarkerProperty() {
         return this.implementationMarker;
@@ -48,10 +47,6 @@ public final class ScaffoldSettings {
         return this.rotationTick;
     }
 
-    public BooleanProperty clutchProperty() {
-        return this.clutch;
-    }
-
     public ScaffoldMode mode() {
         return this.mode.getValue();
     }
@@ -76,7 +71,4 @@ public final class ScaffoldSettings {
         return this.rotationTick.getValue().intValue();
     }
 
-    public boolean clutch() {
-        return this.clutch.getValue();
-    }
 }

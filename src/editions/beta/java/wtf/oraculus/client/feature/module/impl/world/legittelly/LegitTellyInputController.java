@@ -19,6 +19,7 @@ final class LegitTellyInputController {
     private boolean jump;
     private boolean sneak;
     private boolean sprint;
+    private boolean use;
 
     void captureActivationInputs() {
         this.activationHeld.clear();
@@ -51,11 +52,32 @@ final class LegitTellyInputController {
         this.sneak = sneak;
         this.sprint = sprint;
 
+        // Keep the physical key bindings and the injected PlayerInput in
+        // lockstep.  KeyboardInput constructs its packet-facing PlayerInput
+        // from these bindings before our MoveInputEvent is dispatched; only
+        // changing the event leaves vanilla's sprint/input bookkeeping one
+        // tick behind the movement that is actually simulated.
+        mc.options.forwardKey.setPressed(forward > 0.03F);
+        mc.options.backKey.setPressed(forward < -0.03F);
+        mc.options.leftKey.setPressed(sideways > 0.03F);
+        mc.options.rightKey.setPressed(sideways < -0.03F);
         mc.options.jumpKey.setPressed(jump);
         mc.options.sneakKey.setPressed(sneak);
         mc.options.sprintKey.setPressed(sprint);
-        mc.options.useKey.setPressed(false);
+        mc.options.useKey.setPressed(this.use);
         mc.options.attackKey.setPressed(false);
+        if (mc.player != null) {
+            // The source script updates both the key state and the player's
+            // sprint state.  Leaving only the key pressed makes local physics
+            // and the sprint bit written to the movement packet disagree for
+            // one tick at every recorded phase transition.
+            mc.player.setSprinting(sprint);
+        }
+    }
+
+    void setUse(final boolean use) {
+        this.use = use;
+        mc.options.useKey.setPressed(use);
     }
 
     void apply(final wtf.oraculus.event.impl.game.input.MoveInputEvent event) {
@@ -91,6 +113,10 @@ final class LegitTellyInputController {
         this.jump = false;
         this.sneak = false;
         this.sprint = false;
+        this.use = false;
+        if (mc.player != null) {
+            mc.player.setSprinting(false);
+        }
     }
 
     private KeyBinding[] movementKeys() {

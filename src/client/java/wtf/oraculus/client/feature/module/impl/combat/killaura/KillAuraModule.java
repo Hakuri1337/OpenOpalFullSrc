@@ -11,6 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.PotionItem;
 import net.minecraft.item.ShieldItem;
 import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
@@ -29,11 +30,8 @@ import wtf.oraculus.client.feature.module.impl.visual.AnimationsModule;
 import wtf.oraculus.client.renderer.world.WorldRenderer;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
-import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
-import wtf.oraculus.event.impl.game.player.movement.KeepSprintEvent;
 import wtf.oraculus.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.oraculus.event.impl.game.player.movement.PreMovementPacketEvent;
-import wtf.oraculus.event.impl.game.player.movement.knockback.VelocityUpdateEvent;
 import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
 import wtf.oraculus.utility.misc.math.MathUtility;
@@ -78,6 +76,24 @@ public final class KillAuraModule extends Module {
         return this.shouldRun() && this.targeting.getTarget() != null;
     }
 
+    public void setAttackCooldown(final int ticks) {
+        if (ticks > this.attackCooldownTicks) {
+            this.attackCooldownTicks = ticks;
+        }
+    }
+
+    public int getAttackCooldown() {
+        return this.attackCooldownTicks;
+    }
+
+    public boolean isOnCooldown() {
+        return this.attackCooldownTicks > 0;
+    }
+
+    public boolean isActivelyAttacking() {
+        return this.targeting.getTarget() != null && (this.attackCooldownTicks > 0 || this.attacks > 0);
+    }
+
     public boolean isFakeBlocking() {
         return this.settings.isFakeAutoBlock() && this.targeting.getTarget() != null && this.shouldRun();
     }
@@ -88,6 +104,10 @@ public final class KillAuraModule extends Module {
 
     @Subscribe
     public void onHandleInput(final MouseHandleInputEvent event) {
+        if (this.isOnCooldown()) {
+            return;
+        }
+
         if (isConsumingFoodOrPotion()) {
             return;
         }
@@ -143,25 +163,27 @@ public final class KillAuraModule extends Module {
                         SlotHelper.setCurrentItem(smartWeaponSlot).silence(SlotHelper.Silence.NONE);
                     }
 
-                    MouseHelper.getLeftButton().setPressed();
-                    target.getKillAuraTarget().onAttack(this.attacks == 0);
-
-                    if (this.settings.isGrimKeepSprint() && mc.player.isSprinting()) {
-                        grimAttackKeepTicks = 2;
-                        final Vec3d velocity = mc.player.getVelocity();
-                        mc.player.setVelocity(velocity.x * 0.6D, velocity.y, velocity.z * 0.6D);
-                        mc.player.setSprinting(true);
-                    }
-
-                    this.settings.getCpsProperty().resetClick();
-                    SwingDelay.reset();
-                    if (this.settings.isHeypixelBypass()) {
-                        this.lastAttackTime = System.currentTimeMillis();
-                    }
-                    if (this.attacks > 0) {
-                        this.attacks--;
+                    if (this.settings.isKeepSprint()) {
+                        // OpenZen calls the interaction manager directly and
+                        // drains every accumulated attack on the even sprint
+                        // half-cycle.  Preserve that burst behaviour instead
+                        // of reducing it to one synthetic mouse click.
+                        mc.player.setSprinting(false);
+                        MouseHelper.getLeftButton().setDisabled();
+                        final int attackCount = this.settings.isAttackCooldown19()
+                                ? 1
+                                : this.keepSprintAttackQuota;
+                        for (int attack = 0; attack < attackCount; attack++) {
+                            mc.interactionManager.attackEntity(mc.player, target.getEntity());
+                            mc.player.swingHand(Hand.MAIN_HAND);
+                            this.recordAttack(target);
+                        }
+                        this.keepSprintAttackQuota = 0;
                     } else {
-                        this.attacks = 2;
+                        MouseHelper.getLeftButton().setPressed();
+                        this.recordAttack(target);
+                        this.settings.getCpsProperty().resetClick();
+                        SwingDelay.reset();
                     }
                 }
             } else {
@@ -180,6 +202,18 @@ public final class KillAuraModule extends Module {
     }
 
     private boolean isAttackSwingAvailable(final CurrentTarget target) {
+        if (this.isOnCooldown()) {
+            return false;
+        }
+
+        if (this.settings.isKeepSprint()) {
+            if ((this.keepSprintTickCounter & 1) != 0) {
+                return false;
+            }
+            if (!this.settings.isAttackCooldown19()) {
+                return this.keepSprintAttackQuota > 0;
+            }
+        }
         final boolean smartWeaponAttack = getSmartWeaponSlot(target.getEntity()) != -1;
         if (this.settings.isAttackCooldown19() && mc.player != null && !smartWeaponAttack) {
             return mc.player.getAttackCooldownProgress(0.5F) >= 1.0F;
@@ -196,6 +230,18 @@ public final class KillAuraModule extends Module {
             return true;
         }
         return SwingDelay.isSwingAvailable(this.settings.getCpsProperty(), false);
+    }
+
+    private void recordAttack(final CurrentTarget target) {
+        target.getKillAuraTarget().onAttack(this.attacks == 0);
+        if (this.settings.isHeypixelBypass()) {
+            this.lastAttackTime = System.currentTimeMillis();
+        }
+        if (this.attacks > 0) {
+            this.attacks--;
+        } else {
+            this.attacks = 2;
+        }
     }
 
     private int getSmartWeaponSlot(final LivingEntity target) {
@@ -227,48 +273,14 @@ public final class KillAuraModule extends Module {
     }
 
     private int attacks;
+    private int attackCooldownTicks;
     public long lastAttackTime;
 
-    private int grimAttackKeepTicks;
-    private int grimDamageKeepTicks;
-    private int grimDamageWindowTicks;
+    private int keepSprintTickCounter;
+    private float keepSprintAttacks;
+    private int keepSprintAttackQuota;
     private boolean onTickRotationApplied;
     private BufferAllocator worldAllocator;
-
-    @Subscribe
-    public void onKeepSprint(final KeepSprintEvent event) {
-        if (this.settings.isGrimKeepSprint() && (grimAttackKeepTicks > 0 || grimDamageKeepTicks > 0)) {
-            event.setCancelled();
-        }
-    }
-
-    @Subscribe
-    public void onReceivePacket(final ReceivePacketEvent event) {
-        if (!this.settings.isGrimKeepSprint() || mc.player == null) {
-            return;
-        }
-
-        if (event.getPacket() instanceof net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket damagePacket
-                && damagePacket.entityId() == mc.player.getId()) {
-            grimDamageWindowTicks = 4;
-        }
-    }
-
-    @Subscribe
-    public void onVelocityUpdate(final VelocityUpdateEvent event) {
-        if (!this.settings.isGrimKeepSprint()) {
-            return;
-        }
-
-        if (event.isExplosion()) {
-            return;
-        }
-
-        if (grimDamageWindowTicks > 0) {
-            grimDamageKeepTicks = Math.max(grimDamageKeepTicks, 6);
-            grimDamageWindowTicks = 0;
-        }
-    }
 
     @Subscribe
     public void onRenderWorld(final RenderWorldEvent event) {
@@ -338,17 +350,22 @@ public final class KillAuraModule extends Module {
 
     @Subscribe(priority = 2)
     public void onPreGameTick(final PreGameTickEvent event) {
-        if (grimAttackKeepTicks > 0) {
-            grimAttackKeepTicks--;
+        if (this.attackCooldownTicks > 0) {
+            this.attackCooldownTicks--;
         }
-        if (grimDamageKeepTicks > 0) {
-            grimDamageKeepTicks--;
-        }
-        if (grimDamageWindowTicks > 0) {
-            grimDamageWindowTicks--;
+
+        this.keepSprintAttackQuota = 0;
+        if (this.settings.isKeepSprint() && mc.player != null) {
+            ++this.keepSprintTickCounter;
+            if ((this.keepSprintTickCounter & 1) == 0) {
+                mc.player.setSprinting(false);
+            }
+        } else {
+            this.keepSprintTickCounter = 0;
         }
 
         if (!shouldRun()) {
+            this.keepSprintAttacks = 0.0F;
             this.targeting.reset();
             this.clearOnTickRotation();
             return;
@@ -358,9 +375,26 @@ public final class KillAuraModule extends Module {
 
         final CurrentTarget target = this.targeting.getRotationTarget();
         if (target == null) {
+            if (this.settings.isKeepSprint()) {
+                this.keepSprintAttacks -= (float) Math.floor(this.keepSprintAttacks);
+            }
             this.clearOnTickRotation();
             updateAutoblock();
             return;
+        }
+
+        if (this.settings.isKeepSprint() && !this.settings.isAttackCooldown19()) {
+            // OpenZen doubles APS before feeding its attack accumulator,
+            // because only every second sprint tick is allowed to attack.
+            this.keepSprintAttacks +=
+                    this.settings.getCpsProperty().getCPS() * 2.0F / 20.0F;
+            final int attempts = (int) Math.floor(this.keepSprintAttacks);
+            this.keepSprintAttacks -= attempts;
+            if ((this.keepSprintTickCounter & 1) == 0) {
+                this.keepSprintAttackQuota = attempts;
+            }
+        } else {
+            this.keepSprintAttacks = 0.0F;
         }
 
         if (this.settings.getRotationMode() == RotationInjector.RotationMode.ON_TICK) {
@@ -485,9 +519,10 @@ public final class KillAuraModule extends Module {
         this.targeting.reset();
         this.hitResult = null;
         this.attacks = 0;
-        this.grimAttackKeepTicks = 0;
-        this.grimDamageKeepTicks = 0;
-        this.grimDamageWindowTicks = 0;
+        this.attackCooldownTicks = 0;
+        this.keepSprintTickCounter = 0;
+        this.keepSprintAttacks = 0.0F;
+        this.keepSprintAttackQuota = 0;
         this.haloTrailHeights.clear();
         releaseAutoblock();
         super.onDisable();

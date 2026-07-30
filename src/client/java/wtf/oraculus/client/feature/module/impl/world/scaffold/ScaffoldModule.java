@@ -4,10 +4,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -26,7 +22,6 @@ import wtf.oraculus.client.feature.module.impl.world.scaffold.block.ScaffoldPlac
 import wtf.oraculus.client.feature.module.impl.world.scaffold.input.ScaffoldKeyStateController;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.inventory.ScaffoldSlotController;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.math.ScaffoldMathUtil;
-import wtf.oraculus.client.feature.module.impl.world.scaffold.motion.ScaffoldMotionSimulator;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.movement.ScaffoldMovementUtil;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.raycast.ScaffoldRayTraceUtil;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.render.ScaffoldRenderSpoof;
@@ -35,17 +30,13 @@ import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldR
 import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationHandler;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationUtil;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.state.ScaffoldPlacementTarget;
-import wtf.oraculus.client.feature.module.impl.world.scaffold.tick.ScaffoldDelayedTickQueue;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.world.WorldRenderer;
-import wtf.oraculus.duck.ClientConnectionAccess;
 import wtf.oraculus.event.impl.game.JoinWorldEvent;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
 import wtf.oraculus.event.impl.game.input.MoveInputEvent;
-import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
-import wtf.oraculus.event.impl.game.player.movement.JumpEvent;
 import wtf.oraculus.event.impl.game.player.movement.PostMovementPacketEvent;
 import wtf.oraculus.event.impl.game.player.movement.PreMovementPacketEvent;
 import wtf.oraculus.event.impl.game.server.ServerDisconnectEvent;
@@ -56,8 +47,6 @@ import wtf.oraculus.mixin.LivingEntityAccessor;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.CustomRenderLayers;
 
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static wtf.oraculus.client.Constants.mc;
@@ -67,7 +56,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
     private final ScaffoldSlotController slotController = new ScaffoldSlotController();
     private final ScaffoldKeyStateController keyController = new ScaffoldKeyStateController();
     private final ScaffoldIsland island = new ScaffoldIsland(this);
-    private final CopyOnWriteArrayList<CopyOnWriteArrayList<Packet<?>>> packetBatches = new CopyOnWriteArrayList<>();
 
     private final ScaffoldRotation correctRotation = new ScaffoldRotation();
     private final ScaffoldRotation rotations = new ScaffoldRotation();
@@ -75,17 +63,14 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
 
     private ScaffoldPlacementTarget currentPlacement;
     private int targetYLevel = -1;
-    private int velocityDelay;
     private int eagleTimer;
     private int groundTicks;
     private int airTicks;
-    private int rotationDelay;
     private int jitterCounter;
     private double yawDifference;
     private double pitchDifference;
     private double lastYawDifference = Double.NaN;
     private double lastPitchDifference = Double.NaN;
-    private boolean canBuildNow = true;
     private boolean runtimeInitialized;
 
     public ScaffoldModule() {
@@ -97,8 +82,7 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
                 this.settings.sneakProperty(),
                 this.settings.snapProperty(),
                 this.settings.renderItemSpoofProperty(),
-                this.settings.rotationTickProperty(),
-                this.settings.clutchProperty()
+                this.settings.rotationTickProperty()
         );
     }
 
@@ -131,20 +115,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
         this.runTick();
     }
 
-    @Subscribe
-    public void onReceivePacket(final ReceivePacketEvent event) {
-        if (mc.player == null || mc.world == null) {
-            return;
-        }
-        if (event.getPacket() instanceof EntityVelocityUpdateS2CPacket velocityPacket
-                && velocityPacket.getEntityId() == mc.player.getId()) {
-            final Vec3d velocity = velocityPacket.getVelocity();
-            if (Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) >= 1.5D) {
-                this.velocityDelay = 60;
-            }
-        }
-    }
-
     @Subscribe(priority = 100)
     public void onMouseHandleInput(final MouseHandleInputEvent event) {
         event.setCancelled();
@@ -161,20 +131,10 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
                 this.currentPlacement.supportPos(),
                 false
         );
-        if (!this.canBuildNow && !this.isPlacementReachable(this.currentPlacement)) {
-            return;
-        }
-        if (this.rotationDelay <= 0 && this.settings.mode() != ScaffoldMode.OLD_TELLY && !canRayTrace) {
+        if (this.settings.mode() != ScaffoldMode.OLD_TELLY && !canRayTrace) {
             return;
         }
         this.doSnap();
-    }
-
-    @Subscribe(priority = 100)
-    public void onJump(final JumpEvent event) {
-        if (!this.canBuildNow && this.currentPlacement != null && this.rotationDelay > 0) {
-            event.setCancelled();
-        }
     }
 
     @Subscribe(priority = -100)
@@ -262,20 +222,14 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
         this.correctRotation.set(0.0F, 0.0F);
         this.currentPlacement = null;
         this.targetYLevel = 10000;
-        this.velocityDelay = 0;
         this.eagleTimer = 0;
         this.groundTicks = 0;
         this.airTicks = 0;
-        this.rotationDelay = 0;
         this.jitterCounter = 0;
         this.yawDifference = 0.0D;
         this.pitchDifference = 0.0D;
         this.lastYawDifference = Double.NaN;
         this.lastPitchDifference = Double.NaN;
-        this.canBuildNow = true;
-        this.packetBatches.clear();
-        this.packetBatches.add(new CopyOnWriteArrayList<>());
-        ScaffoldDelayedTickQueue.clear();
         ScaffoldRotationHandler.activate(mc.player.getYaw(), mc.player.getPitch());
         ScaffoldRotationHandler.setTargetRotation(this.rotations);
         ScaffoldRenderSpoof.update(this.settings.renderItemSpoof(), this.slotController.originalSlot());
@@ -283,17 +237,12 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
     }
 
     private void cleanupRuntime(final boolean restoreSlot) {
-        for (final List<Packet<?>> batch : this.packetBatches) {
-            this.processBatch(batch);
-        }
-        this.packetBatches.clear();
         if (mc.player != null) {
             this.keyController.restorePhysicalStates();
             if (restoreSlot) {
                 this.slotController.restore();
             }
         }
-        ScaffoldDelayedTickQueue.clear();
         if (restoreSlot) {
             this.handoffRotationToVanilla();
         }
@@ -301,7 +250,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
         ScaffoldRenderSpoof.clear();
         this.island.reset();
         this.currentPlacement = null;
-        this.canBuildNow = true;
         this.runtimeInitialized = false;
     }
 
@@ -309,14 +257,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
         if (mc.player == null || mc.world == null) {
             return;
         }
-        this.packetBatches.add(new CopyOnWriteArrayList<>());
-        if (this.velocityDelay > 0) {
-            this.velocityDelay--;
-        }
-        if (mc.player.isOnGround() && this.velocityDelay <= 30) {
-            this.velocityDelay = 0;
-        }
-
         final int placeableSlot = this.slotController.selectPlaceableSlot();
         ScaffoldRenderSpoof.update(this.settings.renderItemSpoof(), this.slotController.originalSlot());
         final boolean jumpHeld = this.keyController.isPhysicalJumpDown();
@@ -331,120 +271,53 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
 
         this.applyRotations();
         boolean firstGroundTick = false;
-        this.canBuildNow = true;
         if (this.currentPlacement != null && placeableSlot != -1) {
             if (this.groundTicks == 1 && mc.options.jumpKey.isPressed()) {
                 firstGroundTick = true;
             }
-            if (this.settings.clutch() && mc.player.getVelocity().y < -0.1D) {
-                final ScaffoldMotionSimulator simulator = new ScaffoldMotionSimulator(mc.player);
-                simulator.simulateWithFriction(2);
-                if (this.currentPlacement.supportPos().getY() > simulator.y()) {
-                    this.canBuildNow = false;
-                }
-            }
-        }
-        if (mc.player.isOnGround()) {
-            this.canBuildNow = true;
         }
 
-        final ScaffoldRotation desired = this.settings.mode() == ScaffoldMode.TELLY_BRIDGE && this.canBuildNow
+        final ScaffoldRotation desired = this.settings.mode() == ScaffoldMode.TELLY_BRIDGE
                 ? this.getTargetRotation(firstGroundTick)
                 : this.getPlayerYawRotation();
         this.correctRotation.set(desired.yaw(), desired.pitch());
 
-        if (this.currentPlacement == null) {
-            ScaffoldDelayedTickQueue.clear();
-        } else if (this.settings.clutch()
-                && (!this.canBuildNow || this.velocityDelay > 0)
-                && this.rotationDelay <= 8) {
-            this.scheduleDelayedPlacement();
+        if (this.settings.mode() == ScaffoldMode.NORMAL && this.settings.snap()) {
+            this.rotations.setYaw(this.correctRotation.yaw());
         } else {
-            this.canBuildNow = true;
-            ScaffoldDelayedTickQueue.clear();
-            this.rotationDelay = 0;
-            if (this.settings.mode() == ScaffoldMode.NORMAL && this.settings.snap()) {
-                this.rotations.setYaw(this.correctRotation.yaw());
-            } else {
-                this.rotations.setYaw(ScaffoldRotationUtil.moveTowards(
-                        (float) this.getBlockDistance(),
-                        this.rotations.yaw(),
-                        this.correctRotation.yaw()
-                ));
-            }
-            this.rotations.setPitch(this.correctRotation.pitch());
-            this.applySneakCycle();
+            this.rotations.setYaw(ScaffoldRotationUtil.moveTowards(
+                    (float) this.getBlockDistance(),
+                    this.rotations.yaw(),
+                    this.correctRotation.yaw()
+            ));
+        }
+        this.rotations.setPitch(this.correctRotation.pitch());
+        this.applySneakCycle();
 
-            if (this.isTellyMode()) {
-                this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
-                if (this.airTicks < 1 && ScaffoldMovementUtil.isMoving()) {
-                    if (this.settings.mode() == ScaffoldMode.OLD_TELLY) {
-                        this.rotations.setYaw(mc.player.getYaw());
-                    }
-                    this.finishRotationTick();
-                    return;
+        if (this.isTellyMode()) {
+            this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
+            if (this.airTicks < 1 && ScaffoldMovementUtil.isMoving()) {
+                if (this.settings.mode() == ScaffoldMode.OLD_TELLY) {
+                    this.rotations.setYaw(mc.player.getYaw());
                 }
-            } else if (this.settings.mode() == ScaffoldMode.KEEP_Y) {
-                this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
-            } else {
-                if (this.settings.eagle()) {
-                    this.keyController.setSneak(mc.player.isOnGround() && isOnBlockEdge(0.3F));
-                }
-                if (this.settings.snap() && !jumpHeld) {
-                    this.resetSnap();
-                }
+                this.finishRotationTick();
+                return;
+            }
+        } else if (this.settings.mode() == ScaffoldMode.KEEP_Y) {
+            this.keyController.setJump(ScaffoldMovementUtil.isMoving() || jumpHeld);
+        } else {
+            if (this.settings.eagle()) {
+                this.keyController.setSneak(mc.player.isOnGround() && isOnBlockEdge(0.3F));
+            }
+            if (this.settings.snap() && !jumpHeld) {
+                this.resetSnap();
             }
         }
         this.finishRotationTick();
     }
 
-    private void scheduleDelayedPlacement() {
-        if (!ScaffoldDelayedTickQueue.isEmpty()) {
-            return;
-        }
-        final ScaffoldRotation rotationToBlock = ScaffoldRotationUtil.rotationToBlock(
-                this.currentPlacement.supportPos(), 1.0F);
-        final ScaffoldPlacementTarget delayedPlacement = this.currentPlacement;
-        this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
-        ScaffoldRotationHandler.setTargetRotation(this.rotations);
-        this.rotationDelay++;
-        ScaffoldDelayedTickQueue.add(() -> {
-            if (mc.player == null) {
-                ScaffoldDelayedTickQueue.clear();
-                return;
-            }
-            ScaffoldRotationHandler.markSentRotation(rotationToBlock);
-            this.sendPacketSilent(new PlayerMoveC2SPacket.LookAndOnGround(
-                    ScaffoldRotationHandler.wireYaw(rotationToBlock.yaw()),
-                    rotationToBlock.pitch(),
-                    mc.player.isOnGround(),
-                    mc.player.horizontalCollision
-            ));
-        }, true);
-        ScaffoldDelayedTickQueue.add(() -> {
-            if (mc.player == null || mc.world == null) {
-                ScaffoldDelayedTickQueue.clear();
-                return;
-            }
-            this.currentPlacement = delayedPlacement;
-            this.rotations.set(rotationToBlock.yaw(), rotationToBlock.pitch());
-            ScaffoldRotationHandler.setTargetRotation(this.rotations);
-            this.doSnap();
-            this.canBuildNow = true;
-            this.rotationDelay = 0;
-        }, false);
-    }
-
     private void applyRotations() {
-        Vec3d eye = mc.player.getEyePos();
-        if (!this.canBuildNow) {
-            eye = eye.add(mc.player.getVelocity().multiply(2.0D));
-        }
-        if (this.settings.clutch() && mc.player.getVelocity().y < 0.01D) {
-            final ScaffoldMotionSimulator simulator = new ScaffoldMotionSimulator(mc.player);
-            simulator.simulateWithFriction(2);
-            eye = new Vec3d(eye.x, Math.max(simulator.y() + mc.player.getEyeHeight(mc.player.getPose()), eye.y), eye.z);
-        }
+        final Vec3d eye = mc.player.getEyePos();
         final ScaffoldPlacementTarget target = ScaffoldPlacementSearch.findShellTarget(eye, this.targetYLevel);
         if (target != null) {
             this.currentPlacement = target;
@@ -591,18 +464,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
         return mc.world.isAir(below) && ScaffoldBlockUtil.isPlaceable(this.slotController.selectedStack());
     }
 
-    private boolean isPlacementReachable(final ScaffoldPlacementTarget target) {
-        final ScaffoldRotation currentTarget = ScaffoldRotationHandler.targetRotation();
-        if (target == null || currentTarget == null || mc.player == null) {
-            return false;
-        }
-        final Vec3d faceNormal = Vec3d.of(target.clickedFace().getVector());
-        final Vec3d hitPoint = Vec3d.ofCenter(target.supportPos()).add(faceNormal.multiply(0.5D));
-        final Vec3d delta = hitPoint.subtract(mc.player.getEyePos());
-        return delta.lengthSquared() <= 20.25D
-                && delta.normalize().dotProduct(faceNormal.multiply(-1.0D).normalize()) >= 0.0D;
-    }
-
     private void resetSnap() {
         if (this.currentPlacement == null) {
             return;
@@ -671,21 +532,6 @@ public final class ScaffoldModule extends Module implements IslandTrigger {
     private boolean isTellyMode() {
         return this.settings.mode() == ScaffoldMode.TELLY_BRIDGE
                 || this.settings.mode() == ScaffoldMode.OLD_TELLY;
-    }
-
-    private void processBatch(final List<Packet<?>> batch) {
-        for (final Packet<?> packet : List.copyOf(batch)) {
-            batch.remove(packet);
-            this.sendPacketSilent(packet);
-        }
-    }
-
-    private void sendPacketSilent(final Packet<?> packet) {
-        if (packet == null || mc.getNetworkHandler() == null) {
-            return;
-        }
-        final ClientConnection connection = mc.getNetworkHandler().getConnection();
-        ((ClientConnectionAccess) connection).oraculus$sendPacketSilent(packet);
     }
 
     private void drawOutline(

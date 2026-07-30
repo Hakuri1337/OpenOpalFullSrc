@@ -37,7 +37,9 @@ import wtf.oraculus.utility.player.RotationUtility;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static wtf.oraculus.client.Constants.mc;
@@ -51,6 +53,7 @@ public final class BreakerModule extends Module {
             Direction.EAST
     };
 
+    private final ModeProperty<BreakerMode> mode = new ModeProperty<>("Mode", BreakerMode.NORMAL);
     private final ModeProperty<SwingMode> swingMode = new ModeProperty<>("Swing mode", SwingMode.CLIENT);
     private final NumberProperty range = new NumberProperty("Range", 4.5F, 0.5F, 6F, 0.5F);
     private final BooleanProperty breakSurroundings = new BooleanProperty("Break surroundings", true);
@@ -61,12 +64,16 @@ public final class BreakerModule extends Module {
     private boolean breaking, breakingBed, cancelVisualSwing;
     private int remainingTicks, slot;
     private long lastBedBreak;
+    private BypassStage bypassStage = BypassStage.SEARCH_BED;
+    private BlockPos bypassBedPos;
+    private BlockPos bypassOtherBedPos;
+    private BlockPos bypassCoverPos;
 
     private final BreakerIsland breakerIsland = new BreakerIsland(this);
 
     public BreakerModule() {
         super("Breaker", "Breaks relevant blocks for mini-games.", ModuleCategory.WORLD);
-        addProperties(swingMode, range, breakSurroundings);
+        addProperties(mode, swingMode, range, breakSurroundings);
     }
 
     @Subscribe
@@ -157,6 +164,12 @@ public final class BreakerModule extends Module {
         mc.player.swingHand(Hand.MAIN_HAND);
 
         if (this.remainingTicks < 0) {
+            if (this.mode.is(BreakerMode.HEYPIXEL_BYPASS)) {
+                // The estimate is UI-only. The bypass may switch from the
+                // cover to the bed only after the world confirms removal.
+                this.remainingTicks = 0;
+                return;
+            }
             if (this.breakingBed) {
                 this.lastBedBreak = System.currentTimeMillis();
             }
@@ -185,6 +198,15 @@ public final class BreakerModule extends Module {
     }
 
     private void updateTargetBlock() {
+        if (this.mode.is(BreakerMode.HEYPIXEL_BYPASS)) {
+            this.updateHeypixelBypassTarget();
+            return;
+        }
+        this.resetBypassState();
+        this.updateNormalTargetBlock();
+    }
+
+    private void updateNormalTargetBlock() {
         this.slot = -1;
 
         final Vec3d eyePos = mc.player.getEyePos();
@@ -327,8 +349,247 @@ public final class BreakerModule extends Module {
         this.setTargetBlock(new BlockTarget(weakestCandidate, weakestCandidateResistance));
     }
 
+    private void updateHeypixelBypassTarget() {
+        this.slot = -1;
+        final float configuredRange = this.range.getValue().floatValue();
+        BlockPos bedPos = this.resolveLockedBed(configuredRange);
+
+        if (bedPos == null) {
+            this.resetBypassState();
+            bedPos = this.findClosestEnemyBed(configuredRange);
+            if (bedPos == null) {
+                this.currentTarget = null;
+                return;
+            }
+            this.lockBed(bedPos);
+        }
+
+        if (this.bypassStage == BypassStage.SEARCH_BED) {
+            final MiningChoice cover = this.findBestDirectCover(configuredRange);
+            if (cover == null) {
+                // A direct cover may still exist just outside the configured
+                // attack range. Waiting keeps the mode from treating a range
+                // failure as an exposed bed.
+                if (this.hasMineableDirectCover()) {
+                    this.clearLocalBreakingForTargetChange();
+                    this.currentTarget = null;
+                    return;
+                }
+                this.bypassStage = BypassStage.LOCK_BED;
+            } else {
+                this.bypassStage = BypassStage.LOCK_COVER;
+                this.bypassCoverPos = cover.candidate().pos.toImmutable();
+                this.slot = cover.slot();
+                this.setBypassTarget(new BlockTarget(cover.candidate(), cover.resistance()));
+                return;
+            }
+        }
+
+        if (this.bypassStage == BypassStage.LOCK_COVER) {
+            final BlockState lockedCoverState = mc.world.getBlockState(this.bypassCoverPos);
+            final MiningChoice cover = this.miningChoice(this.bypassCoverPos, configuredRange);
+            if (cover != null) {
+                this.slot = cover.slot();
+                this.setBypassTarget(new BlockTarget(cover.candidate(), cover.resistance()));
+                return;
+            }
+
+            if (!this.isRemovedCover(lockedCoverState)) {
+                // The block still exists but is currently out of range or no
+                // longer mineable. Preserve the lock instead of advancing.
+                this.clearLocalBreakingForTargetChange();
+                this.currentTarget = null;
+                return;
+            }
+
+            // A zero local progress estimate is not enough. Reaching this
+            // branch means the client world has confirmed that the locked
+            // adjacent block is no longer a real mineable block.
+            this.bypassCoverPos = null;
+            this.bypassStage = BypassStage.LOCK_BED;
+            this.clearLocalBreakingForTargetChange();
+            this.currentTarget = null;
+        }
+
+        bedPos = this.resolveLockedBed(configuredRange);
+        if (bedPos == null) {
+            this.currentTarget = null;
+            this.resetBypassState();
+            return;
+        }
+        this.setBypassTarget(new BlockTarget(new BlockCandidate(bedPos), 0.01D));
+    }
+
+    private BlockPos findClosestEnemyBed(final float configuredRange) {
+        final Vec3d eyePos = mc.player.getEyePos();
+        final int fromX = (int) Math.floor(eyePos.x - configuredRange - 1);
+        final int fromY = (int) Math.floor(eyePos.y - configuredRange - 1);
+        final int fromZ = (int) Math.floor(eyePos.z - configuredRange - 1);
+        final int toX = (int) Math.ceil(eyePos.x + configuredRange + 1);
+        final int toY = (int) Math.ceil(eyePos.y + configuredRange + 1);
+        final int toZ = (int) Math.ceil(eyePos.z + configuredRange + 1);
+        final HypixelServer.BedColor ownBedColor = this.ownBedColor();
+
+        BlockCandidate closest = null;
+        for (int x = fromX; x <= toX; x++) {
+            for (int y = fromY; y <= toY; y++) {
+                for (int z = fromZ; z <= toZ; z++) {
+                    final BlockPos pos = new BlockPos(x, y, z);
+                    final BlockState state = mc.world.getBlockState(pos);
+                    if (!this.isEnemyBed(state, ownBedColor)) {
+                        continue;
+                    }
+                    final BlockCandidate candidate = new BlockCandidate(pos);
+                    if (candidate.distance <= configuredRange
+                            && (closest == null || candidate.distance < closest.distance)) {
+                        closest = candidate;
+                    }
+                }
+            }
+        }
+        return closest == null ? null : closest.pos.toImmutable();
+    }
+
+    private void lockBed(final BlockPos bedPos) {
+        final BlockState state = mc.world.getBlockState(bedPos);
+        this.bypassBedPos = bedPos.toImmutable();
+        this.bypassOtherBedPos = state.getBlock() instanceof BedBlock
+                ? bedPos.offset(BedBlock.getOppositePartDirection(state)).toImmutable()
+                : null;
+        this.bypassCoverPos = null;
+        this.bypassStage = BypassStage.SEARCH_BED;
+    }
+
+    private BlockPos resolveLockedBed(final float configuredRange) {
+        final HypixelServer.BedColor ownBedColor = this.ownBedColor();
+        for (final BlockPos pos : new BlockPos[]{this.bypassBedPos, this.bypassOtherBedPos}) {
+            if (pos == null || !this.isEnemyBed(mc.world.getBlockState(pos), ownBedColor)) {
+                continue;
+            }
+            final double distance = PlayerUtility.getDistanceToBlock(pos);
+            if (distance <= configuredRange) {
+                if (!pos.equals(this.bypassBedPos)) {
+                    this.bypassBedPos = pos.toImmutable();
+                }
+                return pos;
+            }
+        }
+        return null;
+    }
+
+    private MiningChoice findBestDirectCover(final float configuredRange) {
+        MiningChoice best = null;
+        for (final BlockPos pos : this.directCoverPositions()) {
+            final MiningChoice choice = this.miningChoice(pos, configuredRange);
+            if (choice == null) {
+                continue;
+            }
+            if (best == null
+                    || choice.resistance() < best.resistance()
+                    || (choice.resistance() == best.resistance()
+                    && choice.candidate().distance < best.candidate().distance)) {
+                best = choice;
+            }
+        }
+        return best;
+    }
+
+    private boolean hasMineableDirectCover() {
+        for (final BlockPos pos : this.directCoverPositions()) {
+            final BlockState state = mc.world.getBlockState(pos);
+            if (this.isMineableCover(state, pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<BlockPos> directCoverPositions() {
+        final Set<BlockPos> positions = new LinkedHashSet<>();
+        for (final BlockPos bedPart : new BlockPos[]{this.bypassBedPos, this.bypassOtherBedPos}) {
+            if (bedPart == null || !(mc.world.getBlockState(bedPart).getBlock() instanceof BedBlock)) {
+                continue;
+            }
+            for (final Direction direction : SURROUNDING_DIRECTIONS) {
+                positions.add(bedPart.offset(direction).toImmutable());
+            }
+        }
+        return positions;
+    }
+
+    private MiningChoice miningChoice(final BlockPos pos, final float configuredRange) {
+        if (pos == null) {
+            return null;
+        }
+        final BlockState state = mc.world.getBlockState(pos);
+        if (!this.isMineableCover(state, pos)) {
+            return null;
+        }
+
+        final BlockCandidate candidate = new BlockCandidate(pos);
+        if (candidate.distance > configuredRange) {
+            return null;
+        }
+
+        final float hardness = state.getHardness(mc.world, pos);
+        final int selectedSlot = SlotHelper.getInstance().getSelectedSlot(mc.player.getInventory());
+        int bestSlot = selectedSlot;
+        double bestSpeed = SlotHelper.getInstance().getMainHandStack(mc.player)
+                .getMiningSpeedMultiplier(state);
+        for (int candidateSlot = 0; candidateSlot < 9; candidateSlot++) {
+            final double speed = mc.player.getInventory().getStack(candidateSlot)
+                    .getMiningSpeedMultiplier(state);
+            if (speed > bestSpeed) {
+                bestSpeed = speed;
+                bestSlot = candidateSlot;
+            }
+        }
+        final double resistance = Math.max(0.01D, hardness) / Math.max(0.01D, bestSpeed);
+        return new MiningChoice(candidate, resistance, bestSlot);
+    }
+
+    private boolean isMineableCover(final BlockState state, final BlockPos pos) {
+        return !this.isRemovedCover(state)
+                && !(state.getBlock() instanceof BedBlock)
+                && state.getHardness(mc.world, pos) >= 0.0F;
+    }
+
+    private boolean isRemovedCover(final BlockState state) {
+        return state.isAir() || state.isReplaceable() || !state.getFluidState().isEmpty();
+    }
+
+    private HypixelServer.BedColor ownBedColor() {
+        return LocalDataWatch.get().getKnownServerManager().getCurrentServer() instanceof HypixelServer
+                ? HypixelServer.BedColor.fromTeamColor(mc.player.getTeamColorValue())
+                : null;
+    }
+
+    private boolean isEnemyBed(
+            final BlockState state,
+            final HypixelServer.BedColor ownBedColor
+    ) {
+        if (!(state.getBlock() instanceof BedBlock bedBlock)) {
+            return false;
+        }
+        return ownBedColor == null
+                || ownBedColor.mapColorId != bedBlock.getColor().getMapColor().id;
+    }
+
+    private void setBypassTarget(final BlockTarget target) {
+        final boolean changed = this.currentTarget == null
+                || !this.currentTarget.candidate.pos.equals(target.candidate.pos);
+        if (changed) {
+            this.clearLocalBreakingForTargetChange();
+        }
+        this.currentTarget = target;
+    }
+
     private void setTargetBlock(final BlockTarget newTarget) {
         if (this.shouldUpdateTarget(newTarget)) {
+            if (this.currentTarget != null
+                    && !this.currentTarget.candidate.pos.equals(newTarget.candidate.pos)) {
+                this.clearLocalBreakingForTargetChange();
+            }
             this.currentTarget = newTarget;
         }
     }
@@ -398,14 +659,27 @@ public final class BreakerModule extends Module {
             this.lastBedBreak = System.currentTimeMillis();
         }
 
-        this.breaking = false;
-        this.breakingBed = false;
+        this.clearLocalBreakingForTargetChange();
 
         if (clearTarget) {
             this.currentTarget = null;
+            this.resetBypassState();
         }
 
         this.disableIsland();
+    }
+
+    private void clearLocalBreakingForTargetChange() {
+        this.breaking = false;
+        this.breakingBed = false;
+        this.remainingTicks = 0;
+    }
+
+    private void resetBypassState() {
+        this.bypassStage = BypassStage.SEARCH_BED;
+        this.bypassBedPos = null;
+        this.bypassOtherBedPos = null;
+        this.bypassCoverPos = null;
     }
 
     private void disableIsland() {
@@ -450,6 +724,31 @@ public final class BreakerModule extends Module {
     }
 
     public record BlockTarget(BlockCandidate candidate, double resistance) {
+    }
+
+    private record MiningChoice(BlockCandidate candidate, double resistance, int slot) {
+    }
+
+    private enum BypassStage {
+        SEARCH_BED,
+        LOCK_COVER,
+        LOCK_BED
+    }
+
+    private enum BreakerMode {
+        NORMAL("Normal"),
+        HEYPIXEL_BYPASS("Heypixel Bypass");
+
+        private final String name;
+
+        BreakerMode(final String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
     }
 
     private enum SwingMode {

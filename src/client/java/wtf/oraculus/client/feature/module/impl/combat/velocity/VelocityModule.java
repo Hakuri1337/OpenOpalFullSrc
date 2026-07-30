@@ -3,6 +3,7 @@ package wtf.oraculus.client.feature.module.impl.combat.velocity;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.AttackReduceVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.BufferJumpResetVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.CubeCraftVelocity;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.Heypixel3Velocity;
@@ -29,6 +30,7 @@ public final class VelocityModule extends Module {
                 new Heypixel3Velocity(this),
                 new BufferJumpResetVelocity(this),
                 new CubeCraftVelocity(this),
+                new AttackReduceVelocity(this),
                 new JumpResetVelocity(this),
                 new NoXZVelocity(this),
                 new HypixelReduceVelocity(this),
@@ -80,7 +82,7 @@ public final class VelocityModule extends Module {
         BUFFER("Buffer"),
         BUFFER_JUMP_RESET("BufferJumpReset"),
         CUBECRAFT("CubeCraft"),
-        ATTACK_REDUCE("AttackReduce (Disabled)"),
+        ATTACK_REDUCE("AttackReduce"),
         JUMP_RESET("JumpReset"),
         NO_XZ("NoXZ"),
         HYPIXEL_REDUCE("HypixelReduce"),

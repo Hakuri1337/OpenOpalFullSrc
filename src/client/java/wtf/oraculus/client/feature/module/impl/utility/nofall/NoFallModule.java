@@ -2,6 +2,7 @@ package wtf.oraculus.client.feature.module.impl.utility.nofall;
 
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.utility.nofall.impl.MlgNoFall;
 import wtf.oraculus.client.feature.module.impl.utility.nofall.impl.SpoofNoFall;
 import wtf.oraculus.client.feature.module.impl.utility.nofall.impl.WatchdogNoFall;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
@@ -19,7 +20,7 @@ NoFallModule extends Module {
     public NoFallModule() {
         super("No Fall", "Removes your players fall damage.", ModuleCategory.UTILITY);
         addProperties(mode);
-        addModuleModes(mode, new WatchdogNoFall(this), new SpoofNoFall(this));
+        addModuleModes(mode, new WatchdogNoFall(this), new SpoofNoFall(this), new MlgNoFall(this));
     }
 
     @Subscribe
@@ -59,7 +60,8 @@ NoFallModule extends Module {
 
     public enum Mode {
         SPOOF("Spoof"),
-        WATCHDOG("Watchdog");
+        WATCHDOG("Watchdog"),
+        MLG("MLG");
 
         private final String name;
 

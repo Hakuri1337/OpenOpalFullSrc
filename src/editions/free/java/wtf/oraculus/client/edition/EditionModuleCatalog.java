@@ -53,7 +53,7 @@ public final class EditionModuleCatalog {
                 new PhaseModule(), new LongJumpModule(), new FastStopModule(), new StrafeModule(), new PhysicsModule(),
                 new SpiderModule(), new ClipperModule(), new SafeWalkModule(), new StuckModule(),
 
-                new FastUseModule(), new MusicPlayerModule(), new NoFallModule(), new AutoBucketModule(),
+                new FastUseModule(), new MusicPlayerModule(), new NoFallModule(),
                 new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(), new DisablerModule(),
                 new FastPlaceModule(), new AntiVoidModule(), new AutoToolModule(), new AntiTNTModule(),
                 new AutoChestModule(), new AutoHypixelModule(), new BlinkModule(), new PingSpoofModule(),

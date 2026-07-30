@@ -3,15 +3,19 @@ package wtf.oraculus.client.feature.module.impl.world.legittelly;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
-import wtf.oraculus.utility.player.RotationUtility;
 
 import static wtf.oraculus.client.Constants.mc;
 
 final class LegitTellyRotationController {
+    private static final float SENSITIVITY_QUANTUM = 0.03404715F;
+    private static final long ROTATION_DURATION_NANOS = 50_000_000L;
     private static final int[] NUDGE_PATTERN = {0, 1, -1, 2, -2};
 
     private Vec2f applied;
-    private long lastUpdateNanos;
+    private Vec2f rotationStart;
+    private Vec2f rotationTarget;
+    private long rotationStartedAtNanos;
+    private boolean rotationActive;
     private float takeoverAccumulation;
     private double laneCoordinate;
     private float antiSwayOffset;
@@ -20,7 +24,10 @@ final class LegitTellyRotationController {
 
     void begin(final double laneCoordinate) {
         this.applied = new Vec2f(mc.player.getYaw(), mc.player.getPitch());
-        this.lastUpdateNanos = System.nanoTime();
+        this.rotationStart = this.applied;
+        this.rotationTarget = this.applied;
+        this.rotationStartedAtNanos = System.nanoTime();
+        this.rotationActive = false;
         this.takeoverAccumulation = 0.0F;
         this.laneCoordinate = laneCoordinate;
         this.antiSwayOffset = 0.0F;
@@ -113,31 +120,59 @@ final class LegitTellyRotationController {
         if (mc.player == null) {
             return target;
         }
-        final long now = System.nanoTime();
-        final float alpha = MathHelper.clamp((now - this.lastUpdateNanos) / 50_000_000.0F, 0.35F, 1.0F);
-        this.lastUpdateNanos = now;
-
-        final Vec2f from = this.applied == null
-                ? new Vec2f(mc.player.getYaw(), mc.player.getPitch())
-                : this.applied;
-        final float yaw = from.x + MathHelper.wrapDegrees(target.x - from.x) * alpha;
-        final float pitch = MathHelper.lerp(alpha, from.y, target.y);
-        Vec2f quantized = RotationUtility.patchConstantRotation(
-                new Vec2f(yaw, MathHelper.clamp(pitch, -89.5F, 89.5F)),
-                from
+        this.update();
+        final Vec2f from = new Vec2f(mc.player.getYaw(), mc.player.getPitch());
+        final float correctedYaw = target.x
+                + SENSITIVITY_QUANTUM * NUDGE_PATTERN[
+                ++this.nudgeIndex % NUDGE_PATTERN.length
+                ];
+        this.rotationStart = from;
+        this.rotationTarget = new Vec2f(
+                from.x + MathHelper.wrapDegrees(correctedYaw - from.x),
+                MathHelper.clamp(target.y, -90.0F, 90.0F)
         );
+        this.rotationStartedAtNanos = System.nanoTime();
+        this.rotationActive = true;
+        this.applied = from;
+        return from;
+    }
 
-        final double sensitivity = mc.options.getMouseSensitivity().getValue() * 0.6D + 0.2D;
-        final float quantum = (float) (sensitivity * sensitivity * sensitivity * 8.0D * 0.15D);
-        quantized = new Vec2f(
-                quantized.x + quantum * NUDGE_PATTERN[this.nudgeIndex++ % NUDGE_PATTERN.length],
-                quantized.y
+    Vec2f update() {
+        if (mc.player == null) {
+            return this.applied;
+        }
+        if (!this.rotationActive || this.rotationStart == null || this.rotationTarget == null) {
+            if (this.applied == null) {
+                this.applied = new Vec2f(mc.player.getYaw(), mc.player.getPitch());
+            }
+            return this.applied;
+        }
+        final float progress = MathHelper.clamp(
+                (System.nanoTime() - this.rotationStartedAtNanos)
+                        / (float) ROTATION_DURATION_NANOS,
+                0.0F,
+                1.0F
         );
-
-        this.applied = quantized;
-        mc.player.setYaw(quantized.x);
-        mc.player.setPitch(quantized.y);
-        return quantized;
+        final float desiredYaw = MathHelper.lerp(
+                progress, this.rotationStart.x, this.rotationTarget.x
+        );
+        final float desiredPitch = MathHelper.lerp(
+                progress, this.rotationStart.y, this.rotationTarget.y
+        );
+        this.applied = new Vec2f(
+                quantizeFrom(this.rotationStart.x, desiredYaw),
+                MathHelper.clamp(
+                        quantizeFrom(this.rotationStart.y, desiredPitch),
+                        -90.0F,
+                        90.0F
+                )
+        );
+        mc.player.setYaw(this.applied.x);
+        mc.player.setPitch(this.applied.y);
+        if (progress >= 1.0F) {
+            this.rotationActive = false;
+        }
+        return this.applied;
     }
 
     Vec2f applied() {
@@ -146,8 +181,16 @@ final class LegitTellyRotationController {
 
     void clear() {
         this.applied = null;
+        this.rotationStart = null;
+        this.rotationTarget = null;
+        this.rotationActive = false;
         this.takeoverAccumulation = 0.0F;
         this.antiSwayOffset = 0.0F;
         this.antiSwayTapUsed = false;
+    }
+
+    private static float quantizeFrom(final float origin, final float value) {
+        final float steps = Math.round((value - origin) / SENSITIVITY_QUANTUM);
+        return origin + steps * SENSITIVITY_QUANTUM;
     }
 }

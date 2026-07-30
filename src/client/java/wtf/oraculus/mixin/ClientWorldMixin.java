@@ -13,7 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.world.EntityRemoveEvent;
 import wtf.oraculus.event.impl.game.world.PlaySoundEvent;
-import wtf.oraculus.client.feature.module.impl.world.scaffold.tick.ScaffoldDelayedTickQueue;
 import wtf.oraculus.utility.player.SkipTickUtility;
 
 import static wtf.oraculus.client.Constants.mc;
@@ -51,14 +50,6 @@ public final class ClientWorldMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;tick()V")
     )
     private void hookSkipTicks(final Entity instance) {
-        final ScaffoldDelayedTickQueue.TickResult scaffoldTick = ScaffoldDelayedTickQueue.consumeFor(instance);
-        if (scaffoldTick == ScaffoldDelayedTickQueue.TickResult.SKIP) {
-            return;
-        }
-        if (scaffoldTick == ScaffoldDelayedTickQueue.TickResult.CONTINUE) {
-            instance.tick();
-            return;
-        }
         if (mc.player != null && instance == mc.player && SkipTickUtility.consumeSkipTick()) {
             return;
         }

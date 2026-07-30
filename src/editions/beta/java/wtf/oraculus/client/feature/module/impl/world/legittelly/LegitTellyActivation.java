@@ -5,23 +5,28 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
 import wtf.oraculus.utility.player.RotationUtility;
 
 import static wtf.oraculus.client.Constants.mc;
 
-final class LegitTellyActivation {
+public final class LegitTellyActivation {
     private static final float YAW_TOLERANCE = 2.0F;
     private static final float MIN_PITCH = 75.0F;
-    private static final double MAX_LIP_DISTANCE = 0.65D;
+    private static final double EDGE_READY_DISTANCE = 0.65D;
+    public static final double SIDE_MIN_ACROSS = 0.38D;
+    public static final double SIDE_MAX_ACROSS = 0.65D;
+    public static final double SIDE_MIN_HEIGHT = 0.25D;
+    public static final double SIDE_MAX_HEIGHT = 0.75D;
 
-    ActivationInspection inspect() {
+    public ActivationInspection inspect() {
         if (mc.player == null || mc.world == null) {
             return ActivationInspection.failed(ActivationIssue.WORLD_UNAVAILABLE);
         }
 
-        final float baseYaw = nearestDiagonal(mc.player.getYaw());
+        final float baseYaw = nearestDiagonalYaw(mc.player.getYaw());
         final float yawDifference = MathHelper.angleBetween(mc.player.getYaw(), baseYaw);
         if (yawDifference > YAW_TOLERANCE) {
             return ActivationInspection.failed(
@@ -35,13 +40,11 @@ final class LegitTellyActivation {
         }
 
         final Direction travel = travelDirection(baseYaw);
-        final BlockPos belowPlayer = BlockPos.ofFloored(
-                mc.player.getX(), mc.player.getY() - 0.5D, mc.player.getZ()
-        );
-        final double lipDistance = lipDistance(belowPlayer, travel);
-        if (lipDistance > MAX_LIP_DISTANCE) {
+        final BlockPos belowPlayer = supportBlockForPlayer(travel);
+        final double edgeGap = edgeGap(belowPlayer, travel);
+        if (edgeGap > 0.0D) {
             return ActivationInspection.failed(
-                    ActivationIssue.MOVE_TO_EDGE, lipDistance - MAX_LIP_DISTANCE
+                    ActivationIssue.MOVE_TO_EDGE, edgeGap
             );
         }
         final BlockPos aheadFeet = belowPlayer.offset(travel).up();
@@ -86,7 +89,7 @@ final class LegitTellyActivation {
         ));
     }
 
-    enum ActivationIssue {
+    public enum ActivationIssue {
         READY,
         WORLD_UNAVAILABLE,
         ALIGN_DIAGONAL,
@@ -99,7 +102,7 @@ final class LegitTellyActivation {
         AIM_AT_SIDE_CENTER
     }
 
-    record ActivationInspection(
+    public record ActivationInspection(
             ActivationSnapshot snapshot,
             ActivationIssue issue,
             double measurement
@@ -120,11 +123,85 @@ final class LegitTellyActivation {
         }
     }
 
-    static float requiredPitch() {
+    public static float requiredPitch() {
         return MIN_PITCH;
     }
 
-    static String directionName(final Direction direction) {
+    public static float nearestDiagonalYaw(final float yaw) {
+        return Math.round((yaw - 45.0F) / 90.0F) * 90.0F + 45.0F;
+    }
+
+    public static Direction travelDirectionForYaw(final float yaw) {
+        return travelDirection(nearestDiagonalYaw(yaw));
+    }
+
+    public static BlockPos blockBelowPlayer() {
+        if (mc.player == null) {
+            return BlockPos.ORIGIN;
+        }
+        return new BlockPos(
+                MathHelper.floor(mc.player.getX()),
+                MathHelper.floor(mc.player.getY()) - 1,
+                MathHelper.floor(mc.player.getZ())
+        );
+    }
+
+    public static BlockPos supportBlockForPlayer(final Direction travel) {
+        final BlockPos centered = blockBelowPlayer();
+        if (mc.world == null || travel == null || !travel.getAxis().isHorizontal()
+                || LegitTellyBlockPolicy.isSafeSupport(centered)) {
+            return centered;
+        }
+        final BlockPos behind = centered.offset(travel.getOpposite());
+        return LegitTellyBlockPolicy.isSafeSupport(behind) ? behind : centered;
+    }
+
+    public static Vec3d sidePoint(
+            final BlockPos block,
+            final Direction travel,
+            final double across,
+            final double height,
+            final double outwardOffset
+    ) {
+        final double physicalAcross = travel == Direction.SOUTH || travel == Direction.WEST
+                ? 1.0D - across
+                : across;
+        return switch (travel) {
+            case NORTH -> new Vec3d(
+                    block.getX() + physicalAcross,
+                    block.getY() + height,
+                    block.getZ() - outwardOffset
+            );
+            case SOUTH -> new Vec3d(
+                    block.getX() + physicalAcross,
+                    block.getY() + height,
+                    block.getZ() + 1.0D + outwardOffset
+            );
+            case WEST -> new Vec3d(
+                    block.getX() - outwardOffset,
+                    block.getY() + height,
+                    block.getZ() + physicalAcross
+            );
+            case EAST -> new Vec3d(
+                    block.getX() + 1.0D + outwardOffset,
+                    block.getY() + height,
+                    block.getZ() + physicalAcross
+            );
+            default -> Vec3d.ofCenter(block);
+        };
+    }
+
+    public static Vec3d sideAimPoint(final BlockPos block, final Direction travel) {
+        return sidePoint(
+                block,
+                travel,
+                (SIDE_MIN_ACROSS + SIDE_MAX_ACROSS) * 0.5D,
+                (SIDE_MIN_HEIGHT + SIDE_MAX_HEIGHT) * 0.5D,
+                0.002D
+        );
+    }
+
+    public static String directionName(final Direction direction) {
         return switch (direction) {
             case NORTH -> "北";
             case SOUTH -> "南";
@@ -134,12 +211,8 @@ final class LegitTellyActivation {
         };
     }
 
-    static double progress(final BlockPos pos, final Direction direction) {
+    public static double progress(final BlockPos pos, final Direction direction) {
         return pos.getX() * direction.getOffsetX() + pos.getZ() * direction.getOffsetZ();
-    }
-
-    private static float nearestDiagonal(final float yaw) {
-        return Math.round((yaw - 45.0F) / 90.0F) * 90.0F + 45.0F;
     }
 
     private static Direction travelDirection(final float baseYaw) {
@@ -152,7 +225,7 @@ final class LegitTellyActivation {
         return z > 0.0D ? Direction.SOUTH : Direction.NORTH;
     }
 
-    private static boolean isNarrowHit(
+    public static boolean isNarrowHit(
             final BlockHitResult hit,
             final BlockPos block,
             final Direction travel
@@ -165,8 +238,84 @@ final class LegitTellyActivation {
             across = 1.0D - across;
         }
         final double height = point.y - block.getY();
-        return across >= 0.38D && across <= 0.65D
-                && height >= 0.25D && height <= 0.75D;
+        return across >= SIDE_MIN_ACROSS && across <= SIDE_MAX_ACROSS
+                && height >= SIDE_MIN_HEIGHT && height <= SIDE_MAX_HEIGHT;
+    }
+
+    public static double edgeGap(final BlockPos block, final Direction travel) {
+        if (mc.player == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return lipDistance(block, travel) - desiredEdgeDistance();
+    }
+
+    public static double desiredEdgeDistance() {
+        return EDGE_READY_DISTANCE;
+    }
+
+    public static boolean isAimingAtSide(final BlockPos block, final Direction travel) {
+        if (mc.player == null || mc.world == null) {
+            return false;
+        }
+        final Vec3d eye = mc.player.getEyePos();
+        final Vec3d end = eye.add(RotationUtility.getRotationVector(
+                mc.player.getPitch(), mc.player.getYaw()
+        ).multiply(mc.player.getBlockInteractionRange()));
+        final BlockHitResult hit = mc.world.raycast(new RaycastContext(
+                eye, end, RaycastContext.ShapeType.COLLIDER,
+                RaycastContext.FluidHandling.NONE, mc.player
+        ));
+        return hit.getType() == HitResult.Type.BLOCK
+                && block.equals(hit.getBlockPos())
+                && hit.getSide() == travel
+                && isNarrowHit(hit, block, travel);
+    }
+
+    public static Vec2f findActivationAim(
+            final BlockPos block,
+            final Direction travel,
+            final float baseYaw
+    ) {
+        if (mc.player == null || mc.world == null || block == null || travel == null) {
+            return null;
+        }
+        Vec2f best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        final float currentPitch = MathHelper.clamp(
+                mc.player.getPitch(), MIN_PITCH, 89.0F
+        );
+        for (float yawOffset = -YAW_TOLERANCE;
+             yawOffset <= YAW_TOLERANCE + 0.001F;
+             yawOffset += 0.5F) {
+            final float yaw = baseYaw + yawOffset;
+            for (float pitch = MIN_PITCH; pitch <= 89.0F; pitch += 0.5F) {
+                final BlockHitResult hit = raycast(yaw, pitch);
+                if (hit.getType() != HitResult.Type.BLOCK
+                        || !block.equals(hit.getBlockPos())
+                        || hit.getSide() != travel
+                        || !isNarrowHit(hit, block, travel)) {
+                    continue;
+                }
+                final double score = Math.abs(yawOffset) * 2.0D
+                        + Math.abs(pitch - currentPitch);
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = new Vec2f(yaw, pitch);
+                }
+            }
+        }
+        return best;
+    }
+
+    private static BlockHitResult raycast(final float yaw, final float pitch) {
+        final Vec3d eye = mc.player.getEyePos();
+        final Vec3d end = eye.add(RotationUtility.getRotationVector(
+                pitch, yaw
+        ).multiply(mc.player.getBlockInteractionRange()));
+        return mc.world.raycast(new RaycastContext(
+                eye, end, RaycastContext.ShapeType.COLLIDER,
+                RaycastContext.FluidHandling.NONE, mc.player
+        ));
     }
 
     private static double lipDistance(final BlockPos block, final Direction travel) {
@@ -179,7 +328,7 @@ final class LegitTellyActivation {
         };
     }
 
-    record ActivationSnapshot(
+    public record ActivationSnapshot(
             BlockPos block,
             Direction travel,
             float baseYaw,
@@ -187,7 +336,7 @@ final class LegitTellyActivation {
             int bridgeLaneBlock,
             double startProgress
     ) {
-        ActivationSnapshot withBaseYaw(final float yaw) {
+        public ActivationSnapshot withBaseYaw(final float yaw) {
             return new ActivationSnapshot(
                     this.block, this.travel, yaw, this.lane,
                     this.bridgeLaneBlock, this.startProgress
