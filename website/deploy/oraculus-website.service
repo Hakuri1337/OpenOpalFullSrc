@@ -1,0 +1,22 @@
+[Unit]
+Description=Oraculus Official Website (Next.js)
+After=network.target oraculus-auth.service
+
+[Service]
+Type=simple
+User=oraculus
+Group=oraculus
+WorkingDirectory=/opt/oraculus-website
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/oraculus-website/website.env
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/oraculus-website
+
+[Install]
+WantedBy=multi-user.target

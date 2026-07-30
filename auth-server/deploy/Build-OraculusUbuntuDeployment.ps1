@@ -25,6 +25,7 @@ $payload = [ordered]@{
     'oraculus-auth-renew.service'     = Join-Path $authRoot 'ubuntu\oraculus-auth-renew.service'
     'oraculus-auth-renew.timer'       = Join-Path $authRoot 'ubuntu\oraculus-auth-renew.timer'
     'sync-certificate.sh'             = Join-Path $authRoot 'ubuntu\sync-certificate.sh'
+    'enable-remote-website-api.sh'    = Join-Path $authRoot 'ubuntu\enable-remote-website-api.sh'
     'README_ZH.md'                    = Join-Path $authRoot 'ubuntu\README_ZH.md'
 }
 

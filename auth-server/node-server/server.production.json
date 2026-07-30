@@ -12,8 +12,14 @@
   "SecureCookies": true,
   "RequireHttps": true,
   "RegistrationEnabled": true,
-  "AllowedClientVersions": ["b5"],
-  "AllowedBuildIds": ["b5-free", "b5-beta"],
+  "AllowedClientVersions": ["b6"],
+  "AllowedBuildIds": ["b6-free", "b6-beta"],
+  "AllowedLauncherVersions": ["v0.9.21"],
   "TlsCertificatePath": "C:\\ProgramData\\OraculusAuth\\certificates\\auth.hakuri.tech.crt",
-  "TlsPrivateKeyPath": "C:\\ProgramData\\OraculusAuth\\certificates\\auth.hakuri.tech.key"
+  "TlsPrivateKeyPath": "C:\\ProgramData\\OraculusAuth\\certificates\\auth.hakuri.tech.key",
+  "InternalWebsiteSecret": "",
+  "InternalWebHost": "127.0.0.1",
+  "InternalWebPort": 3101,
+  "InternalWebTls": false,
+  "InternalWebAllowedIps": []
 }

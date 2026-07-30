@@ -25,7 +25,7 @@ https://auth.hakuri.tech/api/v1/
 - `/user/*`
 - `/admin/*`
 
-客户端版本、构建 ID、Free/Beta 权限、HWID、访问令牌、刷新令牌轮换和刷新令牌重放撤销逻辑均由 `node-server/server.js` 实现。
+客户端版本、启动器版本、构建 ID、Free/Beta 权限、HWID、访问令牌、刷新令牌轮换和刷新令牌重放撤销逻辑均由 `node-server/server.js` 实现。`launcherVersion` 为可选字段：提供时仅校验启动器版本（当前允许 `v0.9.21`）；未提供时改为校验 `edition + clientVersion + buildId`。
 
 ## 管理权限
 
@@ -37,6 +37,8 @@ https://auth.hakuri.tech/api/v1/
 管理后台支持按用户名、ID、角色、等级、状态和创建来源搜索。账号列表使用每页 200 条的服务端分页，不再截断为前 500 个账号。`/admin/audit` 提供最近 200 条简明审计记录，完整审计数据仍持久化于认证数据文件中。
 
 管理员设置临时密码后，账号必须先进入用户面板完成强制改密，才能重新进入管理后台或客户端；这次强制改密不受 168 小时自助改密冷却限制。
+
+`SUPER_ADMIN` 可在 `/admin` 的“限时 Beta 公益”面板开启全局临时授权，并必须设置未来的 UTC 截止时间。开放期间，原始等级为 `FREE` 的用户可以登录 Beta 客户端；服务端仅对该 Beta 会话返回临时 `BETA` 授权，账号数据库中的 `tier` 不会被改写。到期或手动关闭后，Beta 会话会在下一次心跳或刷新时失效。`SUPPORT_ADMIN` 只能查看状态，不能修改该开关；每次变更都会写入简明审计日志。
 
 ## Ubuntu 生产结构
 

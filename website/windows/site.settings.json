@@ -1,0 +1,7 @@
+{
+  "Domain": "ora.hakuri.tech",
+  "ExpectedIPv4": "160.202.238.53",
+  "AuthInternalUrl": "https://auth.hakuri.tech:3101",
+  "NodeVersion": "18.20.8",
+  "NginxVersion": "1.30.4"
+}

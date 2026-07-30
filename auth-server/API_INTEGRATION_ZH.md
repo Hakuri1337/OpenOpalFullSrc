@@ -17,13 +17,21 @@
 
 当前允许的客户端组合为：
 
-| edition | clientVersion | buildId |
-| --- | --- | --- |
-| `FREE` | `b6` | `b6-free` |
-| `BETA` | `b6` | `b6-beta` |
+| edition | clientVersion | buildId | launcherVersion（可选） |
+| --- | --- | --- | --- |
+| `FREE` | `b6` | `b6-free` | `v0.9.21` |
+| `BETA` | `b6` | `b6-beta` | `v0.9.21` |
 
-三者必须严格匹配。服务端配置可以停止接受旧版本，因此客户端必须正确处理
-`CLIENT_VERSION_BLOCKED`。
+版本门禁按以下优先级执行：
+
+- 请求提供非空 `launcherVersion` 时，仅校验启动器版本；此时不会校验
+  `clientVersion` 与 `buildId`。
+- 请求未提供 `launcherVersion` 时，校验 `edition + clientVersion + buildId` 是否为表中的
+  允许组合。
+
+因此启动器可以独立控制兼容性，旧客户端也可以在不接入启动器时继续使用客户端版本
+门禁。服务端配置可以停止接受旧版本，客户端必须正确处理
+`CLIENT_VERSION_BLOCKED` 和 `LAUNCHER_VERSION_BLOCKED`。
 
 ## 2. 公共数据结构
 
@@ -65,6 +73,7 @@
 - `status`：`ACTIVE`、`BANNED`、`DELETED`
 - 角色和授权等级相互独立；管理员账号并不自动获得 Beta
 - `betaExpiresAt`、密码/HWID 时间可能为 `null`
+- 当客户端请求 `edition=BETA` 且超级管理员开启“限时 Beta 公益”时，服务端会对该会话临时返回 `tier=BETA`、公益截止时间的 `betaExpiresAt` 与 `betaPublicAccess=true`；账号的持久化 `tier` 仍为 `FREE`。Free 客户端会继续收到原始 Free 等级。
 
 ### 2.3 成功会话
 
@@ -123,16 +132,19 @@
   "hwidQuality": "STRONG",
   "edition": "FREE",
   "clientVersion": "b6",
-  "buildId": "b6-free"
+  "buildId": "b6-free",
+  "launcherVersion": "v0.9.21"
 }
 ```
 
 用户名须为 3–24 位 ASCII 字母、数字或下划线。密码须为 12–128 个字符，
 不能等于用户名，也不能命中服务端常见密码表。
 
-自助注册始终创建 `FREE` 用户。使用 Beta 客户端注册时，注册本身会成功，但
-不会签发 Beta 会话；用户需由管理员开通 Beta 后再登录。注册限制为同一 IP
-每小时 3 次、每天 8 次，同一 HWID 每 7 天 2 次。
+自助注册始终创建 `FREE` 用户。使用 Beta 客户端注册时，默认注册本身会成功，
+但不会签发 Beta 会话；用户需由管理员开通 Beta 后再登录。若超级管理员已经
+开启未到期的“限时 Beta 公益”，Beta 注册会直接签发一份仅在公益期内有效的
+Beta 会话，账号持久化等级仍为 Free。注册限制为同一 IP 每小时 3 次、每天 8 次，
+同一 HWID 每 7 天 2 次。
 
 ### 3.2 登录
 
@@ -153,7 +165,8 @@
   "deviceFingerprint": "v1:stable-device-material...",
   "edition": "FREE",
   "clientVersion": "b6",
-  "buildId": "b6-free"
+  "buildId": "b6-free",
+  "launcherVersion": "v0.9.21"
 }
 ```
 
@@ -178,8 +191,8 @@
 }
 ```
 
-心跳会重新检查账号状态、Beta 到期时间、客户端版本和会话绑定，并更新会话
-最后活动时间。
+心跳会重新检查账号状态、Beta 到期时间、限时 Beta 公益截止时间、客户端版本、
+启动器版本和会话绑定，并更新会话最后活动时间。
 
 ### 3.5 查询状态
 
@@ -429,7 +442,7 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 
 | HTTP | 主要错误码 | 客户端处理 |
 | --- | --- | --- |
-| 400 | `INVALID_USERNAME`、`INVALID_PASSWORD`、`HWID_UNAVAILABLE`、`CLIENT_VERSION_BLOCKED`、`REGISTRATION_DISABLED` | 显示业务消息；版本阻止应引导更新 |
+| 400 | `INVALID_USERNAME`、`INVALID_PASSWORD`、`HWID_UNAVAILABLE`、`CLIENT_VERSION_BLOCKED`、`LAUNCHER_VERSION_BLOCKED`、`REGISTRATION_DISABLED` | 显示业务消息；客户端或启动器版本阻止应引导对应组件更新 |
 | 401 | `INVALID_CREDENTIALS`、`SESSION_REVOKED` | 登录失败或清除会话并重新登录 |
 | 403 | `ACCOUNT_BANNED`、`ACCOUNT_DELETED`、`LICENSE_REQUIRED`、`LICENSE_EXPIRED`、`HWID_MISMATCH`、`PASSWORD_CHANGE_REQUIRED` | 禁止进入；临时密码须先在用户面板修改 |
 | 409 | `USERNAME_TAKEN` | 提示更换用户名 |
@@ -449,7 +462,7 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 3. 刷新返回 `SESSION_REVOKED` 时清空本地凭据并显示登录界面。
 4. 登录/注册成功后只在本机安全存储中保存令牌，不写入日志。
 5. 在 AccessToken 到期前主动刷新；心跳失败不能继续使用受保护功能。
-6. 收到账号、许可证、HWID 或强制改密错误时立即退出受保护界面。
+6. 收到账号、许可证、HWID、客户端/启动器版本或强制改密错误时立即退出受保护界面。
 7. 退出时调用 logout；无论网络结果如何都删除本地令牌。
 
 不要记录密码、原始 HWID、AccessToken 或 RefreshToken。诊断日志只记录
