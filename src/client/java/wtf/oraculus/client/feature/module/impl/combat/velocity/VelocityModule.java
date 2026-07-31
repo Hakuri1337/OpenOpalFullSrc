@@ -19,7 +19,8 @@ import wtf.oraculus.client.feature.module.repository.ModuleRepository;
 import static wtf.oraculus.client.Constants.mc;
 
 public final class VelocityModule extends Module {
-    private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", this, Mode.NORMAL);
+    private final ModeProperty<Mode> mode = new ModeProperty<>("Mode", this, Mode.NORMAL)
+            .alias("HypixelReduce", Mode.HYPIXEL_REDUCE);
 
     public VelocityModule() {
         super("AntiKB", "Reduces or nullifies your players velocity when being hit.", ModuleCategory.COMBAT);
@@ -82,7 +83,7 @@ public final class VelocityModule extends Module {
         CUBECRAFT("CubeCraft"),
         JUMP_RESET("JumpReset"),
         NO_XZ("NoXZ"),
-        HYPIXEL_REDUCE("HypixelReduce"),
+        HYPIXEL_REDUCE("Reduce"),
         INTAVE("Intave");
 
         private final String name;

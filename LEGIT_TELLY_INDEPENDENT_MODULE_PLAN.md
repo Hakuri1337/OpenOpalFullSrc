@@ -463,4 +463,4 @@ Free 版本：
 - 玩家可以可靠接管；
 - Scaffold 与 Legit Telly 不会同时控制玩家；
 - Free 发行物不含实现类；
-- Beta 完整构建和 ProGuard 校验通过。
+- Beta 完整构建和发行包校验通过。

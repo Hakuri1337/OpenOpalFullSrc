@@ -44,17 +44,12 @@ Install JDK 21, then run:
 gradle build
 ```
 
-One build produces all four release jars:
+One build produces both release jars:
 
 ```text
-build/libs/Oraculus-Beta-b6-NoObf.jar
-build/libs/Oraculus-Beta-b6-Obf.jar
-build/libs/Oraculus-Free-b6-NoObf.jar
-build/libs/Oraculus-Free-b6-Obf.jar
+build/libs/Oraculus-Beta-b6.jar
+build/libs/Oraculus-Free-b6.jar
 ```
-
-`NoObf` is the canonical remapped Fabric artifact. `Obf` is the equivalent
-ProGuard-processed artifact; its Mixin, Fabric entrypoint, configuration, and
 
 On Linux or macOS, use:
 

@@ -12,17 +12,6 @@ def editionDisplayName = activeEdition == "free" ? "Free" : "Beta"
 def aggregateEditions = requestedEdition == null
 def releaseJarName = "Oraculus-${editionDisplayName}-${project.mod_version}"
 def remappedEditionJar = layout.buildDirectory.file("libs/${releaseJarName}.jar")
-def noObfEditionJar = layout.buildDirectory.file("libs/${releaseJarName}-NoObf.jar")
-def obfuscatedEditionJar = layout.buildDirectory.file("libs/${releaseJarName}-Obf.jar")
-def proguardConfiguration = layout.buildDirectory.file("proguard/${releaseJarName}.pro")
-def proguardMapping = layout.buildDirectory.file("proguard/${releaseJarName}.mapping.txt")
-def proguardTemplate = file("proguard/oraculus.pro")
-def proguardJavaHome = javaToolchains.launcherFor {
-    languageVersion = JavaLanguageVersion.of(21)
-}.get().metadata.installationPath.asFile
-def proguardJdkModules = fileTree(new File(proguardJavaHome, "jmods")) {
-    include "*.jmod"
-}
 
 version = project.mod_version
 group = project.maven_group
@@ -63,10 +52,6 @@ loom {
 		}
 	}
 
-}
-
-configurations {
-    proguard
 }
 
 sourceSets.named("client") {
@@ -119,10 +104,6 @@ if (activeEdition == "free") {
 }
 
 dependencies {
-	// ProGuard is an isolated release post-processor. It never participates in
-	// Loom's compile/remap classpaths and only consumes the final remapped JAR.
-	proguard "com.guardsquare:proguard-base:7.7.0"
-
 	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
@@ -215,78 +196,11 @@ publishing {
 	}
 }
 
-// The remapped Fabric JAR is the source of truth. ProGuard runs after Loom so
-// the produced archive retains Fabric metadata, access wideners, resources and
-// nested JAR dependencies exactly as a normal release does.
-def proguardLibraryEntries = {
-    def normalizePath = { File path -> path.absolutePath.replace(File.separator, "/") }
-    def jdkModuleEntries = proguardJdkModules.files
-            .sort { it.name }
-            .collect { "-libraryjars '${normalizePath(it)}'(!**.jar;!module-info.class)" }
-    def runtimeJarEntries = sourceSets.client.runtimeClasspath.files
-            .findAll { it.isFile() && it.name.endsWith(".jar") }
-            .findAll { it.canonicalFile != remappedEditionJar.get().asFile.canonicalFile }
-            .sort { it.absolutePath }
-            .collect { "-libraryjars '${normalizePath(it)}'" }
-
-    (jdkModuleEntries + runtimeJarEntries).unique().join(System.lineSeparator())
-}
-
-def copyUnobfuscatedEditionJar = tasks.register("copy${editionDisplayName}NoObfJar") {
+// The remapped Fabric JAR is the only release artifact for an edition. Keep
+// the validation that protects Fabric metadata and Free/Beta source boundaries.
+def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}ReleaseArtifact") {
     dependsOn(tasks.named("remapJar"))
     inputs.file(remappedEditionJar)
-    outputs.file(noObfEditionJar)
-
-    doLast {
-        def source = remappedEditionJar.get().asFile.toPath()
-        def target = noObfEditionJar.get().asFile.toPath()
-        java.nio.file.Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-    }
-}
-
-def writeProguardConfiguration = tasks.register("write${editionDisplayName}ProguardConfiguration") {
-    dependsOn(tasks.named("remapJar"))
-    inputs.file(proguardTemplate)
-    inputs.file(remappedEditionJar)
-    inputs.files(proguardJdkModules, sourceSets.client.runtimeClasspath)
-    outputs.file(proguardConfiguration)
-
-    doLast {
-        def normalizePath = { File path -> path.absolutePath.replace(File.separator, "/") }
-        def generatedConfiguration = proguardTemplate.getText("UTF-8")
-                .replace("%INPUT_JAR%", normalizePath(remappedEditionJar.get().asFile))
-                .replace("%OUTPUT_JAR%", normalizePath(obfuscatedEditionJar.get().asFile))
-                .replace("%LIBRARY_JARS%", proguardLibraryEntries())
-                .replace("%MAPPING_FILE%", normalizePath(proguardMapping.get().asFile))
-
-        def output = proguardConfiguration.get().asFile
-        output.parentFile.mkdirs()
-        output.setText(generatedConfiguration, "UTF-8")
-    }
-}
-
-def obfuscateEditionJar = tasks.register("obfuscate${editionDisplayName}Jar", JavaExec) {
-    group = "build"
-    description = "Obfuscates the final ${editionDisplayName} Fabric JAR with ProGuard."
-    dependsOn(writeProguardConfiguration)
-    classpath = configurations.proguard
-    mainClass = "proguard.ProGuard"
-    javaLauncher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-    args("@${proguardConfiguration.get().asFile.absolutePath}")
-    inputs.file(remappedEditionJar)
-    inputs.file(proguardConfiguration)
-    outputs.files(obfuscatedEditionJar, proguardMapping)
-
-    doFirst {
-        delete(obfuscatedEditionJar.get().asFile, proguardMapping.get().asFile)
-    }
-}
-
-def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}ReleaseArtifacts") {
-    dependsOn(copyUnobfuscatedEditionJar, obfuscateEditionJar)
-    inputs.files(noObfEditionJar, obfuscatedEditionJar, proguardMapping)
 
     doLast {
         def requiredEntries = [
@@ -294,16 +208,6 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "oraculus.mixins.json",
                 "oraculus.accesswidener",
                 "wtf/oraculus/OraculusFabric.class"
-        ]
-        def authClassesExpectedToBeRenamed = [
-                "wtf.oraculus.client.auth.AuthApiClient",
-                "wtf.oraculus.client.auth.AuthBootstrap",
-                "wtf.oraculus.client.auth.AuthRuntimeGate",
-                "wtf.oraculus.client.auth.AuthService",
-                "wtf.oraculus.client.auth.AuthSessionStore",
-                "wtf.oraculus.client.auth.AuthSnapshot",
-                "wtf.oraculus.client.auth.AuthState",
-                "wtf.oraculus.client.auth.DeviceFingerprintProvider"
         ]
         def forbiddenFreeClassPrefixes = [
                 "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
@@ -323,73 +227,45 @@ def verifyEditionReleaseArtifacts = tasks.register("verify${editionDisplayName}R
                 "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler"
         ]
 
-        [noObfEditionJar.get().asFile, obfuscatedEditionJar.get().asFile].each { artifact ->
-            if (!artifact.isFile() || artifact.length() == 0L) {
-                throw new GradleException("Expected release artifact was not produced: ${artifact}")
-            }
-
-            def archive = new java.util.zip.ZipFile(artifact)
-            try {
-                requiredEntries.each { entry ->
-                    if (archive.getEntry(entry) == null) {
-                        throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
-                    }
-                }
-                if (artifact == noObfEditionJar.get().asFile
-                        && archive.getEntry("wtf/oraculus/client/auth/AuthService.class") == null) {
-                    throw new GradleException("${artifact.name} is missing the unobfuscated authentication service")
-                }
-                if (artifact == obfuscatedEditionJar.get().asFile
-                        && archive.getEntry("wtf/oraculus/client/auth/AuthService.class") != null) {
-                    throw new GradleException("${artifact.name} leaked an unobfuscated AuthService class")
-                }
-                if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
-                    throw new GradleException("${artifact.name} is missing bundled dependency JARs")
-                }
-                if (activeEdition == "free") {
-                    def leakedEntry = archive.entries().find { entry ->
-                        forbiddenFreeClassPrefixes.any { prefix ->
-                            entry.name == "${prefix}.class" || entry.name.startsWith("${prefix}\$")
-                        }
-                    }
-                    if (leakedEntry != null) {
-                        throw new GradleException("${artifact.name} contains Beta-only class ${leakedEntry.name}")
-                    }
-                }
-            } finally {
-                archive.close()
-            }
+        def artifact = remappedEditionJar.get().asFile
+        if (!artifact.isFile() || artifact.length() == 0L) {
+            throw new GradleException("Expected release artifact was not produced: ${artifact}")
         }
 
-        def mapping = proguardMapping.get().asFile
-        def mappingLines = mapping.isFile() ? mapping.readLines("UTF-8") : []
-        if (!mapping.isFile() || !mappingLines.any { it.contains(" -> ") && !it.trim().endsWith(":") }) {
-            throw new GradleException("ProGuard did not emit a usable member mapping for ${editionDisplayName}")
-        }
-        authClassesExpectedToBeRenamed.each { sourceName ->
-            def entry = mappingLines.find { it.startsWith("${sourceName} -> ") }
-            if (entry == null || entry == "${sourceName} -> ${sourceName}:") {
-                throw new GradleException("ProGuard did not rename authentication class ${sourceName} for ${editionDisplayName}")
+        def archive = new java.util.zip.ZipFile(artifact)
+        try {
+            requiredEntries.each { entry ->
+                if (archive.getEntry(entry) == null) {
+                    throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
+                }
             }
+            if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
+                throw new GradleException("${artifact.name} is missing bundled dependency JARs")
+            }
+            if (activeEdition == "free") {
+                def leakedEntry = archive.entries().find { entry ->
+                    forbiddenFreeClassPrefixes.any { prefix ->
+                        entry.name == "${prefix}.class" || entry.name.startsWith("${prefix}\$")
+                    }
+                }
+                if (leakedEntry != null) {
+                    throw new GradleException("${artifact.name} contains Beta-only class ${leakedEntry.name}")
+                }
+            }
+        } finally {
+            archive.close()
         }
     }
 }
 
 tasks.named("build") {
-    dependsOn(verifyEditionReleaseArtifacts)
+    dependsOn(verifyEditionReleaseArtifact)
 }
 
-// `-Pedition=beta build` writes its intermediate files below build/beta, while
-// players naturally pick a mod from build/libs. Keep that canonical hand-off
-// folder current so a previously built B5 artifact cannot be mistaken for the
-// latest release.
 def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}ReleaseArtifacts") {
-    dependsOn(verifyEditionReleaseArtifacts)
-    inputs.files(noObfEditionJar, obfuscatedEditionJar)
-    outputs.files(
-            file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}-NoObf.jar"),
-            file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}-Obf.jar")
-    )
+    dependsOn(verifyEditionReleaseArtifact)
+    inputs.file(remappedEditionJar)
+    outputs.file(file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}.jar"))
 
     doLast {
         def canonicalDirectory = file("build/libs")
@@ -402,7 +278,7 @@ def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}Relea
             include aggregateEditions ? "Oraculus-${editionDisplayName}-*.jar" : "Oraculus-*.jar"
         })
         copy {
-            from(noObfEditionJar.get().asFile, obfuscatedEditionJar.get().asFile)
+            from(remappedEditionJar.get().asFile)
             into(canonicalDirectory)
         }
     }
@@ -427,21 +303,19 @@ if (aggregateEditions) {
     }
 
     tasks.register("collectEditionArtifacts", Copy) {
-        dependsOn(verifyEditionReleaseArtifacts, tasks.named("buildFreeEdition"), tasks.named("cleanEditionArtifacts"))
+        dependsOn(verifyEditionReleaseArtifact, tasks.named("buildFreeEdition"), tasks.named("cleanEditionArtifacts"))
         from(file("build/beta/libs")) {
-            include "Oraculus-Beta-${project.mod_version}-NoObf.jar"
-            include "Oraculus-Beta-${project.mod_version}-Obf.jar"
+            include "Oraculus-Beta-${project.mod_version}.jar"
         }
         from(file("build/free/libs")) {
-            include "Oraculus-Free-${project.mod_version}-NoObf.jar"
-            include "Oraculus-Free-${project.mod_version}-Obf.jar"
+            include "Oraculus-Free-${project.mod_version}.jar"
         }
         into(file("build/libs"))
     }
 
     tasks.named("build") {
         // A plain `gradle build` is the release entry point. It completes both
-        // source-level editions and leaves only the four distributable JARs in
+        // source-level editions and leaves the two distributable JARs in
         // build/libs.
         dependsOn(tasks.named("collectEditionArtifacts"))
     }

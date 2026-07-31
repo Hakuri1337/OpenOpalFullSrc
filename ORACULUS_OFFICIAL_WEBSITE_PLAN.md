@@ -348,7 +348,7 @@ oraculus-web/
     {
       "edition": "FREE",
       "platform": "fabric-1.21.10",
-      "url": "https://downloads.example/Oraculus-Free-b6-Obf.jar",
+      "url": "https://downloads.example/Oraculus-Free-b6.jar",
       "sha256": "...",
       "size": 0
     }

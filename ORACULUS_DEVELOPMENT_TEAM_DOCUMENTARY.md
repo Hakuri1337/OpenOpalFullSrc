@@ -15,9 +15,9 @@ Tips:你必须确保使用Java21+为javahome并在path中！！！ ——白璃H
 - 克隆主仓库并建立本地开发环境。
 - 理解客户端初始化、模块、Mode、事件、Mixin、配置和资源结构。
 - 分别运行与验证 Free/Beta 版本。
-- 一次构建 Free/Beta、Obf/NoObf 四个发布产物。
+- 一次构建 Free/Beta 两个发布产物。
 - 创建分支、提交代码、同步主分支并推送到 GitHub。
-- 避免破坏 Free/Beta 源码隔离、配置兼容、Mixin 和 ProGuard。
+- 避免破坏 Free/Beta 源码隔离、配置兼容和 Mixin。
 - 按团队检查清单完成测试、Review 与发布。
 
 本文档描述的是当前仓库实际实现，而不是理想化模板。构建脚本、版本号或目录发生变化后，应同步更新本文档。
@@ -51,11 +51,10 @@ src/client/resources/             Fabric 描述、Mixin、Access Widener、资�
 src/editions/beta/java/           Beta 专属目录和版本桥接实现
 src/editions/free/java/           Free 专属目录和替代实现
 auth-server/                       Node.js 认证核心与 Ubuntu 部署文件
-proguard/oraculus.pro              ProGuard 配置模板
 .github/workflows/build.yml        GitHub Actions 构建流程
 promotional/oraculus/              品牌素材与生成脚本
 gradle/wrapper/                    固定版本的 Gradle Wrapper
-build.gradle                       构建、双版本、混淆和验证逻辑
+build.gradle                       构建、双版本和验证逻辑
 gradle.properties                  Minecraft、Fabric 和 Mod 版本
 README.md                          用户向项目说明
 THIRD_PARTY_NOTICES.md             第三方代码与许可说明
@@ -335,19 +334,16 @@ Windows：
 
 Linux/macOS 将 `.\gradlew.bat` 替换为 `./gradlew`，首次使用先执行 `chmod +x gradlew`。
 
-### 6.2 四个发布产物
+### 6.2 两个发布产物
 
 普通 `build` 是正式发布入口，最终在 `build/libs/` 收集：
 
 ```text
-Oraculus-Beta-b6-NoObf.jar
-Oraculus-Beta-b6-Obf.jar
-Oraculus-Free-b6-NoObf.jar
-Oraculus-Free-b6-Obf.jar
+Oraculus-Beta-b6.jar
+Oraculus-Free-b6.jar
 ```
 
-- `NoObf`：Loom remap 后的标准 Fabric JAR，适合开发定位与调试。
-- `Obf`：由 ProGuard 处理后的发布 JAR。
+- 两个文件均为 Loom remap 后的标准 Fabric JAR。
 - Free 和 Beta 使用相同 Mod ID `oraculus`，不能同时放进同一个 `mods` 目录。
 
 单版本构建的中间产物位于：
@@ -357,18 +353,9 @@ build/beta/libs/
 build/free/libs/
 ```
 
-ProGuard 配置和映射位于：
-
-```text
-build/beta/proguard/
-build/free/proguard/
-```
-
-映射文件属于调试产物，不应作为普通发布附件公开，除非团队明确需要。
-
 ### 6.3 构建验证实际检查什么
 
-`verifyFreeReleaseArtifacts` 和 `verifyBetaReleaseArtifacts` 会检查：
+`verifyFreeReleaseArtifact` 和 `verifyBetaReleaseArtifact` 会检查：
 
 - JAR 存在且非空。
 - 包含 `fabric.mod.json`。
@@ -376,7 +363,6 @@ build/free/proguard/
 - 包含 `oraculus.accesswidener`。
 - 包含 Fabric 入口 `wtf/oraculus/OraculusFabric.class`。
 - 包含 `META-INF/jars/` 下的内嵌依赖。
-- ProGuard 生成了可用 mapping。
 
 这些检查不能代替启动测试。Mixin 目标失效、反射方法被改名、资源运行时缺失等问题仍可能只在游戏启动或具体功能触发时出现。
 
@@ -614,7 +600,7 @@ public void onPreMovement(final PreMovementPacketEvent event) {
 
 优先级实现会将数值取负后排序，因此较大的 `priority` 较早执行。若事件继承 `EventCancellable` 且被取消，后续监听器停止执行。
 
-事件注册使用 MethodHandle。重命名、改变参数或让 ProGuard 删除运行时入口都可能导致启动或事件触发崩溃。
+事件注册使用 MethodHandle。重命名或改变运行时入口参数都可能导致启动或事件触发崩溃。
 
 ## 11. Mixin 与 Minecraft 版本
 
@@ -631,7 +617,7 @@ Mixin 列表位于 `src/client/resources/oraculus.mixins.json`，默认：
 2. 明确选择 `@Inject`、`@Redirect`、`@WrapOperation`、Accessor 或 Access Widener。
 3. 尽量缩小注入点，必要时设置 ordinal/slice。
 4. 检查 Local 捕获是否依赖编译器局部变量布局。
-5. 同时测试 NoObf 和 Obf。
+5. 同时测试 Free 与 Beta 发行包。
 6. 运行 `runClient`，不能只依赖编译成功。
 7. 升级 Minecraft/Yarn 时逐条处理 remap error，不要批量把 `require` 改成 0。
 
@@ -700,44 +686,16 @@ src/client/resources/assets/oraculus/
 - 通过 `Identifier.of("oraculus", "...")` 引用。
 - 检查资源是否被最终 JAR 打包。
 - 大视频和图片应评估体积、解码成本与显存占用。
-- 字体需验证中英文、缺字、缩放和混淆后的加载。
+- 字体需验证中英文、缺字和缩放后的加载。
 - Shader 需测试窗口缩放、资源重载、切换世界和显卡兼容。
 
-ReGlass 派生代码受 MIT 许可约束，相关声明位于 `THIRD_PARTY_NOTICES.md`。
-
-## 15. ProGuard 规则
-
-当前混淆策略刻意保守：不 shrink、不 optimize，主要改类和成员名称，同时保留运行时边界。
-
-当前重点保留：
-
-- Fabric 入口。
-- 全部 Mixin 类和成员。
-- 认证客户端包及其网络/存储边界。
-- Scripting API。
-- Renderer、Screen、Music 和 Render Utility。
-- Minecraft/Fabric 继承或实现类。
-- 所有字段名与 Gson `SerializedName` 字段。
-- enum 的 `values()` 和 `valueOf(String)`。
-
-新增以下机制时应审查 `proguard/oraculus.pro`：
-
-- 反射按字符串查找类、方法或字段。
-- `ServiceLoader` 或 `META-INF/services`。
-- JNI/NanoVG/native 回调。
-- Fabric/Minecraft 在运行时调用的接口实现。
-- Gson 自定义 Adapter、Codec、Record 或序列化模型。
-- 资源文件中硬编码的类名。
-
-混淆版崩溃而 NoObf 正常时，先用对应 mapping 和堆栈定位，不要立即关闭全部混淆。
-
-## 16. 验证清单
+## 15. 验证清单
 
 ### 16.1 每个提交至少执行
 
 ```powershell
 git diff --check
-.\gradlew.bat -Pedition=beta compileClientJava
+gradle -Pedition=beta compileClientJava
 .\gradlew.bat -Pedition=free compileClientJava
 ```
 
@@ -755,24 +713,22 @@ git diff --check
 ### 16.3 发布前必须执行
 
 ```powershell
-.\gradlew.bat clean
-.\gradlew.bat build
+gradle clean
+gradle build
 ```
 
 然后：
 
-- 启动 Beta NoObf。
-- 启动 Beta Obf。
-- 启动 Free NoObf。
-- 启动 Free Obf。
+- 启动 Beta 发行包。
+- 启动 Free 发行包。
 - 检查 ClickGUI、配置、字体、Dynamic Island、音乐和至少一个 Mixin 功能。
 - 验证 Free 不包含 Beta-only 类。
-- 确认四个 JAR 不能同时被误装。
+- 确认两个 JAR 不能同时被误装。
 
 检查 Free 内容示例：
 
 ```powershell
-jar tf build\libs\Oraculus-Free-b6-NoObf.jar | Select-String "FakeLagModule|TargetStrafeModule|AutoRodModule"
+jar tf build\libs\Oraculus-Free-b6.jar | Select-String "FakeLagModule|TargetStrafeModule|AutoRodModule"
 ```
 
 正常结果应为空。
@@ -842,10 +798,6 @@ $env:JAVA_HOME = "<JDK 21 path>"
 
 通常是公共源码直接引用了 Beta-only 类，或 Free 替代实现缺少公共 API。应通过 `EditionHooks`、字符串/可选查询或 Free 同 FQN 实现解决。
 
-### Obf 崩溃但 NoObf 正常
-
-检查 ProGuard mapping、反射、Mixin、接口回调、Gson 字段和资源类名。优先增加精确 keep 规则。
-
 ### 配置被 Free 覆盖
 
 检查 `EditionConfigCompatibility` 是否识别新模块/Mode，并执行 Beta -> Free -> Beta 往返测试。
@@ -872,7 +824,6 @@ Reviewer 应确认：
 - Mixin 注入点是否精确且能在 1.21.10 remap。
 - 禁用、断线、切世界、死亡和校正包时是否清理状态。
 - 包队列、输入、静默槽位和 Rotation 是否存在所有权冲突。
-- ProGuard 是否需要新 keep 规则。
 - 第三方代码是否有来源和许可记录。
 - 构建命令与游戏内测试是否写入 PR。
 - README、版本号和用户文案是否需要更新。
@@ -911,7 +862,6 @@ Reviewer 应确认：
 | Fabric 描述 | `src/client/resources/fabric.mod.json` |
 | 构建系统 | `build.gradle` |
 | 版本参数 | `gradle.properties` |
-| ProGuard | `proguard/oraculus.pro` |
 | CI | `.github/workflows/build.yml` |
 
 ---

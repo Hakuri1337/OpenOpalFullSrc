@@ -187,7 +187,7 @@ public final class HypixelReduceVelocity extends VelocityMode {
         if (!this.debug.getValue()) {
             return;
         }
-        ChatUtility.print("AntiKB HypixelReduce | " + message);
+        ChatUtility.print("AntiKB Reduce | " + message);
     }
 
     @Override

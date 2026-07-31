@@ -194,7 +194,7 @@ public final class EditionConfigCompatibility {
         }
         final String value = normalize(String.valueOf(mode));
         return value.equals("attackreduce") || value.equals("noxz")
-                || value.equals("hypixelreduce") || value.equals("intave");
+                || value.equals("hypixelreduce") || value.equals("reduce") || value.equals("intave");
     }
 
     private static Object getPropertyValue(final JsonObject module, final String propertyName) {
