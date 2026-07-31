@@ -26,7 +26,6 @@ import wtf.oraculus.client.auth.OraculusLoginScreen;
 import wtf.oraculus.client.renderer.menu.ClientBootTransition;
 import wtf.oraculus.client.renderer.menu.MenuVideoBackground;
 import wtf.oraculus.client.renderer.menu.OraculusMenuRenderer;
-import wtf.oraculus.client.renderer.liquidglass.reglass.LiquidGlassUniforms;
 import wtf.oraculus.client.screen.settings.OraculusSettingsScreen;
 
 @Mixin(TitleScreen.class)
@@ -81,21 +80,6 @@ public final class TitleScreenMixin {
                 button.setTooltip(null);
                 break;
             }
-        }
-    }
-
-    @Inject(
-            method = "render",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/screen/Screen;render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
-                    shift = At.Shift.BEFORE
-            )
-    )
-    private void scheduleOraculusMenuGlass(final DrawContext context, final int mouseX, final int mouseY,
-                                           final float delta, final CallbackInfo ci) {
-        if (OraculusMenuRenderer.isEnhancedMenuEnabled()) {
-            LiquidGlassUniforms.get().tryApplyBlur(context);
         }
     }
 

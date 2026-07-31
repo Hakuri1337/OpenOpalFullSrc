@@ -4,15 +4,8 @@ import com.google.common.base.Predicates;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
-import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.opengl.GlStateManager;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderPass;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.gui.render.GuiRenderer;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.math.MatrixStack;
@@ -31,21 +24,11 @@ import wtf.oraculus.client.feature.module.impl.combat.PiercingModule;
 import wtf.oraculus.client.feature.module.impl.visual.NoFOVModule;
 import wtf.oraculus.client.feature.module.impl.visual.NoHurtCameraModule;
 import wtf.oraculus.client.feature.module.impl.visual.MotionBlurModule;
-import wtf.oraculus.client.renderer.liquidglass.reglass.LiquidGlassPipelines;
-import wtf.oraculus.client.renderer.liquidglass.reglass.LiquidGlassPrecomputeRuntime;
-import wtf.oraculus.client.renderer.liquidglass.reglass.LiquidGlassUniforms;
-import wtf.oraculus.client.renderer.liquidglass.reglass.ReGlassAnim;
-import wtf.oraculus.client.renderer.liquidglass.reglass.ReGlassConfig;
-import wtf.oraculus.client.renderer.liquidglass.reglass.gui.QuadVertexBufferProvider;
 import wtf.oraculus.client.renderer.shader.ShaderFramebuffer;
 import wtf.oraculus.client.renderer.motionblur.MotionBlurRenderer;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.utility.player.RaycastUtility;
-
-import java.util.List;
-import java.util.OptionalDouble;
-import java.util.OptionalInt;
 
 import static wtf.oraculus.client.Constants.mc;
 
@@ -59,20 +42,6 @@ public abstract class GameRendererMixin {
     @Unique
     private boolean passThroughBlocks;
 
-    @Inject(method = "render", at = @At("HEAD"))
-    private void oraculus$beginLiquidGlassFrame(final RenderTickCounter tickCounter, final boolean tick,
-                                            final CallbackInfo ci) {
-        double deltaTicks;
-        try {
-            deltaTicks = tickCounter.getDynamicDeltaTicks();
-        } catch (Throwable ignored) {
-            deltaTicks = 1.0 / 60.0 * 20.0;
-        }
-        final double deltaSeconds = deltaTicks / 20.0;
-        LiquidGlassUniforms.get().beginFrame(deltaSeconds);
-        ReGlassAnim.INSTANCE.update(ReGlassConfig.INSTANCE, deltaSeconds);
-    }
-
     @Inject(method = "render", at = @At("TAIL"))
     private void oraculus$renderMotionBlur(final RenderTickCounter tickCounter, final boolean tick, final CallbackInfo ci) {
         if (!OraculusClient.getInstance().isPostInitialization()
@@ -83,69 +52,6 @@ public abstract class GameRendererMixin {
         final MotionBlurModule motionBlur = OraculusClient.getInstance().getModuleRepository().getModule(MotionBlurModule.class);
         if (motionBlur != null && motionBlur.isEnabled()) {
             MotionBlurRenderer.render(motionBlur.getStrength());
-        }
-    }
-
-    @Inject(method = "renderBlur", at = @At("HEAD"), cancellable = true)
-    private void oraculus$renderLiquidGlass(final CallbackInfo ci) {
-        final LiquidGlassUniforms uniforms = LiquidGlassUniforms.get();
-        if (uniforms.getCount() == 0) {
-            return;
-        }
-
-        ci.cancel();
-        uniforms.logCompositeOnce();
-        uniforms.uploadSharedUniforms();
-        uniforms.uploadWidgetInfo();
-
-        final List<Integer> radii = uniforms.getUsedBlurRadiiOrdered();
-        final LiquidGlassPrecomputeRuntime precompute = LiquidGlassPrecomputeRuntime.get();
-        precompute.setRequestedRadii(radii);
-        precompute.run();
-
-        final Framebuffer mainFramebuffer = mc.getFramebuffer();
-        try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
-                () -> "oraculus liquid glass composite",
-                mainFramebuffer.getColorAttachmentView(),
-                OptionalInt.empty(),
-                mainFramebuffer.useDepthAttachment ? mainFramebuffer.getDepthAttachmentView() : null,
-                OptionalDouble.empty()
-        )) {
-            final RenderPipeline pipeline = LiquidGlassPipelines.getGuiPipeline();
-            pass.setPipeline(pipeline);
-            RenderSystem.bindDefaultUniforms(pass);
-            pass.setUniform("SamplerInfo", uniforms.getSamplerInfoBuffer());
-            pass.setUniform("CustomUniforms", uniforms.getCustomUniformsBuffer());
-            pass.setUniform("WidgetInfo", uniforms.getWidgetInfoBuffer());
-            pass.setUniform("BgConfig", uniforms.getBgConfigBuffer());
-            pass.bindSampler("Sampler0", precompute.getSourceView());
-
-            final GuiRenderer guiRenderer = ((GameRendererAccessor) (Object) this).getGuiRenderer();
-            final GpuBuffer quadVertexBuffer = ((QuadVertexBufferProvider) guiRenderer).getQuadVertexBuffer();
-            final RenderSystem.ShapeIndexBuffer indexBufferInfo =
-                    RenderSystem.getSequentialBuffer(VertexFormat.DrawMode.QUADS);
-            final GpuBuffer indexBuffer = indexBufferInfo.getIndexBuffer(6);
-            pass.setVertexBuffer(0, quadVertexBuffer);
-            pass.setIndexBuffer(indexBuffer, indexBufferInfo.getIndexType());
-
-            for (int index = 0; index < LiquidGlassUniforms.MAX_BLUR_LEVELS; index++) {
-                final String samplerName = switch (index) {
-                    case 0 -> "Sampler1";
-                    case 1 -> "Sampler2";
-                    case 2 -> "Sampler3";
-                    case 3 -> "Sampler4";
-                    default -> "Sampler5";
-                };
-                final int radius = radii.isEmpty() ? 0 : radii.get(Math.min(index, radii.size() - 1));
-                pass.bindSampler(
-                        samplerName,
-                        radius <= 0
-                                ? precompute.getSourceView()
-                                : precompute.getBlurredViewForRadius(radius)
-                );
-            }
-
-            pass.drawIndexed(0, 0, 6, 1);
         }
     }
 

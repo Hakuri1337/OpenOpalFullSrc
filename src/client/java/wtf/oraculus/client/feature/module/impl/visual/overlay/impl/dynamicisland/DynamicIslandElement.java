@@ -6,7 +6,6 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.IOverlayElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.preset.DefaultIsland;
 import wtf.oraculus.client.renderer.NVGRenderer;
-import wtf.oraculus.client.renderer.liquidglass.LiquidGlassRenderer;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.client.ModuleToggleEvent;
 import wtf.oraculus.event.subscriber.IEventSubscriber;
@@ -139,11 +138,6 @@ public final class DynamicIslandElement implements IOverlayElement, IEventSubscr
     }
 
     public void renderIslandBackground(float x, float y, float width, float height) {
-        if (this.module.isDynamicIslandLiquidGlass()) {
-            LiquidGlassRenderer.drawIsland(x, y, width, height, 13, Math.min(1, this.heightAnimation.getProgress()));
-            return;
-        }
-
         NVGRenderer.roundedRect(x + 1, y + 1, width - 2, height - 2, 13, NVGRenderer.BLUR_PAINT);
         NVGRenderer.roundedRect(x + 1, y + 1, width - 2, height - 2, 13, 0x80090909);
     }

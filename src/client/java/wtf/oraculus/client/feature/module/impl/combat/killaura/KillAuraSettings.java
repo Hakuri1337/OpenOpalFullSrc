@@ -27,8 +27,6 @@ public final class KillAuraSettings {
     private final BooleanProperty overrideRaycast, tickLookahead, throughWalls;
     private final BooleanProperty heypixelBypass;
     private final ModeProperty<AutoblockMode> autoblockMode;
-    private final BooleanProperty keepSprintFov;
-    private final BooleanProperty keepSprint;
     private final BooleanProperty smartWeapon;
     private final BooleanProperty attackCooldown19;
     private final NumberProperty fov;
@@ -55,8 +53,6 @@ public final class KillAuraSettings {
         this.throughWalls = new BooleanProperty("Through Walls", false);
         this.heypixelBypass = new BooleanProperty("Heypixel Bypass", false);
         this.autoblockMode = new ModeProperty<>("Autoblock", AutoblockMode.OFF);
-        this.keepSprintFov = new BooleanProperty("Keep Sprint FOV", false);
-        this.keepSprint = new BooleanProperty("Keep Sprint", false);
         this.smartWeapon = new BooleanProperty("SmartWeapon", false);
         this.attackCooldown19 = new BooleanProperty("1.9+ Attack Cooldown", false);
         this.mode = new ModeProperty<>("Mode", Mode.SWITCH);
@@ -71,7 +67,8 @@ public final class KillAuraSettings {
         module.addProperties(
                 rotationProperty.get(), new GroupProperty("Requirements", requireWeapon, requireAttackKey, hitSelect),
                 mode, range, rotationRange, swingRange, hideFakeSwings, targetProperty.get(),
-                fov, overrideRaycast, tickLookahead, throughWalls, heypixelBypass, autoblockMode, keepSprintFov, keepSprint, smartWeapon, attackCooldown19, rotationMode, visuals
+                fov, overrideRaycast, tickLookahead, throughWalls, heypixelBypass, autoblockMode,
+                smartWeapon, attackCooldown19, rotationMode, visuals
         );
     }
 
@@ -161,14 +158,6 @@ public final class KillAuraSettings {
 
     public float getFov() {
         return this.fov.getValue().floatValue();
-    }
-
-    public boolean isKeepSprintFov() {
-        return keepSprintFov.getValue();
-    }
-
-    public boolean isKeepSprint() {
-        return keepSprint.getValue();
     }
 
     public boolean isAttackCooldown19() {

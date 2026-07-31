@@ -46,7 +46,6 @@ OverlayModule extends Module {
     private final BooleanProperty bossbarEnabled = new BooleanProperty("Enabled", false);
 
     private final BooleanProperty dynamicIslandLeftAligned = new BooleanProperty("Left-aligned", false);
-    private final BooleanProperty dynamicIslandLiquidGlass = new BooleanProperty("Liquid glass", true);
 
     private final List<IOverlayElement> elements = new ArrayList<>();
 
@@ -82,7 +81,7 @@ OverlayModule extends Module {
         this.targetInfo = this.register(new TargetInfoElement(this));
         this.toggledModules = this.register(new ToggledModulesElement(this));
         this.register(new ClientElements(this));
-        this.addProperties(new GroupProperty("Dynamic island", dynamicIslandLeftAligned, dynamicIslandLiquidGlass));
+        this.addProperties(new GroupProperty("Dynamic island", dynamicIslandLeftAligned));
         this.notifications = this.register(new NotificationsElement(this));
 
         this.register(new DynamicIslandElement(this));
@@ -176,10 +175,6 @@ OverlayModule extends Module {
 
     public boolean isDynamicIslandLeftAligned() {
         return dynamicIslandLeftAligned.getValue();
-    }
-
-    public boolean isDynamicIslandLiquidGlass() {
-        return dynamicIslandLiquidGlass.getValue();
     }
 
     public boolean isScoreboardTextShadow() {

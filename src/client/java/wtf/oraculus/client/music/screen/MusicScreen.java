@@ -17,7 +17,6 @@ import wtf.oraculus.client.music.playback.PlaybackSnapshot;
 import wtf.oraculus.client.music.playback.PlaybackState;
 import wtf.oraculus.client.renderer.image.NVGImageRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
-import wtf.oraculus.client.renderer.liquidglass.LiquidGlassRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.renderer.repository.ImageRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
@@ -79,7 +78,6 @@ public final class MusicScreen extends Screen {
         final boolean frameStarted = NVGRenderer.beginFrame();
         final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
         NVGRenderer.rect(0, 0, width, height, 0x8A050607);
-        LiquidGlassRenderer.drawIsland(panelX, panelY, panelWidth, panelHeight, 8, 1);
         NVGRenderer.roundedRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 8, 0xA80D1012);
 
         renderSidebar(mouseX, mouseY, colors);

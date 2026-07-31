@@ -38,7 +38,13 @@ public final class TargetPlayer extends TargetLivingEntity {
             }
         }
 
-        if ((flags & TargetFlags.FRIENDLY) == 0 && PlayerUtility.areOnSameTeam(mc.player, entity)) {
+        // Unteamed players all expose Minecraft's default white team color.
+        // Requiring real scoreboard teams prevents that default from filtering
+        // every player before combat modules can select a target.
+        if ((flags & TargetFlags.FRIENDLY) == 0
+                && mc.player.getScoreboardTeam() != null
+                && entity.getScoreboardTeam() != null
+                && PlayerUtility.areOnSameTeam(mc.player, entity)) {
             return false;
         }
 

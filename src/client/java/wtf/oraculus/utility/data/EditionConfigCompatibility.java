@@ -188,11 +188,13 @@ public final class EditionConfigCompatibility {
 
     private static boolean isUnsupportedVelocityMode(final Object mode) {
         if (mode instanceof Number number) {
-            // Beta appends HypixelReduce and Intave after all legacy values.
-            return number.intValue() == 7 || number.intValue() == 8;
+            // Current Free modes end at JumpReset (ordinal 4). Older Beta
+            // configurations may contain removed or Beta-only mode ordinals.
+            return number.intValue() > 4;
         }
         final String value = normalize(String.valueOf(mode));
-        return value.equals("hypixelreduce") || value.equals("intave");
+        return value.equals("attackreduce") || value.equals("noxz")
+                || value.equals("hypixelreduce") || value.equals("intave");
     }
 
     private static Object getPropertyValue(final JsonObject module, final String propertyName) {

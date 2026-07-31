@@ -55,7 +55,6 @@ build/libs/Oraculus-Free-b6-Obf.jar
 
 `NoObf` is the canonical remapped Fabric artifact. `Obf` is the equivalent
 ProGuard-processed artifact; its Mixin, Fabric entrypoint, configuration, and
-LiquidGlass runtime interfaces are kept compatible with Minecraft 1.21.10.
 
 On Linux or macOS, use:
 

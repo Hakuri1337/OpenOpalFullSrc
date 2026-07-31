@@ -11,7 +11,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.PotionItem;
 import net.minecraft.item.ShieldItem;
 import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
@@ -163,28 +162,10 @@ public final class KillAuraModule extends Module {
                         SlotHelper.setCurrentItem(smartWeaponSlot).silence(SlotHelper.Silence.NONE);
                     }
 
-                    if (this.settings.isKeepSprint()) {
-                        // OpenZen calls the interaction manager directly and
-                        // drains every accumulated attack on the even sprint
-                        // half-cycle.  Preserve that burst behaviour instead
-                        // of reducing it to one synthetic mouse click.
-                        mc.player.setSprinting(false);
-                        MouseHelper.getLeftButton().setDisabled();
-                        final int attackCount = this.settings.isAttackCooldown19()
-                                ? 1
-                                : this.keepSprintAttackQuota;
-                        for (int attack = 0; attack < attackCount; attack++) {
-                            mc.interactionManager.attackEntity(mc.player, target.getEntity());
-                            mc.player.swingHand(Hand.MAIN_HAND);
-                            this.recordAttack(target);
-                        }
-                        this.keepSprintAttackQuota = 0;
-                    } else {
-                        MouseHelper.getLeftButton().setPressed();
-                        this.recordAttack(target);
-                        this.settings.getCpsProperty().resetClick();
-                        SwingDelay.reset();
-                    }
+                    MouseHelper.getLeftButton().setPressed();
+                    this.recordAttack(target);
+                    this.settings.getCpsProperty().resetClick();
+                    SwingDelay.reset();
                 }
             } else {
                 this.attacks = 0;
@@ -206,14 +187,6 @@ public final class KillAuraModule extends Module {
             return false;
         }
 
-        if (this.settings.isKeepSprint()) {
-            if ((this.keepSprintTickCounter & 1) != 0) {
-                return false;
-            }
-            if (!this.settings.isAttackCooldown19()) {
-                return this.keepSprintAttackQuota > 0;
-            }
-        }
         final boolean smartWeaponAttack = getSmartWeaponSlot(target.getEntity()) != -1;
         if (this.settings.isAttackCooldown19() && mc.player != null && !smartWeaponAttack) {
             return mc.player.getAttackCooldownProgress(0.5F) >= 1.0F;
@@ -276,9 +249,6 @@ public final class KillAuraModule extends Module {
     private int attackCooldownTicks;
     public long lastAttackTime;
 
-    private int keepSprintTickCounter;
-    private float keepSprintAttacks;
-    private int keepSprintAttackQuota;
     private boolean onTickRotationApplied;
     private BufferAllocator worldAllocator;
 
@@ -354,18 +324,7 @@ public final class KillAuraModule extends Module {
             this.attackCooldownTicks--;
         }
 
-        this.keepSprintAttackQuota = 0;
-        if (this.settings.isKeepSprint() && mc.player != null) {
-            ++this.keepSprintTickCounter;
-            if ((this.keepSprintTickCounter & 1) == 0) {
-                mc.player.setSprinting(false);
-            }
-        } else {
-            this.keepSprintTickCounter = 0;
-        }
-
         if (!shouldRun()) {
-            this.keepSprintAttacks = 0.0F;
             this.targeting.reset();
             this.clearOnTickRotation();
             return;
@@ -375,26 +334,9 @@ public final class KillAuraModule extends Module {
 
         final CurrentTarget target = this.targeting.getRotationTarget();
         if (target == null) {
-            if (this.settings.isKeepSprint()) {
-                this.keepSprintAttacks -= (float) Math.floor(this.keepSprintAttacks);
-            }
             this.clearOnTickRotation();
             updateAutoblock();
             return;
-        }
-
-        if (this.settings.isKeepSprint() && !this.settings.isAttackCooldown19()) {
-            // OpenZen doubles APS before feeding its attack accumulator,
-            // because only every second sprint tick is allowed to attack.
-            this.keepSprintAttacks +=
-                    this.settings.getCpsProperty().getCPS() * 2.0F / 20.0F;
-            final int attempts = (int) Math.floor(this.keepSprintAttacks);
-            this.keepSprintAttacks -= attempts;
-            if ((this.keepSprintTickCounter & 1) == 0) {
-                this.keepSprintAttackQuota = attempts;
-            }
-        } else {
-            this.keepSprintAttacks = 0.0F;
         }
 
         if (this.settings.getRotationMode() == RotationInjector.RotationMode.ON_TICK) {
@@ -520,9 +462,6 @@ public final class KillAuraModule extends Module {
         this.hitResult = null;
         this.attacks = 0;
         this.attackCooldownTicks = 0;
-        this.keepSprintTickCounter = 0;
-        this.keepSprintAttacks = 0.0F;
-        this.keepSprintAttackQuota = 0;
         this.haloTrailHeights.clear();
         releaseAutoblock();
         super.onDisable();

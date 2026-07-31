@@ -7,8 +7,6 @@ import net.minecraft.network.ClientConnection;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import wtf.oraculus.client.feature.module.impl.utility.ServerPackSpoofModule;
-import wtf.oraculus.client.renderer.liquidglass.reglass.ReGlassApi;
-import wtf.oraculus.client.renderer.liquidglass.reglass.WidgetStyle;
 
 import java.util.List;
 
@@ -78,15 +76,7 @@ public final class ServerPackSpoofScreen extends Screen {
 
         final int panelX = (this.width - PANEL_WIDTH) / 2;
         final int panelY = Math.max(24, (this.height - PANEL_HEIGHT) / 2);
-        ReGlassApi.create(context)
-                .dimensions(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT)
-                .cornerRadius(8.0F)
-                .style(WidgetStyle.create()
-                        .tint(0x101216, 0.72F)
-                        .blurRadius(12)
-                        .shadow(5.0F, 0.55F, 0.0F, 2.0F)
-                        .shadowColor(0x000000, 0.55F))
-                .render();
+        context.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xD0101216);
 
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, panelY + 18, 0xFFFFFFFF);
         context.drawTextWithShadow(this.textRenderer, Text.literal("Required server resource pack"),

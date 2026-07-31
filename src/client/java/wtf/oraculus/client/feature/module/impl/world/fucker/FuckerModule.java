@@ -218,18 +218,48 @@ public final class FuckerModule extends Module {
         if (currentTarget != null || targetBlocks.isEmpty()) return;
 
         for (final BlockPos target : targetBlocks) {
-            final double effectiveWallRange = entrance.getValue() && hasEntrance(target) ? range.getValue() : wallRange.getValue();
-            final Vec3d point = findReachablePoint(target, range.getValue(), effectiveWallRange);
-            if (point != null && consider(new FuckerTarget(target, action.getValue(), point, true, null), range.getValue(), effectiveWallRange)) return;
+            final Vec3d visiblePoint = findReachablePoint(target, range.getValue(), 0.0D);
+            if (visiblePoint != null
+                    && consider(new FuckerTarget(target, action.getValue(), visiblePoint, true, null),
+                    range.getValue(), 0.0D)) {
+                return;
+            }
+
+            // A surrounding path must take precedence over through-wall
+            // targeting. Otherwise WallRange/Entrance select the bed itself,
+            // while the real raycast keeps hitting its outer cover forever.
+            if (!surroundings.getValue()) {
+                final double effectiveWallRange = entrance.getValue() && hasEntrance(target)
+                        ? range.getValue() : effectiveWallRange();
+                final Vec3d point = findReachablePoint(target, range.getValue(), effectiveWallRange);
+                if (point != null
+                        && consider(new FuckerTarget(target, action.getValue(), point, true, null),
+                        range.getValue(), effectiveWallRange)) {
+                    return;
+                }
+            }
         }
 
         for (final BlockPos target : targetBlocks) {
             if (entrance.getValue() && breakFree.getValue()) {
                 final BlockPos weak = weakestNeighbor(target);
-                if (weak != null && consider(new FuckerTarget(weak, Action.DESTROY, weak.toCenterPos(), false, null), range.getValue(), range.getValue())) return;
-            } else if (surroundings.getValue()) {
+                final Vec3d weakPoint = weak == null ? null : findReachablePoint(weak, range.getValue(), 0.0D);
+                if (weakPoint != null
+                        && consider(new FuckerTarget(weak, Action.DESTROY, weakPoint, false, null),
+                        range.getValue(), 0.0D)) {
+                    return;
+                }
+            }
+
+            if (surroundings.getValue()) {
                 final FuckerPath path = findBestSurroundingPath(target);
-                if (path != null && consider(new FuckerTarget(path.firstBlock(), Action.DESTROY, path.info().targetPoint(), false, path.info()), range.getValue(), wallRange.getValue())) return;
+                if (path == null) continue;
+                final Vec3d blockerPoint = findReachablePoint(path.firstBlock(), range.getValue(), 0.0D);
+                if (blockerPoint != null
+                        && consider(new FuckerTarget(path.firstBlock(), Action.DESTROY, blockerPoint, false, path.info()),
+                        range.getValue(), 0.0D)) {
+                    return;
+                }
             }
         }
     }
@@ -237,8 +267,11 @@ public final class FuckerModule extends Module {
     private void validateCurrentTarget(final List<BlockPos> targets) {
         if (currentTarget == null) return;
         final BlockPos actual = currentTarget.pathInfo() == null ? currentTarget.pos() : currentTarget.pathInfo().actualTarget();
+        final double allowedWallRange = currentTarget.directTarget() && !surroundings.getValue()
+                ? (entrance.getValue() && hasEntrance(currentTarget.pos()) ? range.getValue() : effectiveWallRange())
+                : 0.0D;
         if (!targets.contains(actual) || (currentTarget.directTarget() && currentTarget.action() != action.getValue())
-                || !isReachable(currentTarget.pos(), range.getValue(), wallRange.getValue())) {
+                || !isReachable(currentTarget.pos(), range.getValue(), allowedWallRange)) {
             clearCurrentTarget();
         }
     }
@@ -315,7 +348,10 @@ public final class FuckerModule extends Module {
     }
 
     /** Version adapter for LB's World.raycast(exclude): sample the exact sight line into block cells. */
-    private List<BlockPos> traceBlockers(final BlockPos target, final Vec3d start, final Vec3d end) {
+    private List<BlockPos> traceBlockers(final BlockPos target, final Vec3d start, final Vec3d targetPoint) {
+        final Vec3d targetDirection = targetPoint.subtract(start);
+        if (targetDirection.lengthSquared() == 0.0D) return null;
+        final Vec3d end = targetPoint.add(targetDirection.normalize().multiply(0.005D));
         final Vec3d delta = end.subtract(start);
         final int steps = Math.max(1, (int) Math.ceil(delta.length() * 32.0D));
         final List<BlockPos> blockers = new ArrayList<>();
@@ -390,7 +426,11 @@ public final class FuckerModule extends Module {
         if (best >= 0) SlotHelper.setCurrentItem(best).silence(SlotHelper.Silence.NONE);
     }
 
-    private double maxRange() { return Math.max(range.getValue(), wallRange.getValue()); }
+    private double effectiveWallRange() {
+        return Math.min(range.getValue(), wallRange.getValue());
+    }
+
+    private double maxRange() { return range.getValue(); }
 
     private void clearCurrentTarget() {
         clearBreakingState();
