@@ -45,7 +45,7 @@ public final class EditionModuleCatalog {
                 new OverlayModule(), new ChamsModule(), new ESPModule(), new BreakProgressModule(), new CapeModule(),
                 new AmbienceModule(), new AttackEffectsModule(), new TabGUIModule(), new StreamerModeModule(),
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
-                new PostProcessingModule(), new MotionBlurModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(),
+                new PostProcessingModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(),
 
                 new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FuckerModule(), new FastBreakModule(),
                 new ChestAuraModule(),

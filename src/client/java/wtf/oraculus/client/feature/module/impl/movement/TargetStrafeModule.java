@@ -10,6 +10,7 @@ import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.target.CurrentTarget;
+import wtf.oraculus.client.feature.module.impl.movement.flight.FlightModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
@@ -57,8 +58,10 @@ public final class TargetStrafeModule extends Module {
             return;
         }
 
+        final boolean flightActive = this.isFlightActive();
         final Box box = mc.player.getBoundingBox();
-        final boolean aboveVoid = PlayerUtility.isBoxEmpty(box.offset(0.0D, -1.0D, 0.0D))
+        final boolean aboveVoid = !flightActive
+                && PlayerUtility.isBoxEmpty(box.offset(0.0D, -1.0D, 0.0D))
                 && PlayerUtility.isBoxEmpty(box.offset(0.0D, -2.0D, 0.0D))
                 && PlayerUtility.isBoxEmpty(box.offset(0.0D, -3.0D, 0.0D));
         if ((aboveVoid || mc.player.horizontalCollision) && System.currentTimeMillis() - this.lastCollisionSwitchTime >= 500L) {
@@ -74,12 +77,13 @@ public final class TargetStrafeModule extends Module {
             return;
         }
 
-        if (this.smartStrafe.getValue() && !mc.options.jumpKey.isPressed()) {
+        final boolean flightActive = this.isFlightActive();
+        if (this.smartStrafe.getValue() && !flightActive && !mc.options.jumpKey.isPressed()) {
             this.lastInput = InputChoice.NONE;
             return;
         }
 
-        if (event.isSneak() || Math.abs(mc.player.getY() - this.strafeTarget.getY()) > 2.5D) {
+        if (event.isSneak() || (!flightActive && Math.abs(mc.player.getY() - this.strafeTarget.getY()) > 2.5D)) {
             this.lastInput = InputChoice.NONE;
             return;
         }
@@ -99,7 +103,7 @@ public final class TargetStrafeModule extends Module {
 
         final float referenceYaw = this.getMovementReferenceYaw();
         InputChoice input = this.findClosestInput(desiredYaw, referenceYaw);
-        input = this.keepStableInput(input, desiredYaw, referenceYaw);
+        input = this.keepStableInput(input, desiredYaw, referenceYaw, !flightActive);
 
         event.setForward(input.forward);
         event.setSideways(input.sideways);
@@ -195,7 +199,8 @@ public final class TargetStrafeModule extends Module {
         return best;
     }
 
-    private InputChoice keepStableInput(final InputChoice next, final float desiredYaw, final float referenceYaw) {
+    private InputChoice keepStableInput(final InputChoice next, final float desiredYaw, final float referenceYaw,
+                                        final boolean requireGroundAhead) {
         if (this.lastInput == InputChoice.NONE || this.lastInput.equals(next)) {
             return next;
         }
@@ -205,7 +210,8 @@ public final class TargetStrafeModule extends Module {
         final float previousDifference = MathHelper.angleBetween(desiredYaw, previousYaw);
         final float nextDifference = MathHelper.angleBetween(desiredYaw, nextYaw);
 
-        if (previousDifference <= nextDifference + INPUT_STABILITY_MARGIN && this.hasGroundAhead(previousYaw)) {
+        if (previousDifference <= nextDifference + INPUT_STABILITY_MARGIN
+                && (!requireGroundAhead || this.hasGroundAhead(previousYaw))) {
             return this.lastInput;
         }
 
@@ -218,6 +224,11 @@ public final class TargetStrafeModule extends Module {
             return RotationHelper.getClientHandler().getYawOr(mc.player.getYaw());
         }
         return mc.player.getYaw();
+    }
+
+    private boolean isFlightActive() {
+        final FlightModule flight = OraculusClient.getInstance().getModuleRepository().getModule(FlightModule.class);
+        return flight != null && flight.isEnabled();
     }
 
     private boolean hasGroundAhead(final float yaw) {

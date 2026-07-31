@@ -1,3 +1,10 @@
+import net.fabricmc.loom.task.RemapJarTask
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.compile.JavaCompile
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.ClassNode
+
 plugins {
 	id 'fabric-loom' version "${loom_version}"
 	id 'maven-publish'
@@ -10,8 +17,35 @@ if (!(activeEdition in ["free", "beta"])) {
 }
 def editionDisplayName = activeEdition == "free" ? "Free" : "Beta"
 def aggregateEditions = requestedEdition == null
-def releaseJarName = "Oraculus-${editionDisplayName}-${project.mod_version}"
-def remappedEditionJar = layout.buildDirectory.file("libs/${releaseJarName}.jar")
+def noObfReleaseJarName = "Oraculus-${editionDisplayName}-${project.mod_version}-NoObf"
+def obfuscatedReleaseJarName = "Oraculus-${editionDisplayName}-${project.mod_version}-Obf"
+def remappedEditionJar = layout.buildDirectory.file("libs/${noObfReleaseJarName}.jar")
+def obfuscatedEditionJar = layout.buildDirectory.file("libs/${obfuscatedReleaseJarName}.jar")
+
+def zkmJar = file("obfuscation/ZKM-25.0.0-licensed/Zelix KlassMaster 25.0.0.jar")
+def zkmHome = file("obfuscation/ZKM-25.0.0-licensed/ZKM 25.0.0")
+def zkmTemplate = file("obfuscation/zkm/oraculus.zkm.template")
+def zkmAvailable = zkmJar.isFile() && zkmHome.isDirectory() && zkmTemplate.isFile()
+def zkmRequired = providers.gradleProperty("zkmRequired").map { it.toBoolean() }.orElse(false).get()
+if (zkmRequired && !zkmAvailable) {
+    throw new GradleException("ZKM is required but its local installation or script template is unavailable.")
+}
+
+def zkmJavaExecutable = new File(System.getProperty("java.home"),
+        "bin/java" + (System.getProperty("os.name").toLowerCase().contains("win") ? ".exe" : ""))
+def zkmPath = { File value -> value.absolutePath.replace('\\', '/').replace('"', '""') }
+def isZkmFabricApiAggregate = { File candidate ->
+    if (!candidate.isFile() || !candidate.name.startsWith("fabric-api-")) {
+        false
+    } else {
+        final def archive = new java.util.zip.ZipFile(candidate)
+        try {
+            archive.entries().any { entry -> entry.name.startsWith("META-INF/jars/fabric-networking-api-v1-") }
+        } finally {
+            archive.close()
+        }
+    }
+}
 
 version = project.mod_version
 group = project.maven_group
@@ -144,6 +178,9 @@ processResources {
 }
 
 tasks.named("processClientResources") {
+    // The runtime consumes the predecoded OPV frame pack. Keep the original
+    // MP4 in source control for regenerating that pack, but do not ship both.
+    exclude("assets/oraculus/videos/background.mp4")
     inputs.properties([
             version     : "${project.mod_version}-${activeEdition}",
             display_name: "Oraculus ${editionDisplayName}"
@@ -178,6 +215,106 @@ jar {
 	}
 }
 
+def remapNoObfJar = tasks.named("remapJar", RemapJarTask) {
+    archiveFileName.set("${noObfReleaseJarName}.jar")
+}
+
+def zkmNamedInputJar = tasks.named("jar", Jar).flatMap { it.archiveFile }
+def zkmNamedInputJarName = tasks.named("jar", Jar).flatMap { it.archiveFileName }
+def zkmScriptFile = layout.buildDirectory.file("zkm/${activeEdition}/oraculus.zkm")
+def zkmOutputDirectory = layout.buildDirectory.dir("zkm/${activeEdition}/output")
+def zkmOutputJar = zkmNamedInputJarName.flatMap { name ->
+    layout.buildDirectory.file("zkm/${activeEdition}/output/${name}")
+}
+def zkmChangeLog = layout.buildDirectory.file("zkm/${activeEdition}/Oraculus-${editionDisplayName}-ChangeLog.txt")
+def zkmParseLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-parse.log")
+def zkmRunLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-run.log")
+def remapObfuscatedJar = null
+def verifyObfuscatedEditionArtifact = null
+
+if (zkmAvailable) {
+    def generateZkmScript = tasks.register("generate${editionDisplayName}ZkmScript") {
+        dependsOn(tasks.named("jar"))
+        inputs.file(zkmTemplate)
+        inputs.file(zkmNamedInputJar)
+        inputs.files(tasks.named("compileClientJava", JavaCompile).map { it.classpath })
+        inputs.property("edition", activeEdition)
+        inputs.property("zkmOutputDirectory", zkmOutputDirectory.map { it.asFile.absolutePath })
+        inputs.property("zkmChangeLog", zkmChangeLog.map { it.asFile.absolutePath })
+        outputs.file(zkmScriptFile)
+
+        doLast {
+            final File inputJar = zkmNamedInputJar.get().asFile
+            final Set<File> classpathFiles = tasks.named("compileClientJava", JavaCompile).get().classpath.files
+            final List<File> usableClasspath = classpathFiles
+                    .findAll { it.isFile() || it.isDirectory() }
+                    .findAll { !isZkmFabricApiAggregate(it) }
+                    .sort { it.absolutePath }
+            if (usableClasspath.isEmpty()) {
+                throw new GradleException("ZKM classpath is empty for ${editionDisplayName}.")
+            }
+
+            final String renderedClasspath = usableClasspath.collect { "\"${zkmPath(it)}\"" }
+                    .join(System.lineSeparator() + "    ")
+            final File script = zkmScriptFile.get().asFile
+            script.parentFile.mkdirs()
+            script.setText(zkmTemplate.getText("UTF-8")
+                    .replace("@CLASSPATH@", renderedClasspath)
+                    .replace("@INPUT_JAR@", zkmPath(inputJar))
+                    .replace("@OUTPUT_DIRECTORY@", zkmPath(zkmOutputDirectory.get().asFile))
+                    .replace("@CHANGE_LOG@", zkmPath(zkmChangeLog.get().asFile)), "UTF-8")
+        }
+    }
+
+    def parseZkmScript = tasks.register("parse${editionDisplayName}ZkmScript", Exec) {
+        dependsOn(generateZkmScript)
+        inputs.file(zkmScriptFile)
+        outputs.file(zkmParseLog)
+        workingDir(zkmHome)
+        executable(zkmJavaExecutable.absolutePath)
+        args "-jar", zkmJar.absolutePath, "-p", "-l", zkmParseLog.get().asFile.absolutePath, zkmScriptFile.get().asFile.absolutePath
+        doFirst {
+            zkmParseLog.get().asFile.parentFile.mkdirs()
+        }
+    }
+
+    def obfuscateNamedJar = tasks.register("obfuscate${editionDisplayName}NamedJar", Exec) {
+        dependsOn(parseZkmScript)
+        inputs.file(zkmNamedInputJar)
+        inputs.file(zkmScriptFile)
+        inputs.files(tasks.named("compileClientJava", JavaCompile).map { it.classpath })
+        outputs.file(zkmOutputJar)
+        outputs.file(zkmChangeLog)
+        outputs.file(zkmRunLog)
+        workingDir(zkmHome)
+        executable(zkmJavaExecutable.absolutePath)
+        args "-jar", zkmJar.absolutePath, "-l", zkmRunLog.get().asFile.absolutePath, zkmScriptFile.get().asFile.absolutePath
+        doFirst {
+            zkmOutputDirectory.get().asFile.mkdirs()
+            zkmRunLog.get().asFile.parentFile.mkdirs()
+        }
+    }
+
+    remapObfuscatedJar = tasks.register("remap${editionDisplayName}ObfuscatedJar", RemapJarTask) {
+        dependsOn(obfuscateNamedJar)
+        inputFile.set(zkmOutputJar)
+        archiveFileName.set("${obfuscatedReleaseJarName}.jar")
+        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+        sourceNamespace.set(remapNoObfJar.flatMap { it.sourceNamespace })
+        targetNamespace.set(remapNoObfJar.flatMap { it.targetNamespace })
+        includesClientOnlyClasses.set(remapNoObfJar.flatMap { it.includesClientOnlyClasses })
+        additionalClientOnlyEntries.set(remapNoObfJar.flatMap { it.additionalClientOnlyEntries })
+        clientOnlySourceSetName.set(remapNoObfJar.flatMap { it.clientOnlySourceSetName })
+        optimizeFabricModJson.set(remapNoObfJar.flatMap { it.optimizeFabricModJson })
+        useMixinAP.set(remapNoObfJar.flatMap { it.useMixinAP })
+        addNestedDependencies.set(remapNoObfJar.flatMap { it.addNestedDependencies })
+        classpath.from(remapNoObfJar.map { it.classpath })
+        customMappings.from(remapNoObfJar.map { it.customMappings })
+    }
+} else {
+    logger.lifecycle("ZKM local installation is unavailable; ${editionDisplayName} Obf artifact will be skipped. Use -PzkmRequired=true to fail instead.")
+}
+
 // configure the maven publication
 publishing {
 	publications {
@@ -199,7 +336,7 @@ publishing {
 // The remapped Fabric JAR is the only release artifact for an edition. Keep
 // the validation that protects Fabric metadata and Free/Beta source boundaries.
 def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}ReleaseArtifact") {
-    dependsOn(tasks.named("remapJar"))
+    dependsOn(remapNoObfJar)
     inputs.file(remappedEditionJar)
 
     doLast {
@@ -258,34 +395,288 @@ def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}Re
     }
 }
 
-tasks.named("build") {
-    dependsOn(verifyEditionReleaseArtifact)
-}
+if (zkmAvailable) {
+    verifyObfuscatedEditionArtifact = tasks.register("verify${editionDisplayName}ObfuscatedReleaseArtifact") {
+        dependsOn(remapNoObfJar, remapObfuscatedJar)
+        inputs.file(obfuscatedEditionJar)
+        inputs.file(remappedEditionJar)
+        inputs.file(zkmNamedInputJar)
+        inputs.file(zkmChangeLog)
 
-def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}ReleaseArtifacts") {
-    dependsOn(verifyEditionReleaseArtifact)
-    inputs.file(remappedEditionJar)
-    outputs.file(file("build/libs/Oraculus-${editionDisplayName}-${project.mod_version}.jar"))
+        doLast {
+            final def artifact = obfuscatedEditionJar.get().asFile
+            if (!artifact.isFile() || artifact.length() == 0L) {
+                throw new GradleException("Expected obfuscated release artifact was not produced: ${artifact}")
+            }
+            if (!zkmChangeLog.get().asFile.isFile() || zkmChangeLog.get().asFile.length() == 0L) {
+                throw new GradleException("ZKM did not produce a usable change log for ${editionDisplayName}.")
+            }
 
-    doLast {
-        def canonicalDirectory = file("build/libs")
-        canonicalDirectory.mkdirs()
-        delete(fileTree(canonicalDirectory) {
-            // A standalone edition build is a hand-off build: leave no stale
-            // artifact from another edition/version for users to select. The
-            // aggregate release task intentionally retains both current
-            // editions and already performs its own clean/collect sequence.
-            include aggregateEditions ? "Oraculus-${editionDisplayName}-*.jar" : "Oraculus-*.jar"
-        })
-        copy {
-            from(remappedEditionJar.get().asFile)
-            into(canonicalDirectory)
+            boolean readingMixinClass = false
+            boolean readingRuntimeRenderClass = false
+            boolean readingMinecraftScreenClass = false
+            String currentOriginalClass = ""
+            final Map<String, ClassNode> namedProjectClasses = [:]
+            final def namedArchive = new java.util.zip.ZipFile(zkmNamedInputJar.get().asFile)
+            try {
+                namedArchive.entries().each { entry ->
+                    if (!entry.directory && entry.name.startsWith("wtf/oraculus/") && entry.name.endsWith(".class")) {
+                        namedArchive.getInputStream(entry).withCloseable { input ->
+                            final def node = new ClassNode()
+                            new ClassReader(input).accept(node,
+                                    ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+                            namedProjectClasses.put(node.name, node)
+                        }
+                    }
+                }
+            } finally {
+                namedArchive.close()
+            }
+            def descendsFromNamedType
+            descendsFromNamedType = { String className, String rootName, Set<String> visited ->
+                if (className == rootName) {
+                    return true
+                }
+                if (className == null || !visited.add(className)) {
+                    return false
+                }
+                final ClassNode node = namedProjectClasses.get(className)
+                if (node == null) {
+                    return false
+                }
+                descendsFromNamedType(node.superName, rootName, visited) ||
+                        node.interfaces.any { descendsFromNamedType(it, rootName, visited) }
+            }
+            final Set<String> minecraftScreenClasses = [
+                    "wtf.oraculus.client.auth.OraculusLoginScreen",
+                    "wtf.oraculus.client.music.screen.MusicScreen",
+                    "wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI",
+                    "wtf.oraculus.client.screen.serverpack.ServerPackSpoofScreen",
+                    "wtf.oraculus.client.screen.settings.OraculusSettingsScreen"
+            ] as Set
+            final Map<String, Set<String>> stableVirtualContracts = [
+                    "wtf/oraculus/client/feature/module/Module": ["onEnable", "onDisable", "getSuffix"] as Set,
+                    "wtf/oraculus/client/feature/module/property/impl/mode/ModuleMode": ["onEnable", "onDisable"] as Set,
+                    "wtf/oraculus/client/feature/module/property/Property": ["getValue", "setValue", "applyValue", "createClickGUIComponent"] as Set,
+                    "wtf/oraculus/client/feature/helper/impl/target/impl/Target": ["tick", "isLocal", "isMatchingFlags"] as Set,
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/VelocityMode": [
+                            "getSuffix", "shouldStopBacktrack", "shouldPauseKillAuraClicks", "isDelaying",
+                            "hasQueuedPackets", "isAttacking", "getHitSelectSkips", "consumeHitSelectSkip",
+                            "onVelocityResetAttackPerformed"
+                    ] as Set
+            ]
+            final Map<String, Set<String>> stableExactContracts = [
+                    "wtf/oraculus/utility/render/OrderedTextVisitor": ["accept"] as Set
+            ]
+            zkmChangeLog.get().asFile.eachLine("UTF-8") { line ->
+                if (line.startsWith("Class: ")) {
+                    final int classNameStart = line.indexOf("wtf.oraculus.")
+                    currentOriginalClass = classNameStart < 0
+                            ? ""
+                            : line.substring(classNameStart).split("[\\s]+", 2)[0]
+                    readingMixinClass = line.contains("wtf.oraculus.mixin.")
+                    readingRuntimeRenderClass = line.contains("wtf.oraculus.client.renderer.") ||
+                            line.contains("wtf.oraculus.client.screen.")
+                    readingMinecraftScreenClass = minecraftScreenClasses.any { line.contains(it) }
+                    if (readingMixinClass && !line.endsWith("NameNotChanged")) {
+                        throw new GradleException("ZKM renamed a runtime Mixin class: ${line}")
+                    }
+                } else if ((readingMixinClass || readingRuntimeRenderClass) &&
+                        line.contains("Manufactured:") &&
+                        !(!readingMixinClass && line.contains("static void <clinit>()"))) {
+                    throw new GradleException("ZKM added a structural helper to a runtime framework class: ${line.trim()}")
+                } else if (readingMinecraftScreenClass &&
+                        line.startsWith("\t\t") &&
+                        (line.contains("public ") || line.contains("protected ")) &&
+                        line.contains("(") &&
+                        line.contains("=>")) {
+                    throw new GradleException("ZKM renamed a Minecraft Screen callback/API method: ${line.trim()}")
+                } else if (line.startsWith("\t\t") && line.contains("=>")) {
+                    final String currentInternalName = currentOriginalClass.replace('.', '/')
+                    final Set<String> contractMethods = [] as Set
+                    stableVirtualContracts.each { rootName, methods ->
+                        if (descendsFromNamedType(currentInternalName, rootName, [] as Set)) {
+                            contractMethods.addAll(methods)
+                        }
+                    }
+                    contractMethods.addAll(stableExactContracts.getOrDefault(currentInternalName, [] as Set))
+                    final String renamedContract = contractMethods.find { methodName ->
+                        line.contains(" ${methodName}(")
+                    }
+                    if (renamedContract != null) {
+                        throw new GradleException("ZKM renamed runtime virtual contract ${currentOriginalClass}.${renamedContract}: ${line.trim()}")
+                    }
+                }
+            }
+
+            final def archive = new java.util.zip.ZipFile(artifact)
+            try {
+                ["fabric.mod.json", "oraculus.mixins.json", "oraculus.accesswidener", "wtf/oraculus/OraculusFabric.class"].each { entry ->
+                    if (archive.getEntry(entry) == null) {
+                        throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
+                    }
+                }
+                if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
+                    throw new GradleException("${artifact.name} is missing bundled dependency JARs")
+                }
+                if (archive.getEntry("wtf/oraculus/client/feature/module/repository/ModuleRepository.class") != null) {
+                    throw new GradleException("${artifact.name} still contains an unobfuscated ModuleRepository class")
+                }
+
+                // ZKM 25 has been observed renaming a project-owned interface
+                // method independently from its concrete implementation. Scan
+                // the final bytecode so an AbstractMethodError cannot escape
+                // into a release artifact again.
+                final Map<String, ClassNode> projectClasses = [:]
+                archive.entries().each { entry ->
+                    if (!entry.directory && entry.name.startsWith("wtf/oraculus/") && entry.name.endsWith(".class")) {
+                        archive.getInputStream(entry).withCloseable { input ->
+                            final def node = new ClassNode()
+                            new ClassReader(input).accept(node,
+                                    ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+                            projectClasses.put(node.name, node)
+                        }
+                    }
+                }
+
+                final def methodKey = { method -> "${method.name}${method.desc}" }
+                def collectAbstractMethods
+                collectAbstractMethods = { String className, Set<String> visited ->
+                    if (className == null || !visited.add(className)) {
+                        return [] as Set
+                    }
+                    final ClassNode node = projectClasses.get(className)
+                    if (node == null) {
+                        return [] as Set
+                    }
+                    final Set<String> methods = node.methods.findAll { method ->
+                        (method.access & Opcodes.ACC_ABSTRACT) != 0 &&
+                                (method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_PRIVATE)) == 0
+                    }.collect(methodKey) as Set
+                    methods.addAll(collectAbstractMethods(node.superName, visited))
+                    node.interfaces.each { methods.addAll(collectAbstractMethods(it, visited)) }
+                    methods
+                }
+                def hasConcreteMethod
+                hasConcreteMethod = { String className, String key, Set<String> visited ->
+                    if (className == null || !visited.add(className)) {
+                        return false
+                    }
+                    final ClassNode node = projectClasses.get(className)
+                    if (node == null) {
+                        return false
+                    }
+                    if (node.methods.any { method ->
+                        methodKey(method) == key &&
+                                (method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_PRIVATE)) == 0
+                    }) {
+                        return true
+                    }
+                    if (hasConcreteMethod(node.superName, key, visited)) {
+                        return true
+                    }
+                    node.interfaces.any { hasConcreteMethod(it, key, visited) }
+                }
+
+                final List<String> unresolvedContracts = []
+                projectClasses.values().findAll { node ->
+                    (node.access & (Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT)) == 0
+                }.each { node ->
+                    final Set<String> required = [] as Set
+                    required.addAll(collectAbstractMethods(node.superName, [] as Set))
+                    node.interfaces.each { required.addAll(collectAbstractMethods(it, [] as Set)) }
+                    required.findAll { key ->
+                        !hasConcreteMethod(node.name, key, [] as Set)
+                    }.each { key -> unresolvedContracts.add("${node.name} -> ${key}") }
+                }
+                if (!unresolvedContracts.isEmpty()) {
+                    throw new GradleException("ZKM broke internal interface/abstract method contracts for " +
+                            "${editionDisplayName}: ${unresolvedContracts.take(20)}")
+                }
+            } finally {
+                archive.close()
+            }
+
+            final def resourceDigests = { java.util.zip.ZipFile zip ->
+                final Map<String, String> resources = new TreeMap<>()
+                zip.entries().each { entry ->
+                    if (entry.directory || entry.name.endsWith(".class")) {
+                        return
+                    }
+                    final def digest = java.security.MessageDigest.getInstance("SHA-256")
+                    zip.getInputStream(entry).withCloseable { input ->
+                        final byte[] buffer = new byte[65536]
+                        int read
+                        while ((read = input.read(buffer)) >= 0) {
+                            if (read > 0) {
+                                digest.update(buffer, 0, read)
+                            }
+                        }
+                    }
+                    resources.put(entry.name, java.util.HexFormat.of().formatHex(digest.digest()))
+                }
+                resources
+            }
+            final def unobfuscatedArchive = new java.util.zip.ZipFile(remappedEditionJar.get().asFile)
+            final def obfuscatedArchive = new java.util.zip.ZipFile(artifact)
+            try {
+                final def unobfuscatedResources = resourceDigests(unobfuscatedArchive)
+                final def obfuscatedResources = resourceDigests(obfuscatedArchive)
+                if (unobfuscatedResources != obfuscatedResources) {
+                    final def missing = unobfuscatedResources.keySet() - obfuscatedResources.keySet()
+                    final def extra = obfuscatedResources.keySet() - unobfuscatedResources.keySet()
+                    final def changed = unobfuscatedResources.keySet().findAll {
+                        obfuscatedResources.containsKey(it) && unobfuscatedResources.get(it) != obfuscatedResources.get(it)
+                    }
+                    throw new GradleException("ZKM changed release resources for ${editionDisplayName}: " +
+                            "missing=${missing.take(10)}, extra=${extra.take(10)}, changed=${changed.take(10)}")
+                }
+            } finally {
+                unobfuscatedArchive.close()
+                obfuscatedArchive.close()
+            }
         }
     }
 }
 
 tasks.named("build") {
-    finalizedBy(syncCurrentEditionArtifacts)
+    dependsOn(verifyEditionReleaseArtifact)
+    if (zkmAvailable) {
+        dependsOn(verifyObfuscatedEditionArtifact)
+    }
+}
+
+def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}ReleaseArtifacts") {
+    dependsOn(verifyEditionReleaseArtifact)
+    if (zkmAvailable) {
+        dependsOn(verifyObfuscatedEditionArtifact)
+    }
+    def editionArtifacts = [remappedEditionJar]
+    if (zkmAvailable) {
+        editionArtifacts.add(obfuscatedEditionJar)
+    }
+    inputs.files(editionArtifacts)
+    outputs.files(editionArtifacts.collect { artifact -> file("build/libs/${artifact.get().asFile.name}") })
+
+    doLast {
+        def canonicalDirectory = file("build/libs")
+        canonicalDirectory.mkdirs()
+        delete(fileTree(canonicalDirectory) {
+            include "Oraculus-${editionDisplayName}-*.jar"
+        })
+        editionArtifacts.each { artifact ->
+            copy {
+                from(artifact.get().asFile)
+                into(canonicalDirectory)
+            }
+        }
+    }
+}
+
+if (!aggregateEditions) {
+    tasks.named("build") {
+        finalizedBy(syncCurrentEditionArtifacts)
+    }
 }
 
 if (aggregateEditions) {
@@ -304,11 +695,20 @@ if (aggregateEditions) {
 
     tasks.register("collectEditionArtifacts", Copy) {
         dependsOn(verifyEditionReleaseArtifact, tasks.named("buildFreeEdition"), tasks.named("cleanEditionArtifacts"))
+        if (zkmAvailable) {
+            dependsOn(verifyObfuscatedEditionArtifact)
+        }
+        def betaArtifacts = ["Oraculus-Beta-${project.mod_version}-NoObf.jar"]
+        def freeArtifacts = ["Oraculus-Free-${project.mod_version}-NoObf.jar"]
+        if (zkmAvailable) {
+            betaArtifacts.add("Oraculus-Beta-${project.mod_version}-Obf.jar")
+            freeArtifacts.add("Oraculus-Free-${project.mod_version}-Obf.jar")
+        }
         from(file("build/beta/libs")) {
-            include "Oraculus-Beta-${project.mod_version}.jar"
+            include betaArtifacts
         }
         from(file("build/free/libs")) {
-            include "Oraculus-Free-${project.mod_version}.jar"
+            include freeArtifacts
         }
         into(file("build/libs"))
     }

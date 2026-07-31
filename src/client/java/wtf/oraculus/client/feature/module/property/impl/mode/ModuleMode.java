@@ -1,7 +1,6 @@
 package wtf.oraculus.client.feature.module.property.impl.mode;
 
 import wtf.oraculus.client.feature.module.Module;
-import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.subscriber.IEventSubscriber;
 
 public abstract class ModuleMode<T extends Module> implements IEventSubscriber {
@@ -12,7 +11,6 @@ public abstract class ModuleMode<T extends Module> implements IEventSubscriber {
 
     protected ModuleMode(final T module) {
         this.module = module;
-        EventDispatcher.subscribe(this);
     }
 
     public T getModule() {

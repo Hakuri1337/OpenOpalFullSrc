@@ -13,6 +13,7 @@ import wtf.oraculus.client.feature.helper.impl.target.TargetProperty;
 import wtf.oraculus.client.feature.helper.impl.target.impl.TargetLivingEntity;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.DeprecatedModule;
 import wtf.oraculus.client.feature.module.impl.combat.TeamsModule;
 import wtf.oraculus.client.feature.module.impl.movement.flight.FlightModule;
 import wtf.oraculus.client.feature.module.impl.movement.longjump.LongJumpModule;
@@ -44,7 +45,7 @@ import java.util.Set;
 import static wtf.oraculus.client.Constants.mc;
 
 /** Complete Java lifecycle port of LiquidBounce ModuleTpAura and its Immediate/AStar modes. */
-public final class TpAuraModule extends Module {
+public final class TpAuraModule extends Module implements DeprecatedModule {
     private static final int IMMEDIATE_STICK_TICKS = 20;
     private final NumberProperty attackRange = new NumberProperty("AttackRange", 4.2D, 3.0D, 5.0D, 0.1D);
     private final NumberProperty minCps = new NumberProperty("MinCPS", 5.0D, 1.0D, 60.0D, 1.0D);

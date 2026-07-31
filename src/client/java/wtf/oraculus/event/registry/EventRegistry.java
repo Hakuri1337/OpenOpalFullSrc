@@ -8,10 +8,12 @@ import java.lang.invoke.*;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class EventRegistry {
 
-    private final Map<Class<?>, List<ListenerMethod>> subscriberMap = new HashMap<>();
+    private final Map<Class<?>, CopyOnWriteArrayList<ListenerMethod>> subscriberMap = new ConcurrentHashMap<>();
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 
@@ -35,7 +37,7 @@ public final class EventRegistry {
 
                 final CallSite site = new ConstantCallSite(methodHandle);
                 final ListenerMethod listenerMethod = new ListenerMethod(subscribe.priority(), site, listener);
-                subscriberMap.computeIfAbsent(type, x -> new ArrayList<>()).add(listenerMethod);
+                subscriberMap.computeIfAbsent(type, x -> new CopyOnWriteArrayList<>()).add(listenerMethod);
             } catch (IllegalAccessException | NoSuchMethodException e) {
                 throw new RuntimeException("Error subscribing event: " + method.getName(), e);
             }
@@ -55,7 +57,7 @@ public final class EventRegistry {
     }
 
     private void sortSubscribers() {
-        for (final List<ListenerMethod> callsiteList : subscriberMap.values()) {
+        for (final CopyOnWriteArrayList<ListenerMethod> callsiteList : subscriberMap.values()) {
             callsiteList.sort(Comparator.comparingInt(ListenerMethod::getPriority));
         }
     }

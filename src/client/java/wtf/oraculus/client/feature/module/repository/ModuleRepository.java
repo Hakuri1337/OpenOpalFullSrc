@@ -6,6 +6,7 @@ import com.google.common.collect.ImmutableMap;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.UnknownModuleException;
+import wtf.oraculus.event.EventDispatcher;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -78,7 +79,12 @@ public final class ModuleRepository {
         for (final Module module : modules) {
             builder.register(module);
         }
-        return builder.build();
+        final ModuleRepository repository = builder.build();
+        for (final Module module : modules) {
+            EventDispatcher.subscribe(module);
+            module.getModuleModes().forEach(EventDispatcher::subscribe);
+        }
+        return repository;
     }
 
     public static Builder builder() {

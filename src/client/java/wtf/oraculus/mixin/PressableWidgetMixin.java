@@ -23,6 +23,7 @@ public abstract class PressableWidgetMixin {
                                           final float delta, final CallbackInfo ci) {
         if (!(mc.currentScreen instanceof TitleScreen)
                 || !OraculusMenuRenderer.isEnhancedMenuEnabled()
+                || !OraculusMenuRenderer.canRenderBranding()
                 || !((Object) this instanceof ButtonWidget button)
                 || button.getWidth() < 90) {
             return;

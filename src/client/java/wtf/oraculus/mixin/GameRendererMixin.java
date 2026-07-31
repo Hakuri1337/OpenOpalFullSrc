@@ -23,9 +23,7 @@ import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.impl.combat.PiercingModule;
 import wtf.oraculus.client.feature.module.impl.visual.NoFOVModule;
 import wtf.oraculus.client.feature.module.impl.visual.NoHurtCameraModule;
-import wtf.oraculus.client.feature.module.impl.visual.MotionBlurModule;
 import wtf.oraculus.client.renderer.shader.ShaderFramebuffer;
-import wtf.oraculus.client.renderer.motionblur.MotionBlurRenderer;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.utility.player.RaycastUtility;
@@ -42,23 +40,9 @@ public abstract class GameRendererMixin {
     @Unique
     private boolean passThroughBlocks;
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void oraculus$renderMotionBlur(final RenderTickCounter tickCounter, final boolean tick, final CallbackInfo ci) {
-        if (!OraculusClient.getInstance().isPostInitialization()
-                || OraculusClient.getInstance().getModuleRepository() == null) {
-            return;
-        }
-
-        final MotionBlurModule motionBlur = OraculusClient.getInstance().getModuleRepository().getModule(MotionBlurModule.class);
-        if (motionBlur != null && motionBlur.isEnabled()) {
-            MotionBlurRenderer.render(motionBlur.getStrength());
-        }
-    }
-
     @Inject(method = "onResized", at = @At("HEAD"))
     private void hookOnResized(int width, int height, CallbackInfo ci) {
         ShaderFramebuffer.onResized(width, height);
-        MotionBlurRenderer.invalidateHistory();
     }
 
 

@@ -50,6 +50,11 @@ auth-server/data/
 auth-server/publish/
 auth-server/.cache/
 
+# Local ZKM installation and license material. Only the reviewed script template is versioned.
+/obfuscation/*
+!/obfuscation/zkm/
+!/obfuscation/zkm/**
+
 # java
 
 hs_err_*.log

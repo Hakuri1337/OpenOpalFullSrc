@@ -56,8 +56,6 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
         this.id = name.toLowerCase().replace(' ', '_');
         this.description = description;
         this.category = category;
-
-        EventDispatcher.subscribe(this);
     }
 
     public final void setEnabled(final boolean enabled) {

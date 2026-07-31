@@ -47,6 +47,7 @@ public final class OraculusMenuRenderer {
     private static int bootSpinnerDotTextureHeight;
     private static boolean brandTexturesReady;
     private static boolean brandTextureWarningLogged;
+    private static boolean enhancedMenuWarningLogged;
 
     private OraculusMenuRenderer() {
     }
@@ -85,6 +86,7 @@ public final class OraculusMenuRenderer {
             bootSpinnerDotTextureHeight = newBootSpinnerDot.height;
             brandTexturesReady = true;
             brandTextureWarningLogged = false;
+            LOGGER.info("Oraculus branding textures initialized");
         } catch (IOException | RuntimeException exception) {
             brandTexturesReady = false;
             LOGGER.error("Unable to initialize Oraculus startup branding", exception);
@@ -107,7 +109,11 @@ public final class OraculusMenuRenderer {
         try {
             final ClickGUIModule clickGUI = OraculusClient.getInstance().getModuleRepository().getModule(ClickGUIModule.class);
             return clickGUI != null && clickGUI.isEnhancedMainMenu();
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException exception) {
+            if (!enhancedMenuWarningLogged) {
+                enhancedMenuWarningLogged = true;
+                LOGGER.warn("Unable to resolve the enhanced main menu setting; using the vanilla menu", exception);
+            }
             return false;
         }
     }
@@ -133,6 +139,10 @@ public final class OraculusMenuRenderer {
 
     public static void renderFooter(final DrawContext context, final int width, final int height) {
         context.drawTextWithShadow(mc.textRenderer, "ORACULUS  /  stable-b6", 8, height - 22, 0xBFFFFFFF);
+    }
+
+    public static boolean canRenderBranding() {
+        return areBrandTexturesDrawable();
     }
 
     private static void drawBrandLockup(final DrawContext context, final int width, final int height,
@@ -284,6 +294,10 @@ public final class OraculusMenuRenderer {
                 || logoGlowTexture == null || wordmarkTexture == null || menuButtonTexture == null
                 || menuButtonHoverTexture == null || menuButtonDisabledTexture == null
                 || bootSpinnerDotTexture == null) {
+            if (!brandTextureWarningLogged) {
+                brandTextureWarningLogged = true;
+                LOGGER.warn("Oraculus branding textures are unavailable; using vanilla menu rendering");
+            }
             return false;
         }
 

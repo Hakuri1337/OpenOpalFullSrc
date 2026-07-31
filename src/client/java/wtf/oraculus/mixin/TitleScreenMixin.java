@@ -31,13 +31,21 @@ import wtf.oraculus.client.screen.settings.OraculusSettingsScreen;
 @Mixin(TitleScreen.class)
 public final class TitleScreenMixin {
 
-    @Unique
-    private static final Text ORACULUS_SETTINGS_TEXT = Text.literal("Oraculus Settings");
-
     @Shadow
     private boolean doBackgroundFade;
 
+    @Unique
+    private static final Text ORACULUS_SETTINGS_TEXT = Text.literal("Oraculus Settings");
+
     private TitleScreenMixin() {
+    }
+
+    @Inject(method = "init", at = @At("HEAD"))
+    private void finishInitialBootBeforeTitleWidgets(final CallbackInfo ci) {
+        // The splash overlay can outlive the first title-screen frame. Do not
+        // leave the title fade at zero while waiting for a logo render callback.
+        this.doBackgroundFade = false;
+        ClientBootTransition.finishInitialBoot();
     }
 
     @Inject(method = "init", at = @At("TAIL"))
@@ -83,13 +91,6 @@ public final class TitleScreenMixin {
         }
     }
 
-    @Inject(method = "<init>(ZLnet/minecraft/client/gui/LogoDrawer;)V", at = @At("TAIL"))
-    private void synchronizeInitialFade(final boolean doBackgroundFade, final LogoDrawer logoDrawer, final CallbackInfo ci) {
-        if (ClientBootTransition.isInitialBootActive()) {
-            this.doBackgroundFade = false;
-        }
-    }
-
     @WrapOperation(
             method = "render",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/TitleScreen;renderPanoramaBackground(Lnet/minecraft/client/gui/DrawContext;F)V")
@@ -110,11 +111,12 @@ public final class TitleScreenMixin {
     )
     private void renderOraculusTitle(final LogoDrawer instance, final DrawContext context, final int width,
                                      final float alpha, final Operation<Void> original) {
-        if (ClientBootTransition.isInitialBootActive() && MinecraftClient.getInstance().getOverlay() != null) {
-            return;
-        }
         ClientBootTransition.finishInitialBoot();
-        OraculusMenuRenderer.renderTitleBranding(context, width, context.getScaledWindowHeight(), alpha);
+        if (OraculusMenuRenderer.canRenderBranding()) {
+            OraculusMenuRenderer.renderTitleBranding(context, width, context.getScaledWindowHeight(), alpha);
+        } else {
+            original.call(instance, context, width, alpha);
+        }
     }
 
     @WrapOperation(
