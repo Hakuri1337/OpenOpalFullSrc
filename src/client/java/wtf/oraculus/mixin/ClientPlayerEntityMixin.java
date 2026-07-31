@@ -28,6 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.oraculus.client.feature.module.impl.movement.SprintModule;
+import wtf.oraculus.client.feature.module.impl.movement.InventoryMoveModule;
 import wtf.oraculus.client.feature.module.impl.movement.noslow.NoSlowModule;
 import wtf.oraculus.duck.ClientPlayerEntityAccess;
 import wtf.oraculus.event.EventDispatcher;
@@ -150,13 +151,15 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
 
     @Inject(method = "sendMovementPackets", at = @At("HEAD"), cancellable = true)
     private void hookSendMovementPacketsHead(final CallbackInfo callbackInfo) {
-        if (preMovementPacketEvent.isCancelled())
+        // InteractionManager can flush movement before ClientPlayerEntity#tick
+        // creates the event (for example, an early-tick TpAura attack).
+        if (preMovementPacketEvent != null && preMovementPacketEvent.isCancelled())
             callbackInfo.cancel();
     }
 
     @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/PlayerInput;equals(Ljava/lang/Object;)Z"))
     private boolean redirectInputEquals(PlayerInput instance, Object object) {
-        if (preMovementPacketEvent.isForceInput()) {
+        if (preMovementPacketEvent != null && preMovementPacketEvent.isForceInput()) {
             return false;
         }
         return instance.equals(object);
@@ -167,7 +170,7 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
             at = @At(value = "FIELD", target = "Lnet/minecraft/client/network/ClientPlayerEntity;horizontalCollision:Z", opcode = Opcodes.GETFIELD)
     )
     private boolean redirectHorizontalCollision(ClientPlayerEntity instance) {
-        return preMovementPacketEvent.isHorizontalCollision();
+        return preMovementPacketEvent == null ? this.horizontalCollision : preMovementPacketEvent.isHorizontalCollision();
     }
 
     @Redirect(
@@ -175,7 +178,13 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;isSprinting()Z")
     )
     private boolean redirectPreMovementPacketSprinting(ClientPlayerEntity instance) {
-        return preMovementPacketEvent != null && preMovementPacketEvent.isSprinting();
+        final boolean sprinting = preMovementPacketEvent == null ? instance.isSprinting() : preMovementPacketEvent.isSprinting();
+        final InventoryMoveModule inventoryMove = OraculusClient.getInstance()
+                .getModuleRepository().getModule(InventoryMoveModule.class);
+        return inventoryMove == null ? sprinting : inventoryMove.shouldForceServerSprint(
+                sprinting,
+                this.input.getMovementInput().x != 0.0F || this.input.getMovementInput().y != 0.0F
+        );
     }
 
     @Inject(
@@ -198,32 +207,32 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getYaw()F"))
     private float hookSendMovementPacketsYaw(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent == null ? 0 : preMovementPacketEvent.getYaw();
+        return preMovementPacketEvent == null ? instance.getYaw() : preMovementPacketEvent.getYaw();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getPitch()F"))
     private float hookSendMovementPacketsPitch(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent == null ? 0 : preMovementPacketEvent.getPitch();
+        return preMovementPacketEvent == null ? instance.getPitch() : preMovementPacketEvent.getPitch();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;isOnGround()Z"))
     private boolean hookSendMovementPacketsGround(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent != null && preMovementPacketEvent.isOnGround();
+        return preMovementPacketEvent == null ? instance.isOnGround() : preMovementPacketEvent.isOnGround();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getX()D"))
     private double hookSendMovementPacketsPosX(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent == null ? 0 : preMovementPacketEvent.getX();
+        return preMovementPacketEvent == null ? instance.getX() : preMovementPacketEvent.getX();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getY()D"))
     private double hookSendMovementPacketsPosY(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent == null ? 0 : preMovementPacketEvent.getY();
+        return preMovementPacketEvent == null ? instance.getY() : preMovementPacketEvent.getY();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getZ()D"))
     private double hookSendMovementPacketsPosZ(final ClientPlayerEntity instance) {
-        return preMovementPacketEvent == null ? 0 : preMovementPacketEvent.getZ();
+        return preMovementPacketEvent == null ? instance.getZ() : preMovementPacketEvent.getZ();
     }
 
     @Redirect(method = "sendMovementPackets", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;getEntityPos()Lnet/minecraft/util/math/Vec3d;"))

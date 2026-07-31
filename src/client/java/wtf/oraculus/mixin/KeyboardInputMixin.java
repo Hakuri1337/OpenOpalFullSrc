@@ -10,6 +10,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.input.MoveInputEvent;
+import wtf.oraculus.client.OraculusClient;
+import wtf.oraculus.client.feature.module.impl.movement.InventoryMoveModule;
 
 import static wtf.oraculus.client.Constants.mc;
 
@@ -39,10 +41,24 @@ public final class KeyboardInputMixin {
 
     @ModifyExpressionValue(method = "tick", at = @At(value = "NEW", target = "(ZZZZZZZ)Lnet/minecraft/util/PlayerInput;"))
     private PlayerInput modifyInput(PlayerInput original) {
+        final InventoryMoveModule inventoryMove = OraculusClient.getInstance()
+                .getModuleRepository().getModule(InventoryMoveModule.class);
+        final boolean forward = inventoryMove != null && inventoryMove.isPressed(mc.options.forwardKey)
+                || mc.options.forwardKey.isPressed();
+        final boolean back = inventoryMove != null && inventoryMove.isPressed(mc.options.backKey)
+                || mc.options.backKey.isPressed();
+        final boolean left = inventoryMove != null && inventoryMove.isPressed(mc.options.leftKey)
+                || mc.options.leftKey.isPressed();
+        final boolean right = inventoryMove != null && inventoryMove.isPressed(mc.options.rightKey)
+                || mc.options.rightKey.isPressed();
+        final boolean jump = inventoryMove != null && inventoryMove.isPressed(mc.options.jumpKey)
+                || mc.options.jumpKey.isPressed();
+        final boolean sneak = inventoryMove != null && inventoryMove.isPressed(mc.options.sneakKey)
+                || mc.options.sneakKey.isPressed();
+        final boolean sprint = inventoryMove == null ? original.sprint()
+                : inventoryMove.shouldForceClientSprint(original.sprint(), forward || back || left || right);
         moveInputEvent = new MoveInputEvent(
-                getMovementMultiplier(mc.options.forwardKey.isPressed(), mc.options.backKey.isPressed()),
-                getMovementMultiplier(mc.options.leftKey.isPressed(), mc.options.rightKey.isPressed()),
-                mc.options.jumpKey.isPressed(), original.sneak()
+                getMovementMultiplier(forward, back), getMovementMultiplier(left, right), jump, sneak
         );
         EventDispatcher.dispatch(moveInputEvent);
 
@@ -53,7 +69,7 @@ public final class KeyboardInputMixin {
                 moveInputEvent.getSideways() < 0,
                 moveInputEvent.isJump(),
                 moveInputEvent.isSneak(),
-                original.sprint()
+                sprint
         );
     }
 

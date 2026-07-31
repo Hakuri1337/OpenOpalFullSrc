@@ -25,6 +25,7 @@ import wtf.oraculus.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.oraculus.client.feature.helper.impl.player.swing.SwingDelay;
 import wtf.oraculus.client.feature.helper.impl.player.timer.TimerHelper;
 import wtf.oraculus.client.feature.helper.impl.render.FadingBlockHelper;
+import wtf.oraculus.client.feature.helper.impl.render.ClientUiDefaults;
 import wtf.oraculus.client.feature.helper.impl.render.ScreenPositionManager;
 import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
@@ -184,6 +185,7 @@ public final class OraculusClient {
 
 
     private void runHelperInitializations() {
+        ClientUiDefaults.initialize();
         LocalDataWatch.setInstance();
         MouseHelper.setInstance();
         SwingDelay.setInstance();

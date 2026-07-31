@@ -4,6 +4,7 @@ import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
+import wtf.oraculus.client.feature.module.impl.combat.tpaura.TpAuraModule;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.impl.movement.*;
 import wtf.oraculus.client.feature.module.impl.movement.clipper.ClipperModule;
@@ -26,6 +27,7 @@ import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
+import wtf.oraculus.client.feature.module.impl.world.fucker.FuckerModule;
 import wtf.oraculus.client.music.MusicPlayerModule;
 
 public final class EditionModuleCatalog {
@@ -34,7 +36,7 @@ public final class EditionModuleCatalog {
 
     public static Module[] createModules() {
         return new Module[]{
-                new KillAuraModule(), new TeamsModule(), new BacktrackModule(), new BlockModule(),
+                new KillAuraModule(), new TpAuraModule(), new TeamsModule(), new BacktrackModule(), new BlockModule(),
                 new ReachModule(), new PiercingModule(), new AutoClickerModule(), new AttackDelayModule(),
                 new CriticalsModule(), new VelocityModule(), new AutoHeadModule(), new AutoThrowModule(),
                 new CrystalAuraModule(),
@@ -45,7 +47,7 @@ public final class EditionModuleCatalog {
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
                 new PostProcessingModule(), new MotionBlurModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(),
 
-                new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
+                new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FuckerModule(), new FastBreakModule(),
                 new ChestAuraModule(),
 
                 new FlightModule(), new SpeedModule(), new JumpCooldownModule(), new SprintModule(),
