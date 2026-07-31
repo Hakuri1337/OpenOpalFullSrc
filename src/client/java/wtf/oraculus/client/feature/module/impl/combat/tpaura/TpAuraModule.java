@@ -22,6 +22,7 @@ import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
+import wtf.oraculus.event.impl.game.PostGameTickEvent;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
 import wtf.oraculus.event.impl.game.packet.SendPacketEvent;
 import wtf.oraculus.event.impl.game.player.movement.PreMovementPacketEvent;
@@ -44,6 +45,7 @@ import static wtf.oraculus.client.Constants.mc;
 
 /** Complete Java lifecycle port of LiquidBounce ModuleTpAura and its Immediate/AStar modes. */
 public final class TpAuraModule extends Module {
+    private static final int IMMEDIATE_STICK_TICKS = 20;
     private final NumberProperty attackRange = new NumberProperty("AttackRange", 4.2D, 3.0D, 5.0D, 0.1D);
     private final NumberProperty minCps = new NumberProperty("MinCPS", 5.0D, 1.0D, 60.0D, 1.0D);
     private final NumberProperty maxCps = new NumberProperty("MaxCPS", 8.0D, 1.0D, 60.0D, 1.0D);
@@ -73,6 +75,7 @@ public final class TpAuraModule extends Module {
     private long nextClickAt;
     private LivingEntity currentEnemy;
     private boolean sendingTravelPacket;
+    private boolean attackedDuringTravel;
     private final MoveTravelController moveTravelController = new MoveTravelController();
 
     public TpAuraModule() {
@@ -121,7 +124,7 @@ public final class TpAuraModule extends Module {
             if (mode.is(Mode.IMMEDIATE)) beginImmediate(); else beginAStar();
             return;
         }
-        if (state == TravelState.STICKING && stateTicks >= stick.getValue().intValue()) {
+        if (state == TravelState.STICKING && attackedDuringTravel && stateTicks >= travelStickTicks()) {
             if (mode.is(Mode.IMMEDIATE)) returnImmediate(); else returnAStar();
         }
     }
@@ -154,10 +157,6 @@ public final class TpAuraModule extends Module {
                 }
 
                 final Vec3d position = mc.player.getEntityPos();
-                if (!attackNearby(position)) {
-                    reset();
-                    return;
-                }
                 state = TravelState.STICKING;
                 stateTicks = 0;
             }
@@ -211,6 +210,26 @@ public final class TpAuraModule extends Module {
         }
     }
 
+    /**
+     * LiquidBounce keeps its attack repeatable separate from travel.  The
+     * travel modes only establish a desynchronised server position; attacks
+     * occur afterwards on click ticks while that position remains active.
+     */
+    @Subscribe
+    public void onPostGameTick(final PostGameTickEvent event) {
+        if (mc.player == null || mc.world == null || mc.interactionManager == null || state != TravelState.STICKING) {
+            return;
+        }
+
+        final Vec3d attackPosition = moveInstandOfTp.getValue() ? mc.player.getEntityPos() : serverPosition;
+        if (attackPosition == null) {
+            return;
+        }
+        if (attackNearby(attackPosition)) {
+            attackedDuringTravel = true;
+        }
+    }
+
     private void beginMoveTravel() {
         final LivingEntity enemy = selectTarget(mc.player.getEntityPos(), maximumDistance.getValue());
         if (enemy == null) {
@@ -238,6 +257,7 @@ public final class TpAuraModule extends Module {
         }
 
         currentEnemy = enemy;
+        attackedDuringTravel = false;
         moveTravelController.beginOutbound(mc.player.getEntityPos(), route);
         if (moveTravelController.hasFailed()) {
             reset();
@@ -251,8 +271,8 @@ public final class TpAuraModule extends Module {
         final LivingEntity enemy = selectTarget(mc.player.getEntityPos(), maximumDistance.getValue());
         if (enemy == null) return;
         currentEnemy = enemy;
+        attackedDuringTravel = false;
         travelImmediate(enemy.getEntityPos());
-        attackNearby();
         state = TravelState.STICKING;
         stateTicks = 0;
     }
@@ -270,9 +290,9 @@ public final class TpAuraModule extends Module {
         final List<BlockPos> path = findPath(start, enemy.getBlockPos(), maximumCost.getValue().intValue(), allowDiagonal.getValue());
         if (path.isEmpty()) return;
         currentEnemy = enemy;
+        attackedDuringTravel = false;
         pathCache = path;
         travelPath(path);
-        attackNearby();
         state = TravelState.STICKING;
         stateTicks = 0;
     }
@@ -341,6 +361,10 @@ public final class TpAuraModule extends Module {
             scheduleClick();
         }
         return true;
+    }
+
+    private int travelStickTicks() {
+        return mode.is(Mode.IMMEDIATE) ? IMMEDIATE_STICK_TICKS : stick.getValue().intValue();
     }
 
     private boolean canClick() {
@@ -481,6 +505,7 @@ public final class TpAuraModule extends Module {
         serverPosition = null;
         pathCache = null;
         currentEnemy = null;
+        attackedDuringTravel = false;
         state = TravelState.IDLE;
         stateTicks = 0;
     }

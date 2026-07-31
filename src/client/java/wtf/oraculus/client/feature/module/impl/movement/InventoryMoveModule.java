@@ -39,7 +39,11 @@ public final class InventoryMoveModule extends Module {
 
     private final ModeProperty<Behaviour> behaviour = new ModeProperty<>("Behavior", this, Behaviour.NORMAL)
             .alias("Legit", Behaviour.STOP_ON_ACTION)
-            .alias("Heypixel", Behaviour.UNDETECTABLE);
+            // Removed modes continue to load as Normal rather than leaving a
+            // stale enum value in existing configurations.
+            .alias("Heypixel", Behaviour.NORMAL)
+            .alias("Safe", Behaviour.NORMAL)
+            .alias("Undetectable", Behaviour.NORMAL);
     private final BooleanProperty passthroughSneak = new BooleanProperty("PassthroughSneak", false);
 
     private final BooleanProperty sprintControl = new BooleanProperty("SprintControl", false);
@@ -116,7 +120,6 @@ public final class InventoryMoveModule extends Module {
         }
         if (mc.currentScreen instanceof HandledScreen<?>) {
             return behaviour.is(Behaviour.NORMAL)
-                    || (behaviour.is(Behaviour.SAFE) && mc.currentScreen instanceof InventoryScreen)
                     || behaviour.is(Behaviour.STOP_ON_ACTION);
         }
         return true;
@@ -192,12 +195,9 @@ public final class InventoryMoveModule extends Module {
         }
     }
 
-    /** SAFE has LiquidBounce's close-before-move behavior. */
     public void onRawInput(final KeyBinding binding, final boolean pressed) {
-        if (behaviour.is(Behaviour.SAFE) && pressed && isHandledScreenOpen()
-                && mc.currentScreen instanceof InventoryScreen) {
-            mc.player.closeHandledScreen();
-        }
+        // Input tracking remains intentionally side-effect free after removal
+        // of Safe's close-before-move behavior.
     }
 
     public boolean shouldForceClientSprint(final boolean original, final boolean moving) {
@@ -249,7 +249,7 @@ public final class InventoryMoveModule extends Module {
     }
 
     public enum Behaviour {
-        NORMAL("Normal"), SAFE("Safe"), UNDETECTABLE("Undetectable"), STOP_ON_ACTION("StopOnAction");
+        NORMAL("Normal"), STOP_ON_ACTION("StopOnAction");
         private final String name;
         Behaviour(final String name) { this.name = name; }
         @Override public String toString() { return name; }

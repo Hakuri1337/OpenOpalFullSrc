@@ -77,6 +77,8 @@ public final class FuckerModule extends Module {
     private BlockPos trackedManualBed;
     private int ticks;
     private int actionAfterTick;
+    private BlockPos breakingPos;
+    private Direction breakingSide;
 
     public FuckerModule() {
         super("Fucker", "Destroys or uses selected blocks around you.", ModuleCategory.WORLD);
@@ -176,6 +178,7 @@ public final class FuckerModule extends Module {
 
         selectBestTool(state);
         if (currentTarget.action() == Action.USE) {
+            clearBreakingState();
             final ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
             if (result.isAccepted()) mc.player.swingHand(Hand.MAIN_HAND);
             actionAfterTick = ticks + delay.getValue().intValue();
@@ -187,8 +190,20 @@ public final class FuckerModule extends Module {
             mc.getNetworkHandler().sendPacket(new PlayerActionC2SPacket(PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, hit.getBlockPos(), hit.getSide()));
             mc.player.swingHand(Hand.MAIN_HAND);
             actionAfterTick = ticks + delay.getValue().intValue();
-        } else if (mc.interactionManager.updateBlockBreakingProgress(hit.getBlockPos(), hit.getSide())) {
-            mc.player.swingHand(Hand.MAIN_HAND);
+            clearBreakingState();
+        } else {
+            if (!hit.getBlockPos().equals(breakingPos) || hit.getSide() != breakingSide) {
+                clearBreakingState();
+                if (!mc.interactionManager.attackBlock(hit.getBlockPos(), hit.getSide())) {
+                    return;
+                }
+                breakingPos = hit.getBlockPos().toImmutable();
+                breakingSide = hit.getSide();
+            }
+
+            if (mc.interactionManager.updateBlockBreakingProgress(hit.getBlockPos(), hit.getSide())) {
+                mc.player.swingHand(Hand.MAIN_HAND);
+            }
         }
     }
 
@@ -378,8 +393,14 @@ public final class FuckerModule extends Module {
     private double maxRange() { return Math.max(range.getValue(), wallRange.getValue()); }
 
     private void clearCurrentTarget() {
-        if (mc.interactionManager != null) mc.interactionManager.cancelBlockBreaking();
+        clearBreakingState();
         currentTarget = null;
+    }
+
+    private void clearBreakingState() {
+        if (mc.interactionManager != null) mc.interactionManager.cancelBlockBreaking();
+        breakingPos = null;
+        breakingSide = null;
     }
 
     public enum Action { DESTROY("Destroy"), USE("Use"); private final String label; Action(String label) { this.label = label; } @Override public String toString() { return label; } }
