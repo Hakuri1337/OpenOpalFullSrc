@@ -1,6 +1,7 @@
 package wtf.oraculus.client.edition;
 
 import wtf.oraculus.client.feature.module.repository.ModuleRepository;
+import wtf.oraculus.client.feature.module.impl.visual.StreamerModeModule;
 import wtf.oraculus.utility.render.ClientTheme;
 
 import java.util.Arrays;
@@ -20,6 +21,13 @@ public final class EditionHooks {
 
     public static void disableEditionPacketBuffers(final ModuleRepository repository, final List<String> disabledModules) {
         // Free has no edition-specific packet buffer modules.
+    }
+
+    public static void enforceEditionDefaults(final ModuleRepository repository) {
+        final StreamerModeModule streamerMode = repository.getModule(StreamerModeModule.class);
+        if (streamerMode != null) {
+            streamerMode.enforceFreeDefaults();
+        }
     }
 
     public static ClientTheme[] getClientThemes() {

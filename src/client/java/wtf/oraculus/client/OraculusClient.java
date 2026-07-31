@@ -5,6 +5,7 @@ import wtf.oraculus.client.auth.AuthBootstrap;
 import wtf.oraculus.client.auth.AuthService;
 import wtf.oraculus.client.binding.repository.BindRepository;
 import wtf.oraculus.client.edition.EditionModuleCatalog;
+import wtf.oraculus.client.edition.EditionHooks;
 import wtf.oraculus.client.command.impl.config.ConfigCommand;
 import wtf.oraculus.client.command.impl.misc.DashboardCommand;
 import wtf.oraculus.client.command.impl.misc.IrcCommand;
@@ -122,6 +123,7 @@ public final class OraculusClient {
 
         SaveUtility.loadBindings();
         SaveUtility.loadConfigFile("default");
+        EditionHooks.enforceEditionDefaults(this.moduleRepository);
         MiniBloxHelperService.getInstance().recoverInterruptedSession();
 
         if (this.commandRepository == null) {

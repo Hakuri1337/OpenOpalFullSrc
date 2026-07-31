@@ -42,6 +42,10 @@ public final class EditionHooks {
         }
     }
 
+    public static void enforceEditionDefaults(final ModuleRepository repository) {
+        // Beta keeps Streamer Mode fully user-configurable.
+    }
+
     public static ClientTheme[] getClientThemes() {
         return ClientTheme.values();
     }

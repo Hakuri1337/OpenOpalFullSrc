@@ -3,6 +3,7 @@ package wtf.oraculus.client.feature.module.impl.visual;
 import net.minecraft.text.Text;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.Nullable;
+import wtf.oraculus.client.edition.EditionBuildInfo;
 import wtf.oraculus.client.feature.helper.impl.LocalDataWatch;
 import wtf.oraculus.client.feature.helper.impl.server.impl.HypixelServer;
 import wtf.oraculus.client.feature.module.Module;
@@ -10,6 +11,8 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.property.impl.StringProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.event.impl.game.chat.ChatReceivedEvent;
+import wtf.oraculus.event.impl.client.ModuleToggleEvent;
+import wtf.oraculus.event.impl.client.PropertyUpdateEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
 import wtf.oraculus.utility.misc.chat.ChatUtility;
 
@@ -20,11 +23,48 @@ public final class StreamerModeModule extends Module {
     // TODO: scoreboard replacement, hide other usernames
     private final BooleanProperty hideServerId = new BooleanProperty("Hide server ID", true);
     private final BooleanProperty hideUsername = new BooleanProperty("Hide username", true);
-    private final StringProperty customUsername = new StringProperty("Custom username", "You").hideIf(() -> !hideUsername.getValue());
+    private final StringProperty customUsername = new StringProperty(
+            "Custom username", EditionBuildInfo.isFree() ? "吴博涵" : "You"
+    ).hideIf(() -> EditionBuildInfo.isFree() || !hideUsername.getValue());
 
     public StreamerModeModule() {
         super("Streamer Mode", "Features for content creators.", ModuleCategory.VISUAL);
         this.addProperties(hideServerId, hideUsername, customUsername);
+    }
+
+    /** Applies the source-level Free edition policy after configuration loading. */
+    public void enforceFreeDefaults() {
+        if (!EditionBuildInfo.isFree()) {
+            return;
+        }
+        if (!isEnabled()) {
+            setEnabled(true);
+        }
+        if (!hideUsername.getValue()) {
+            hideUsername.setValue(true);
+        }
+        if (!"吴博涵".equals(customUsername.getValue())) {
+            customUsername.setValue("吴博涵");
+        }
+    }
+
+    @Subscribe(priority = 10000)
+    public void onModuleToggle(final ModuleToggleEvent event) {
+        if (EditionBuildInfo.isFree() && event.getModule() == this && !event.isEnabled()) {
+            event.setCancelled();
+        }
+    }
+
+    @Subscribe(priority = 10000)
+    public void onPropertyUpdate(final PropertyUpdateEvent event) {
+        if (!EditionBuildInfo.isFree()) {
+            return;
+        }
+        if (event.property() == hideUsername && !hideUsername.getValue()) {
+            hideUsername.setValue(true);
+        } else if (event.property() == customUsername && !"吴博涵".equals(customUsername.getValue())) {
+            customUsername.setValue("吴博涵");
+        }
     }
 
     @Subscribe
@@ -42,7 +82,7 @@ public final class StreamerModeModule extends Module {
     }
 
     public String filter(String text) {
-        if (hideUsername.getValue()) {
+        if (isHidingUsername()) {
             final String customUsername = this.getCustomUsername();
             if (!customUsername.isEmpty()) {
                 text = StringUtils.replaceIgnoreCase(text, mc.getSession().getUsername(), customUsername);
@@ -57,7 +97,11 @@ public final class StreamerModeModule extends Module {
     }
 
     public String getCustomUsername() {
-        return customUsername.getValue().trim();
+        return EditionBuildInfo.isFree() ? "吴博涵" : customUsername.getValue().trim();
+    }
+
+    public boolean isHidingUsername() {
+        return EditionBuildInfo.isFree() || hideUsername.getValue();
     }
 
 }
