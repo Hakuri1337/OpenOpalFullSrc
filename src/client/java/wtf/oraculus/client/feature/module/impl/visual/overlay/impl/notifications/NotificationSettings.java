@@ -3,16 +3,21 @@ package wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notification
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.property.impl.GroupProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
+import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 
 public final class NotificationSettings {
 
     private final BooleanProperty enabled;
     private final BooleanProperty moduleToggleNotifications;
+    private final ModeProperty<DisplayMode> displayMode;
+    private final BooleanProperty colorOutline;
 
     NotificationSettings(final OverlayModule module) {
         this.enabled = new BooleanProperty("Enabled", true);
         this.moduleToggleNotifications = new BooleanProperty("On module toggle", false);
-        module.addProperties(new GroupProperty("Notifications", moduleToggleNotifications));
+        this.displayMode = new ModeProperty<>("Mode", DisplayMode.LEGACY);
+        this.colorOutline = new BooleanProperty("Color Outline", true).hideIf(() -> !this.displayMode.is(DisplayMode.ISLAND));
+        module.addProperties(new GroupProperty("Notifications", enabled, displayMode, colorOutline, moduleToggleNotifications));
     }
 
     public boolean isEnabled() {
@@ -21,6 +26,30 @@ public final class NotificationSettings {
 
     public boolean isModuleToggleNotifications() {
         return moduleToggleNotifications.getValue();
+    }
+
+    public boolean isIsland() {
+        return this.displayMode.is(DisplayMode.ISLAND);
+    }
+
+    public boolean showIslandIconBackground() {
+        return this.colorOutline.getValue();
+    }
+
+    public enum DisplayMode {
+        LEGACY("Legacy"),
+        ISLAND("Island");
+
+        private final String name;
+
+        DisplayMode(final String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
     }
 
 }

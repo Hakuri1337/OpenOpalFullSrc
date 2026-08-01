@@ -25,7 +25,8 @@ public final class AcaInventoryActionScheduler {
 
     public enum TimingMode {
         INSTANT("Instant"),
-        ACA("ACA");
+        ACA("ACA"),
+        DELAY("Delay");
 
         private final String name;
 
@@ -69,7 +70,14 @@ public final class AcaInventoryActionScheduler {
     }
 
     public synchronized void beginSession(final Owner owner, final TimingMode mode, final int currentTick) {
+        this.beginSession(owner, mode, currentTick, ACTION_DELAY_MIN_MS, ACTION_DELAY_MAX_MS);
+    }
+
+    public synchronized void beginSession(final Owner owner, final TimingMode mode, final int currentTick,
+                                          final long minimumDelayMs, final long maximumDelayMs) {
         final Session session = this.sessions.get(owner);
+        session.minimumDelayMs = Math.max(0L, Math.min(minimumDelayMs, maximumDelayMs));
+        session.maximumDelayMs = Math.max(session.minimumDelayMs, Math.max(minimumDelayMs, maximumDelayMs));
         if (session.active && session.mode == mode) {
             return;
         }
@@ -141,6 +149,11 @@ public final class AcaInventoryActionScheduler {
             this.nextActionAtMs = System.currentTimeMillis() + delay;
             this.lastActionTick = currentTick;
             this.lastActionOwner = owner;
+        } else if (mode == TimingMode.DELAY) {
+            this.nextActionAtMs = System.currentTimeMillis()
+                    + randomDelay(session.minimumDelayMs, session.maximumDelayMs);
+            this.lastActionTick = currentTick;
+            this.lastActionOwner = owner;
         }
     }
 
@@ -193,7 +206,7 @@ public final class AcaInventoryActionScheduler {
         if (session.closeReadyTick >= 0 && currentTick < session.closeReadyTick) {
             return true;
         }
-        return mode == TimingMode.ACA
+        return mode != TimingMode.INSTANT
                 && this.lastActionOwner == owner
                 && System.currentTimeMillis() < this.nextActionAtMs;
     }
@@ -221,6 +234,13 @@ public final class AcaInventoryActionScheduler {
         return ThreadLocalRandom.current().nextLong(MANUAL_DELAY_MIN_MS, MANUAL_DELAY_MAX_MS + 1L);
     }
 
+    private static long randomDelay(final long minimum, final long maximum) {
+        if (minimum >= maximum) {
+            return minimum;
+        }
+        return ThreadLocalRandom.current().nextLong(minimum, maximum + 1L);
+    }
+
     private static int randomTicks(final int minimum, final int maximum) {
         return ThreadLocalRandom.current().nextInt(minimum, maximum + 1);
     }
@@ -237,6 +257,8 @@ public final class AcaInventoryActionScheduler {
         private int closeReadyTick = -1;
         private int lastRawSlot = -1;
         private int actionsUntilPause;
+        private long minimumDelayMs = ACTION_DELAY_MIN_MS;
+        private long maximumDelayMs = ACTION_DELAY_MAX_MS;
 
         private void reset() {
             this.active = false;
@@ -246,6 +268,8 @@ public final class AcaInventoryActionScheduler {
             this.closeReadyTick = -1;
             this.lastRawSlot = -1;
             this.actionsUntilPause = 0;
+            this.minimumDelayMs = ACTION_DELAY_MIN_MS;
+            this.maximumDelayMs = ACTION_DELAY_MAX_MS;
         }
     }
 }

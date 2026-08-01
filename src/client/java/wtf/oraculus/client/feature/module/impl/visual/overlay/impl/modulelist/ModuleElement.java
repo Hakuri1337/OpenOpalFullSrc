@@ -1,18 +1,18 @@
 package wtf.oraculus.client.feature.module.impl.visual.overlay.impl.modulelist;
 
 import com.ibm.icu.impl.Pair;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Formatting;
 import org.jetbrains.annotations.NotNull;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.animation.Animation;
 import wtf.oraculus.utility.render.animation.Easing;
-
-import java.awt.*;
 
 import static wtf.oraculus.client.Constants.mc;
 
@@ -28,7 +28,12 @@ public final class ModuleElement implements Comparable<ModuleElement> {
         this.module = module;
     }
 
-    public void render(final int index, final boolean isBloom) {
+    public void render(
+            final DrawContext context,
+            final int index,
+            final float nextWidth,
+            final boolean isBloom
+    ) {
         this.xAnimation.run(this.posX);
         this.yAnimation.run(this.posY);
         this.heightAnimation.run(this.module.isEnabled() ? 1 : 0);
@@ -40,6 +45,17 @@ public final class ModuleElement implements Comparable<ModuleElement> {
 
 
         final float radius = 1.F;
+        final boolean roundList = this.settings.isRoundList();
+        final float backgroundX = posX - 6.5F;
+        final float backgroundY = posY;
+        final float backgroundWidth = this.width + 6.5F;
+        final float backgroundHeight = OFFSET;
+        final float backgroundRadius = roundList ? 3.F : 0;
+        final float radiusBottomLeft = !roundList
+                ? 0
+                : Float.isNaN(nextWidth)
+                ? backgroundRadius
+                : Math.min(backgroundRadius, Math.max(0, this.width - nextWidth));
 
         final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
         final int color = ColorUtility.interpolateColorsBackAndForth(
@@ -49,10 +65,22 @@ public final class ModuleElement implements Comparable<ModuleElement> {
         );
 
         // blur has to stay outside so it renders the right blurred area
-        NVGRenderer.rect(
-                (posX - scaledWidth - 6.5F) * scale + scaledWidth, posY * scale,
-                (this.width + 6.5F) * scale, OFFSET * scale, NVGRenderer.BLUR_PAINT
-        );
+        final float scaledBackgroundX = (backgroundX - scaledWidth) * scale + scaledWidth;
+        final float scaledBackgroundY = backgroundY * scale;
+        final float scaledBackgroundWidth = backgroundWidth * scale;
+        final float scaledBackgroundHeight = backgroundHeight * scale;
+        if (roundList) {
+            NVGRenderer.roundedRectVarying(
+                    scaledBackgroundX, scaledBackgroundY, scaledBackgroundWidth, scaledBackgroundHeight,
+                    0, 0, 0, radiusBottomLeft * scale,
+                    NVGRenderer.BLUR_PAINT
+            );
+        } else {
+            NVGRenderer.rect(
+                    scaledBackgroundX, scaledBackgroundY,
+                    scaledBackgroundWidth, scaledBackgroundHeight, NVGRenderer.BLUR_PAINT
+            );
+        }
 
         NVGRenderer.scale(
                 scale,
@@ -61,7 +89,30 @@ public final class ModuleElement implements Comparable<ModuleElement> {
                 0,
                 0,
                 () -> {
-                    NVGRenderer.rect(posX - 6.5F, posY, this.width + 6.5F, OFFSET, 0x80090909);
+                    if (this.settings.isBackgroundFade()) {
+                        final int backgroundFirstColor = ColorUtility.applyOpacity(this.settings.getBackgroundFirstColor(), 0.5F);
+                        final int backgroundSecondColor = ColorUtility.applyOpacity(this.settings.getBackgroundSecondColor(), 0.5F);
+                        if (roundList) {
+                            NVGRenderer.roundedRectVaryingGradient(
+                                    backgroundX, backgroundY, backgroundWidth, backgroundHeight,
+                                    0, 0, 0, radiusBottomLeft,
+                                    backgroundFirstColor, backgroundSecondColor, 0
+                            );
+                        } else {
+                            NVGRenderer.rectGradient(
+                                    backgroundX, backgroundY, backgroundWidth, backgroundHeight,
+                                    backgroundFirstColor, backgroundSecondColor, 0
+                            );
+                        }
+                    } else if (roundList) {
+                        NVGRenderer.roundedRectVarying(
+                                backgroundX, backgroundY, backgroundWidth, backgroundHeight,
+                                0, 0, 0, radiusBottomLeft,
+                                0x80090909
+                        );
+                    } else {
+                        NVGRenderer.rect(backgroundX, backgroundY, backgroundWidth, backgroundHeight, 0x80090909);
+                    }
 
                     final ToggledSettings.BarMode barMode = settings.getBarMode().getValue();
                     if (barMode != ToggledSettings.BarMode.NONE) {
@@ -72,9 +123,26 @@ public final class ModuleElement implements Comparable<ModuleElement> {
                     }
 
                     final float textOffset = barMode == ToggledSettings.BarMode.LEFT ? 2 : barMode == ToggledSettings.BarMode.NONE ? 3.5F : barMode == ToggledSettings.BarMode.RIGHT ? 4.25F : 0;
-                    FONT.drawStringWithShadow(this.text, posX - textOffset, posY + 9.F, 8.F, color);
+                    if (!this.settings.isVanillaFont()) {
+                        FONT.drawStringWithShadow(this.text, posX - textOffset, posY + 9.F, 8.F, color);
+                    }
                 }
         );
+
+        if (this.settings.isVanillaFont() && !isBloom) {
+            final String renderText = this.text;
+            final float textOffset = this.getTextOffset();
+            final float textX = posX - textOffset;
+            final float textY = posY + (OFFSET - mc.textRenderer.fontHeight) / 2.F;
+            MinecraftRenderer.addToQueue(() -> {
+                context.getMatrices().pushMatrix();
+                context.getMatrices().translate(scaledWidth, 0);
+                context.getMatrices().scale(scale, scale);
+                context.getMatrices().translate(-scaledWidth + textX, textY);
+                context.drawTextWithShadow(mc.textRenderer, renderText, 0, 0, color);
+                context.getMatrices().popMatrix();
+            });
+        }
     }
 
     private static final NVGTextRenderer FONT = FontRepository.getFont("productsans-medium");
@@ -102,7 +170,17 @@ public final class ModuleElement implements Comparable<ModuleElement> {
         if (this.settings.isLowercase()) {
             this.text = this.text.toLowerCase();
         }
-        this.width = FONT.getStringWidth(this.text, 8.F);
+        this.width = this.settings.isVanillaFont()
+                ? mc.textRenderer.getWidth(this.text)
+                : FONT.getStringWidth(this.text, 8.F);
+    }
+
+    private float getTextOffset() {
+        return switch (this.settings.getBarMode().getValue()) {
+            case LEFT -> 2.F;
+            case NONE -> 3.5F;
+            case RIGHT -> 4.25F;
+        };
     }
 
     private void updateVisibility() {
@@ -161,6 +239,10 @@ public final class ModuleElement implements Comparable<ModuleElement> {
 
     public Animation getHeightAnimation() {
         return heightAnimation;
+    }
+
+    public float getWidth() {
+        return this.width;
     }
 
     @Override

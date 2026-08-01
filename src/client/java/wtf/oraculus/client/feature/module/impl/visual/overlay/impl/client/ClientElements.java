@@ -15,12 +15,18 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ColorHelper;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import wtf.oraculus.client.ReleaseInfo;
+import wtf.oraculus.client.auth.AuthBootstrap;
+import wtf.oraculus.client.auth.AuthService;
+import wtf.oraculus.client.edition.EditionBuildInfo;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.IOverlayElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.MultipleBooleanProperty;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
+import wtf.oraculus.client.renderer.image.NVGImageRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.repository.ImageRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.utility.player.MoveUtility;
 import wtf.oraculus.utility.render.ColorUtility;
@@ -37,8 +43,13 @@ public final class ClientElements implements IOverlayElement {
 
     private static final float FONT_SIZE = 8.F;
     private static final float FONT_HEIGHT = REGULAR_FONT.getStringHeight("A", FONT_SIZE);
+    private static final float FOOTER_ROW_HEIGHT = FONT_HEIGHT + 0.5F;
+    private static final int BETA_COLOR = 0xFF4AA3FF;
+    private static final int FREE_COLOR = 0xFF55D98A;
+    private static final int MUTED_COLOR = 0xFFAAAAAA;
 
     private final ClientElementSettings settings;
+    private NVGImageRenderer footerLogo;
 
     public ClientElements(final OverlayModule module) {
         this.settings = new ClientElementSettings(module);
@@ -105,7 +116,10 @@ public final class ClientElements implements IOverlayElement {
         // Bottom right
         {
             final float x = scaledWidth - 2;
-            final AtomicDouble y = new AtomicDouble(scaledHeight - 3);
+            final float footerY = scaledHeight - 3;
+            final AtomicDouble y = new AtomicDouble(footerY - FOOTER_ROW_HEIGHT);
+
+            this.renderFooter(x, footerY, scale);
 
             if (options.getProperty("Status effects").getValue()) {
                 final int kx = ColorHelper.getWhite(1);
@@ -140,6 +154,65 @@ public final class ClientElements implements IOverlayElement {
                         });
             }
         }
+    }
+
+    private void renderFooter(final float rightX, final float y, final float scale) {
+        final boolean freeEdition = EditionBuildInfo.isFree();
+        final String edition = EditionBuildInfo.getDisplayName();
+        final String separator = " - ";
+        final String version = ReleaseInfo.VERSION;
+        final String userPrefix = " | User - ";
+        final String username = this.getClientUsername();
+        final int editionColor = freeEdition ? FREE_COLOR : BETA_COLOR;
+        final int usernameColor = freeEdition ? -1 : BETA_COLOR;
+        final float logoSize = FONT_SIZE;
+        final float logoGap = 2;
+
+        final float editionWidth = REGULAR_FONT.getStringWidth(edition, FONT_SIZE);
+        final float separatorWidth = REGULAR_FONT.getStringWidth(separator, FONT_SIZE);
+        final float versionWidth = REGULAR_FONT.getStringWidth(version, FONT_SIZE);
+        final float userPrefixWidth = REGULAR_FONT.getStringWidth(userPrefix, FONT_SIZE);
+        final float usernameWidth = REGULAR_FONT.getStringWidth(username, FONT_SIZE);
+        final float totalWidth = logoSize + logoGap + editionWidth + separatorWidth
+                + versionWidth + userPrefixWidth + usernameWidth;
+
+        if (this.footerLogo == null) {
+            this.footerLogo = ImageRepository.getImage("images/logo_hd.png");
+        }
+
+        NVGRenderer.scale(scale, rightX, y, 0, 0, () -> {
+            float cursorX = rightX - totalWidth;
+            if (this.footerLogo != null) {
+                this.footerLogo.drawImage(cursorX, y - logoSize + 1, logoSize, logoSize);
+            }
+            cursorX += logoSize + logoGap;
+
+            REGULAR_FONT.drawStringWithShadow(edition, cursorX, y, FONT_SIZE, editionColor);
+            cursorX += editionWidth;
+            REGULAR_FONT.drawStringWithShadow(separator, cursorX, y, FONT_SIZE, MUTED_COLOR);
+            cursorX += separatorWidth;
+            REGULAR_FONT.drawStringWithShadow(version, cursorX, y, FONT_SIZE, -1);
+            cursorX += versionWidth;
+            REGULAR_FONT.drawStringWithShadow(userPrefix, cursorX, y, FONT_SIZE, MUTED_COLOR);
+            cursorX += userPrefixWidth;
+            REGULAR_FONT.drawStringWithShadow(username, cursorX, y, FONT_SIZE, usernameColor);
+        });
+    }
+
+    private String getClientUsername() {
+        final AuthService authService = AuthBootstrap.getService();
+        if (authService != null) {
+            final String authenticatedUsername = authService.snapshot().username();
+            if (authenticatedUsername != null && !authenticatedUsername.isBlank()) {
+                return authenticatedUsername;
+            }
+
+            final String savedUsername = authService.savedUsername();
+            if (savedUsername != null && !savedUsername.isBlank()) {
+                return savedUsername;
+            }
+        }
+        return "Unknown";
     }
 
     private String getStatusEffectString(final StatusEffectInstance instance) {

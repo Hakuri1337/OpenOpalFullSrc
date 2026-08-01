@@ -41,7 +41,7 @@ discard them.
 Install JDK 21, then run:
 
 ```powershell
-gradle build
+.\gradlew.bat build
 ```
 
 One build produces both release jars:
@@ -54,8 +54,15 @@ build/libs/Oraculus-Free-b6.jar
 On Linux or macOS, use:
 
 ```sh
-gradle build
+./gradlew build
 ```
+
+## Running in IntelliJ IDEA
+
+Open the repository root as a Gradle project and wait for the initial sync to
+finish. The project declares Java 21 for both the Gradle daemon and Java
+toolchain, so IDEA can use an installed JDK 21 even when the system default is
+older. Select the shared `Oraculus Client` run configuration and click Run.
 
 ## Configuration
 

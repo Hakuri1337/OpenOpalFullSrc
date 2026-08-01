@@ -17,6 +17,7 @@ import wtf.oraculus.utility.render.animation.Easing;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 import static wtf.oraculus.client.Constants.mc;
 
@@ -34,6 +35,7 @@ public final class CategoryPanel extends OraculusPanelComponent {
     private float baseX, baseY, dragOffsetX, dragOffsetY, dragMouseOffsetX, dragMouseOffsetY;
 
     private final List<ModulePanel> modulePanelList = new ArrayList<>();
+    private String searchQuery = "";
 
     public CategoryPanel(final ModuleCategory category, final int panelIndex) {
         this.category = category;
@@ -52,7 +54,8 @@ public final class CategoryPanel extends OraculusPanelComponent {
         }
 
         final float[] currentY = {y + height};
-        final float totalHeight = getTotalHeight();
+        final List<ModulePanel> visiblePanels = this.getVisibleModulePanels();
+        final float totalHeight = getTotalHeight(visiblePanels);
 
         final float openAnimationValue = openAnimation.getValue();
         final float scissorHeight = Math.min(mc.getWindow().getScaledHeight() - y, totalHeight * openAnimationValue);
@@ -60,19 +63,20 @@ public final class CategoryPanel extends OraculusPanelComponent {
 
         NVGRenderer.globalAlpha(openAnimationValue);
         NVGRenderer.scissor(x, y, width, scissorHeight, () -> {
-            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, 0, 0, NVGRenderer.BLUR_PAINT);
+            final float bottomRadius = visiblePanels.isEmpty() ? 5 : 0;
+            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, NVGRenderer.BLUR_PAINT);
             final boolean sigmaStyle = ColorUtility.getClientTheme().first.equals(ClientTheme.SIGMA.getColors().first);
             final int panelColor = sigmaStyle ? 0xeef7fbff : 0xd90f0f0f;
-            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, 0, 0, panelColor);
+            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, panelColor);
             FontRepository.getFont("productsans-bold").drawString(category.getName(), x + 5, y + scrollOffset + 13, 9, -1);
             FontRepository.getFont("materialicons-outlined").drawString(category.getIcon(), x + width - 15.5F, y + scrollOffset + 15, 10, -1);
 
-            for (int i = 0; i < modulePanelList.size(); i++) {
-                final ModulePanel panel = modulePanelList.get(i);
+            for (int i = 0; i < visiblePanels.size(); i++) {
+                final ModulePanel panel = visiblePanels.get(i);
                 float panelHeight = this.height + (panel.getExpandAnimation().getValue() * panel.getAddedHeight());
 
                 panel.setDimensions(x, currentY[0] + scrollOffset, width, panelHeight);
-                panel.setLastModule(i == modulePanelList.size() - 1);
+                panel.setLastModule(i == visiblePanels.size() - 1);
 
                 panel.render(context, mouseX, mouseY, delta);
 
@@ -93,17 +97,17 @@ public final class CategoryPanel extends OraculusPanelComponent {
             return;
         }
 
-        modulePanelList.forEach(modulePanel -> modulePanel.mouseClicked(mouseX, mouseY, button));
+        this.getVisibleModulePanels().forEach(modulePanel -> modulePanel.mouseClicked(mouseX, mouseY, button));
     }
 
     @Override
     public void keyPressed(KeyInput keyInput) {
-        modulePanelList.forEach(modulePanel -> modulePanel.keyPressed(keyInput));
+        this.getVisibleModulePanels().forEach(modulePanel -> modulePanel.keyPressed(keyInput));
     }
 
     @Override
     public void charTyped(char chr, int modifiers) {
-        modulePanelList.forEach(modulePanel -> modulePanel.charTyped(chr, modifiers));
+        this.getVisibleModulePanels().forEach(modulePanel -> modulePanel.charTyped(chr, modifiers));
     }
 
     @Override
@@ -112,18 +116,18 @@ public final class CategoryPanel extends OraculusPanelComponent {
             dragging = false;
         }
 
-        modulePanelList.forEach(modulePanel -> modulePanel.mouseReleased(mouseX, mouseY, button));
+        this.getVisibleModulePanels().forEach(modulePanel -> modulePanel.mouseReleased(mouseX, mouseY, button));
     }
 
     @Override
     public void mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        final float totalHeight = getTotalHeight();
+        final float totalHeight = getTotalHeight(this.getVisibleModulePanels());
 
         if (HoverUtility.isHovering(x, y, width, totalHeight, mouseX, mouseY)) {
             scroller.addScroll(verticalAmount, getMaxOffset(totalHeight));
         }
 
-        modulePanelList.forEach(modulePanel -> modulePanel.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount));
+        this.getVisibleModulePanels().forEach(modulePanel -> modulePanel.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount));
     }
 
     @Override
@@ -148,10 +152,10 @@ public final class CategoryPanel extends OraculusPanelComponent {
         modulePanelList.forEach(ModulePanel::close);
     }
 
-    private float getTotalHeight() {
+    private float getTotalHeight(final List<ModulePanel> visiblePanels) {
         float totalHeight = this.height; // header height
 
-        for (final ModulePanel panel : modulePanelList) {
+        for (final ModulePanel panel : visiblePanels) {
             panel.getExpandAnimation().run(panel.isExpanded() ? 1 : 0);
             totalHeight += this.height + (panel.getExpandAnimation().getValue() * panel.getAddedHeight());
         }
@@ -187,6 +191,24 @@ public final class CategoryPanel extends OraculusPanelComponent {
 
     public float getDragOffsetY() {
         return dragOffsetY;
+    }
+
+    public void setSearchQuery(final String query) {
+        final String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        if (!this.searchQuery.equals(normalizedQuery)) {
+            this.searchQuery = normalizedQuery;
+            this.scroller.reset();
+        }
+    }
+
+    private List<ModulePanel> getVisibleModulePanels() {
+        if (this.searchQuery.isEmpty()) {
+            return this.modulePanelList;
+        }
+
+        return this.modulePanelList.stream()
+                .filter(panel -> panel.getModule().getName().toLowerCase(Locale.ROOT).contains(this.searchQuery))
+                .toList();
     }
 
     private void updateDrag(final int mouseX, final int mouseY) {

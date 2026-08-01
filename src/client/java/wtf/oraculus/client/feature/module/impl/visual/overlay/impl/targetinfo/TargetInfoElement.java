@@ -38,7 +38,9 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland
 import wtf.oraculus.client.feature.module.property.impl.ScreenPositionProperty;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
+import wtf.oraculus.client.renderer.image.NVGImageRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.repository.ImageRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
 import wtf.oraculus.utility.render.ColorUtility;
@@ -55,6 +57,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Locale;
 
 import static org.lwjgl.nanovg.NanoVG.*;
 import static org.lwjgl.nanovg.NanoVGGL3.NVG_IMAGE_NODELETE;
@@ -75,6 +78,7 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
     private Target currentTarget, lastTarget;
     private Target islandTarget;
     private boolean islandTriggerActive;
+    private NVGImageRenderer gayBackground;
 
     public TargetInfoElement(final OverlayModule module) {
         this.settings = new TargetInfoSettings(module);
@@ -133,6 +137,16 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
         }
 
         if (target == null) {
+            return;
+        }
+
+        if (this.settings.isCompact()) {
+            this.renderCompact(context, target, isBloom);
+            return;
+        }
+
+        if (this.settings.isGay()) {
+            this.renderGay(context, target, isBloom);
             return;
         }
 
@@ -354,6 +368,264 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
             lastTarget = currentTarget;
         }
     }
+
+    private void renderCompact(final DrawContext context, final Target target, final boolean isBloom) {
+        final float scale = this.settings.getScale();
+        final float padding = 4;
+        final float avatarSize = 30;
+        final float contentX = padding + avatarSize + 5;
+        final float textSize = 7;
+        final float nameSize = 8;
+        final float height = 47;
+        final float barHeight = 3.28125F;
+        final float barBottomPadding = 3.5F;
+        final LivingEntity entity = target.entity;
+        final String name = target.getFormattedName();
+        final String healthText = this.getCompactHealth(entity);
+        final String distance = this.getCompactDistance(entity);
+        final String heldItem = entity.getMainHandStack().isEmpty()
+                ? "Empty"
+                : entity.getMainHandStack().getName().getString();
+
+        final float textWidth = Math.max(
+                BOLD_FONT.getStringWidth(name, nameSize),
+                Math.max(
+                        MEDIUM_FONT.getStringWidth(healthText, textSize),
+                        Math.max(
+                                MEDIUM_FONT.getStringWidth(distance, textSize),
+                                MEDIUM_FONT.getStringWidth(heldItem, textSize)
+                        )
+                )
+        );
+        final float width = Math.max(contentX + textWidth + padding, avatarSize + padding * 2);
+        final ScreenPositionProperty screenPosition = this.settings.getScreenPosition();
+        final float x = screenPosition.getScaledX();
+        final float y = screenPosition.getScaledY();
+        screenPosition.setWidth(width * scale);
+        screenPosition.setHeight(height * scale);
+
+        final int backgroundColor = ColorUtility.applyOpacity(0xFF090909, this.settings.getBackgroundOpacity());
+        final int shadowColor = ColorUtility.applyOpacity(Colors.BLACK, 0.5F);
+        final int fixedHealthColor = 0xFFDE2910;
+        final float targetAnimationProgress = this.targetAnimation.getValue();
+        final float currentHealth = Math.max(0, entity.getHealth() + entity.getAbsorptionAmount());
+        final float maximumHealth = Math.max(1, entity.getMaxHealth() + entity.getAbsorptionAmount());
+        final float healthPercent = MathHelper.clamp(currentHealth / maximumHealth, 0, 1);
+        final float displayHealthPercent = MathHelper.clamp(this.healthAnimation.getValue(), 0, 1);
+        this.healthAnimation.run(healthPercent);
+
+        NVGRenderer.scale(scale, x, y, 0, 0, () -> {
+            NVGRenderer.globalAlpha(targetAnimationProgress);
+            if (this.settings.isShadow()) {
+                NVGRenderer.roundedRect(x + 1.5F, y + 2, width, height, 4, shadowColor);
+            }
+            if (this.settings.isBlur()) {
+                NVGRenderer.roundedRect(x, y, width, height, 4, NVGRenderer.BLUR_PAINT);
+            }
+            NVGRenderer.roundedRect(x, y, width, height, 4, backgroundColor);
+
+            final int skinTextureGlId = isBloom ? -1 : this.getSkinTextureGlId(entity);
+            if (skinTextureGlId != -1) {
+                final float avatarY = y + 6;
+                this.renderCompactHead(target, x + padding, avatarY, avatarSize, skinTextureGlId);
+            }
+
+            final boolean textShadow = this.settings.isShadow();
+            this.drawCompactText(name, x + contentX, y + 10, nameSize, -1, textShadow);
+            this.drawCompactText(healthText, x + contentX, y + 19, textSize, 0xFFAAAAAA, textShadow);
+            this.drawCompactText(distance, x + contentX, y + 27, textSize, 0xFFAAAAAA, textShadow);
+            this.drawCompactText(heldItem, x + contentX, y + 35, textSize, 0xFFAAAAAA, textShadow);
+
+            final float barX = x + padding;
+            final float barY = y + height - barBottomPadding - barHeight;
+            final float barWidth = width - padding * 2;
+            NVGRenderer.roundedRect(barX, barY, barWidth, barHeight, 1.25F, 0x66222222);
+            if (displayHealthPercent > 0.01F) {
+                NVGRenderer.roundedRect(barX, barY, barWidth * displayHealthPercent, barHeight, 1.25F, fixedHealthColor);
+            }
+            if (healthPercent > 0.01F && displayHealthPercent < healthPercent) {
+                NVGRenderer.roundedRect(barX, barY, barWidth * healthPercent, barHeight, 1.25F,
+                        ColorUtility.applyOpacity(fixedHealthColor, 130));
+            }
+            NVGRenderer.globalAlpha(1);
+        });
+
+    }
+
+    private void renderGay(final DrawContext context, final Target target, final boolean isBloom) {
+        final float scale = this.settings.getScale();
+        final float width = 158;
+        final float height = 64;
+        final float radius = 5;
+        final float padding = 4;
+        final float headSize = 56;
+        final float contentXOffset = padding + headSize + 5;
+        final float contentWidth = width - contentXOffset - 5;
+        final float slotSize = 12;
+        final float slotGap = 4.5F;
+        final float slotsY = 30;
+        final float healthBarY = 48;
+        final float healthBarHeight = 12;
+        final LivingEntity entity = target.entity;
+        final String name = this.ellipsize(BOLD_FONT, target.getFormattedName(), contentWidth, 10);
+        final String distance = String.format(Locale.ROOT, "Distance: %.1f", (double) mc.player.distanceTo(entity));
+        final List<ItemStack> equipment = List.of(
+                entity.getEquippedStack(EquipmentSlot.HEAD),
+                entity.getEquippedStack(EquipmentSlot.CHEST),
+                entity.getEquippedStack(EquipmentSlot.LEGS),
+                entity.getEquippedStack(EquipmentSlot.FEET),
+                entity.getMainHandStack()
+        );
+
+        final ScreenPositionProperty screenPosition = this.settings.getScreenPosition();
+        final float x = screenPosition.getScaledX();
+        final float y = screenPosition.getScaledY();
+        screenPosition.setWidth(width * scale);
+        screenPosition.setHeight(height * scale);
+
+        final float currentHealth = Math.max(0, entity.getHealth() + entity.getAbsorptionAmount());
+        final float maximumHealth = Math.max(1, entity.getMaxHealth() + entity.getAbsorptionAmount());
+        final float healthPercent = MathHelper.clamp(currentHealth / maximumHealth, 0, 1);
+        this.healthAnimation.run(healthPercent);
+        final float displayHealthPercent = MathHelper.clamp(this.healthAnimation.getValue(), 0, 1);
+        final float targetAnimationProgress = this.targetAnimation.getValue();
+        final Pair<Integer, Integer> theme = ColorUtility.getClientTheme();
+
+        NVGRenderer.scale(scale, x, y, 0, 0, () -> {
+            NVGRenderer.globalAlpha(targetAnimationProgress);
+
+            if (!isBloom) {
+                if (this.gayBackground == null) {
+                    this.gayBackground = ImageRepository.getImage("images/targethud_gay.png");
+                }
+                if (this.gayBackground != null) {
+                    this.gayBackground.drawRoundedImageCover(x, y, width, height, radius, 2048, 1024);
+                } else {
+                    NVGRenderer.roundedRect(x, y, width, height, radius, 0xFF555555);
+                }
+            }
+
+            if (this.settings.isBlackOverlay()) {
+                NVGRenderer.roundedRect(x, y, width, height, radius, ColorUtility.applyOpacity(Colors.BLACK, 100));
+            }
+
+            final int skinTextureGlId = isBloom ? -1 : this.getSkinTextureGlId(entity);
+            if (skinTextureGlId != -1) {
+                this.renderGayHead(target, x + padding, y + padding, headSize, skinTextureGlId);
+            } else if (!isBloom) {
+                NVGRenderer.roundedRect(x + padding, y + padding, headSize, headSize, 4, 0xFFCCCCCC);
+            }
+
+            BOLD_FONT.drawString(name, x + contentXOffset, y + 16, 10, Colors.WHITE);
+            MEDIUM_FONT.drawString(distance, x + contentXOffset, y + 26, 7, Colors.WHITE);
+
+            for (int index = 0; index < equipment.size(); index++) {
+                if (equipment.get(index).isEmpty()) {
+                    final float slotX = x + contentXOffset + index * (slotSize + slotGap);
+                    NVGRenderer.roundedRect(slotX, y + slotsY, slotSize, slotSize, 6, 0x995F5F5F);
+                }
+            }
+
+            final float barX = x + contentXOffset;
+            final float barY = y + healthBarY;
+            NVGRenderer.roundedRect(barX, barY, contentWidth, healthBarHeight, radius, 0xCC050505);
+            if (displayHealthPercent > 0.01F) {
+                NVGRenderer.roundedRectGradient(
+                        barX, barY, contentWidth * displayHealthPercent, healthBarHeight, radius,
+                        theme.first, theme.second, 0
+                );
+            }
+
+            NVGRenderer.globalAlpha(1);
+        });
+
+        if (!isBloom && targetAnimationProgress >= 0.5F) {
+            MinecraftRenderer.addToQueue(() -> {
+                context.createNewRootLayer();
+                GlStateManager._enableBlend();
+                for (int index = 0; index < equipment.size(); index++) {
+                    final ItemStack stack = equipment.get(index);
+                    if (stack.isEmpty()) {
+                        continue;
+                    }
+
+                    final float slotX = contentXOffset + index * (slotSize + slotGap);
+                    final float itemX = x + slotX * scale;
+                    final float itemY = y + slotsY * scale;
+                    final float itemScale = slotSize / 16.F * scale;
+                    context.getMatrices().pushMatrix();
+                    context.getMatrices().translate(itemX, itemY);
+                    context.getMatrices().scale(itemScale, itemScale);
+                    context.drawItem(stack, 0, 0);
+                    context.getMatrices().popMatrix();
+                }
+                GlStateManager._disableBlend();
+            });
+        }
+    }
+
+    private void renderGayHead(
+            final Target target,
+            final float x,
+            final float y,
+            final float size,
+            final int skinTextureGlId
+    ) {
+        final int skinTextureHandle = target.getSkinTextureHandle(skinTextureGlId);
+        this.renderGaySkinLayer(skinTextureHandle, x, y, size, 8, 8);
+        this.renderGaySkinLayer(skinTextureHandle, x, y, size, 40, 8);
+    }
+
+    private void renderGaySkinLayer(
+            final int skinTextureHandle,
+            final float x,
+            final float y,
+            final float size,
+            final int sourceX,
+            final int sourceY
+    ) {
+        final float skinScale = size / 8.F;
+        nvgBeginPath(VG);
+        nvgImagePattern(VG, x - sourceX * skinScale, y - sourceY * skinScale,
+                64 * skinScale, 64 * skinScale, 0, skinTextureHandle, 1, NVGRenderer.NVG_PAINT);
+        nvgFillPaint(VG, NVGRenderer.NVG_PAINT);
+        nvgRoundedRect(VG, x, y, size, size, 4);
+        nvgFill(VG);
+        nvgClosePath(VG);
+    }
+
+    private void drawCompactText(final String text, final float x, final float y, final float size, final int color, final boolean shadow) {
+        final NVGTextRenderer font = size == 8 ? BOLD_FONT : MEDIUM_FONT;
+        if (shadow) {
+            font.drawStringWithShadow(text, x, y, size, color);
+        } else {
+            font.drawString(text, x, y, size, color);
+        }
+    }
+
+    private String getCompactHealth(final LivingEntity entity) {
+        final float absorption = entity.getAbsorptionAmount();
+        return absorption > 0.05F
+                ? String.format(Locale.ROOT, "Health: %.1f+%.1f", (double) entity.getHealth(), (double) absorption)
+                : String.format(Locale.ROOT, "Health: %.1f", (double) entity.getHealth());
+    }
+
+    private String getCompactDistance(final LivingEntity entity) {
+        return String.format(Locale.ROOT, "Distance: %.1f", (double) mc.player.distanceTo(entity));
+    }
+
+    private void renderCompactHead(final Target target, final float x, final float y, final float size, final int skinTextureGlId) {
+        final int skinTextureHandle = target.getSkinTextureHandle(skinTextureGlId);
+        final float skinScale = size / 8.0F;
+        nvgBeginPath(VG);
+        nvgImagePattern(VG, x - 8 * skinScale, y - 8 * skinScale,
+                64 * skinScale, 64 * skinScale, 0, skinTextureHandle, 1, NVGRenderer.NVG_PAINT);
+        nvgFillPaint(VG, NVGRenderer.NVG_PAINT);
+        nvgRoundedRect(VG, x, y, size, size, 2.5F);
+        nvgFill(VG);
+        nvgClosePath(VG);
+    }
+
 
     @Override
     public boolean isActive() {

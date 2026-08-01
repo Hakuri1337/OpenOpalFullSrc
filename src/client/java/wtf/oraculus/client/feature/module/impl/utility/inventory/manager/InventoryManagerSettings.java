@@ -4,6 +4,7 @@ import wtf.oraculus.client.feature.module.impl.utility.inventory.AcaInventoryAct
 import wtf.oraculus.client.feature.module.property.impl.GroupProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
+import wtf.oraculus.client.feature.module.property.impl.number.BoundedNumberProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 
 public final class InventoryManagerSettings {
@@ -46,6 +47,7 @@ public final class InventoryManagerSettings {
     private final ModeProperty<InventoryRules> inventoryRules;
     private final ModeProperty<OffhandMode> offhandMode;
     private final ModeProperty<BowPriority> bowPriority;
+    private final BoundedNumberProperty delay;
 
     private final NumberProperty maxEggsSnowballsSize;
     private final NumberProperty maxBlockSize;
@@ -71,6 +73,8 @@ public final class InventoryManagerSettings {
         this.fastThrow = new BooleanProperty("Fast Throw", false).hideIf(() -> !throwItems.getValue());
 
         this.timingMode = new ModeProperty<>("Timing", AcaInventoryActionScheduler.TimingMode.ACA);
+        this.delay = new BoundedNumberProperty("Delay", "ms", 100, 150, 0, 2000, 5)
+                .hideIf(() -> !this.timingMode.is(AcaInventoryActionScheduler.TimingMode.DELAY));
         this.inventoryRules = new ModeProperty<>("Inventory Rules", InventoryRules.VANILLA);
         this.offhandMode = new ModeProperty<>("Offhand Items", OffhandMode.PROJECTILE);
         this.bowPriority = new ModeProperty<>("Bow Priority", BowPriority.CROSSBOW);
@@ -93,7 +97,7 @@ public final class InventoryManagerSettings {
         this.crystalSlot = new NumberProperty("Crystal Slot", 0, 0, 9, 1);
 
         module.addProperties(
-                new GroupProperty("Timing", timingMode),
+                new GroupProperty("Timing", timingMode, delay),
                 new GroupProperty("General", inventoryRules, autoArmor, throwItems, inventoryOnly, fastThrow, offhandMode, bowPriority),
                 new GroupProperty("Limits", maxEggsSnowballsSize, maxBlockSize, maxFoodSize, maxRodSize),
                 new GroupProperty("Slots",
@@ -114,6 +118,14 @@ public final class InventoryManagerSettings {
 
     public AcaInventoryActionScheduler.TimingMode getTimingMode() {
         return this.timingMode.getValue();
+    }
+
+    public long getMinimumDelayMs() {
+        return this.delay.getValue().first.longValue();
+    }
+
+    public long getMaximumDelayMs() {
+        return this.delay.getValue().second.longValue();
     }
 
     public boolean isAutoArmorEnabled() {

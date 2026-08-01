@@ -69,6 +69,29 @@ public final class NVGImageRenderer {
         nvgClosePath(VG);
     }
 
+    public void drawRoundedImageCover(
+            final float x,
+            final float y,
+            final float width,
+            final float height,
+            final float radius,
+            final float sourceWidth,
+            final float sourceHeight
+    ) {
+        final float coverScale = Math.max(width / sourceWidth, height / sourceHeight);
+        final float imageWidth = sourceWidth * coverScale;
+        final float imageHeight = sourceHeight * coverScale;
+        final float imageX = x + (width - imageWidth) / 2.F;
+        final float imageY = y + (height - imageHeight) / 2.F;
+
+        nvgBeginPath(VG);
+        nvgRoundedRect(VG, x, y, width, height, radius);
+        nvgImagePattern(VG, imageX, imageY, imageWidth, imageHeight, 0, imageHandle, 1, NVGRenderer.NVG_PAINT);
+        nvgFillPaint(VG, NVGRenderer.NVG_PAINT);
+        nvgFill(VG);
+        nvgClosePath(VG);
+    }
+
     public void drawImage(final float x, final float y, final float width, final float height, final int colorOverlay) {
         nvgImagePattern(
                 VG,

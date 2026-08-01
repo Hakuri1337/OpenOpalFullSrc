@@ -14,7 +14,14 @@ import static wtf.oraculus.client.Constants.mc;
 public final class AutoArmorModule extends Module {
 
     private final ModeProperty<AcaInventoryActionScheduler.TimingMode> timingMode =
-            new ModeProperty<>("Timing", AcaInventoryActionScheduler.TimingMode.ACA);
+            new ModeProperty<>(
+                    "Timing",
+                    AcaInventoryActionScheduler.TimingMode.ACA,
+                    new AcaInventoryActionScheduler.TimingMode[]{
+                            AcaInventoryActionScheduler.TimingMode.INSTANT,
+                            AcaInventoryActionScheduler.TimingMode.ACA
+                    }
+            );
 
     public AutoArmorModule() {
         super("Auto Armor", "Delegates armor handling to Inventory Manager.", ModuleCategory.UTILITY);

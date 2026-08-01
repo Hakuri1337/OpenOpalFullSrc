@@ -123,7 +123,9 @@ public final class InventoryManagerModule extends Module {
         this.actionScheduler.beginSession(
                 AcaInventoryActionScheduler.Owner.INVENTORY_MANAGER,
                 timingMode,
-                mc.player.age
+                mc.player.age,
+                this.settings.getMinimumDelayMs(),
+                this.settings.getMaximumDelayMs()
         );
         if (!this.managementSessionActive) {
             this.performingAction = false;
