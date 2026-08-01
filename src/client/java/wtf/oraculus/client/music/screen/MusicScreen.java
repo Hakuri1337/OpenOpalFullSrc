@@ -76,16 +76,21 @@ public final class MusicScreen extends Screen {
         positionSearchField();
 
         final boolean frameStarted = NVGRenderer.beginFrame();
-        final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
-        NVGRenderer.rect(0, 0, width, height, 0x8A050607);
-        NVGRenderer.roundedRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 8, 0xA80D1012);
+        try {
+            final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
+            NVGRenderer.rect(0, 0, width, height, 0x8A050607);
+            NVGRenderer.roundedRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 8, 0xA80D1012);
 
-        renderSidebar(mouseX, mouseY, colors);
-        renderHeader(colors);
-        renderRows(mouseX, mouseY, colors);
-        renderPlayerBar(mouseX, mouseY, colors);
-
-        if (frameStarted) NVGRenderer.endFrameAndReset(true);
+            renderSidebar(mouseX, mouseY, colors);
+            renderHeader(colors);
+            renderRows(mouseX, mouseY, colors);
+            renderPlayerBar(mouseX, mouseY, colors);
+        } finally {
+            // NanoVG has process-wide frame state. Leaving a frame open after
+            // a font/theme/artwork failure makes all later GUI frames inherit
+            // the broken state and can freeze the client.
+            if (frameStarted) NVGRenderer.endFrameAndReset(true);
+        }
         super.render(context, mouseX, mouseY, delta);
     }
 
