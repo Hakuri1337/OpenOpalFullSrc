@@ -56,7 +56,7 @@ public final class ToggledModulesElement implements IOverlayElement {
 
     @Override
     public void render(DrawContext context, float delta, boolean isBloom) {
-        this.renderPass(isBloom);
+        this.renderPass(context, isBloom);
     }
 
     @Override
@@ -64,7 +64,7 @@ public final class ToggledModulesElement implements IOverlayElement {
 //        this.renderPass(true);
     }
 
-    private void renderPass(final boolean isBloom) {
+    private void renderPass(final DrawContext context, final boolean isBloom) {
         if (this.sortingDirty) {
             this.tick();
             this.sort();
@@ -73,7 +73,8 @@ public final class ToggledModulesElement implements IOverlayElement {
         final int size = this.visibleList.size();
         for (int i = 0; i < size; i++) {
             final ModuleElement element = this.visibleList.get(i);
-            element.render(i, isBloom);
+            final float nextWidth = i + 1 < size ? this.visibleList.get(i + 1).getWidth() : Float.NaN;
+            element.render(context, i, nextWidth, isBloom);
         }
     }
 

@@ -28,6 +28,7 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.helper.impl.player.mouse.MouseHelper;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
+import wtf.oraculus.client.feature.module.property.impl.number.BoundedNumberProperty;
 import wtf.oraculus.event.impl.game.PostGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
 import wtf.oraculus.event.impl.game.inventory.ManualInventoryInteractionEvent;
@@ -54,6 +55,9 @@ ChestStealerModule extends Module {
     private final BooleanProperty highlight = new BooleanProperty("Highlight items", true).hideIf(() -> !smart.getValue());
     private final ModeProperty<AcaInventoryActionScheduler.TimingMode> timingMode =
             new ModeProperty<>("Timing", AcaInventoryActionScheduler.TimingMode.ACA);
+    private final BoundedNumberProperty delay = new BoundedNumberProperty(
+            "Delay", "ms", 100, 150, 0, 2000, 5
+    ).hideIf(() -> !this.timingMode.is(AcaInventoryActionScheduler.TimingMode.DELAY));
     private final BooleanProperty ghostHand = new BooleanProperty("Ghost Hand", false);
     private final BooleanProperty ghostDebug = new BooleanProperty("Ghost Debug", false).hideIf(() -> !ghostHand.getValue());
 
@@ -66,7 +70,7 @@ ChestStealerModule extends Module {
 
     public ChestStealerModule() {
         super("Chest Stealer", "Steals only useful or upgraded items from chests.", ModuleCategory.UTILITY);
-        addProperties(smart, highlight, timingMode, ghostHand, ghostDebug);
+        addProperties(smart, highlight, timingMode, delay, ghostHand, ghostDebug);
     }
 
     @Override
@@ -143,7 +147,9 @@ ChestStealerModule extends Module {
         this.actionScheduler.beginSession(
                 AcaInventoryActionScheduler.Owner.CHEST_STEALER,
                 this.timingMode.getValue(),
-                mc.player.age
+                mc.player.age,
+                this.delay.getValue().first.longValue(),
+                this.delay.getValue().second.longValue()
         );
 
         if (!screenHandler.getCursorStack().isEmpty()) {

@@ -29,4 +29,9 @@ public final class Scroller {
         this.animation.run(this.value);
     }
 
+    public void reset() {
+        this.value = 0;
+        this.animation.setValue(0);
+    }
+
 }
