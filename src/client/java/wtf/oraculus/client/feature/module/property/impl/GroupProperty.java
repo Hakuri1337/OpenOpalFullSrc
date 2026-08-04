@@ -1,6 +1,5 @@
 package wtf.oraculus.client.feature.module.property.impl;
 
-import com.google.gson.internal.LinkedTreeMap;
 import wtf.oraculus.client.feature.module.property.IPropertyListProvider;
 import wtf.oraculus.client.feature.module.property.Property;
 import wtf.oraculus.client.screen.click.dropdown.panel.property.PropertyPanel;
@@ -8,6 +7,7 @@ import wtf.oraculus.client.screen.click.dropdown.panel.property.impl.GroupProper
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
@@ -42,13 +42,24 @@ public final class GroupProperty extends Property<List<Property<?>>> implements 
     public void applyValue(Object propertyValue) {
         if (propertyValue instanceof List<?> groupValues) {
             for (Object jsonGroupPropObj : groupValues) {
-                final LinkedTreeMap<?, ?> jsonGroupProp = (LinkedTreeMap<?, ?>) jsonGroupPropObj;
-                final String groupName = (String) jsonGroupProp.get("name");
+                if (!(jsonGroupPropObj instanceof Map<?, ?> jsonGroupProp)) {
+                    continue;
+                }
+
+                final Object serializedIdentifier = jsonGroupProp.containsKey("name")
+                        ? jsonGroupProp.get("name")
+                        : jsonGroupProp.get("id");
+                if (serializedIdentifier == null) {
+                    continue;
+                }
+
+                final String groupName = String.valueOf(serializedIdentifier);
                 final Object groupValue = jsonGroupProp.get("value");
 
                 for (Property<?> clientGroupProp : getPropertyList()) {
-                    if (groupName.equals(clientGroupProp.getName())) {
+                    if (clientGroupProp.matchesIdentifier(groupName)) {
                         clientGroupProp.applyValue(groupValue);
+                        break;
                     }
                 }
             }

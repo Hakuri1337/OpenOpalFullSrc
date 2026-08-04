@@ -375,8 +375,7 @@ public final class SaveUtility {
     private static Property<?> findProperty(final Module module, final String propertyName) {
         final String normalizedPropertyName = normalize(propertyName);
         for (final Property<?> property : module.getPropertyList()) {
-            if (normalize(property.getId()).equals(normalizedPropertyName)
-                    || normalize(property.getName()).equals(normalizedPropertyName)) {
+            if (property.matchesIdentifier(normalizedPropertyName)) {
                 return property;
             }
         }

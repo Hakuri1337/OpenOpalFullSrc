@@ -131,6 +131,10 @@ public final class MusicService implements AutoCloseable, IEventSubscriber {
         return lyricTimeline.lineAt(positionMillis);
     }
 
+    public LyricTimeline.Context getLyricContext(final long positionMillis) {
+        return lyricTimeline.contextAt(positionMillis);
+    }
+
     public String getPlaylistStatus() {
         return playlistStatus;
     }

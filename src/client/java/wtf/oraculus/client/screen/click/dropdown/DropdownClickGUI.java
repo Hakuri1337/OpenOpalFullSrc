@@ -33,6 +33,8 @@ public final class DropdownClickGUI extends Screen {
     private final Animation islandSearchAnimation = new Animation(Easing.DYNAMIC_ISLAND, 250);
     private TextFieldWidget searchField;
     public static boolean displayingBinds, selectingBind, typingString;
+    private static boolean renderingBloom;
+    private static boolean liquidGlassBackgroundActive;
     private boolean closing;
 
     public DropdownClickGUI() {
@@ -82,6 +84,27 @@ public final class DropdownClickGUI extends Screen {
         if (frameStarted) {
             NVGRenderer.endFrameAndReset(true);
         }
+    }
+
+    public void renderBloom(final DrawContext context, final float delta) {
+        renderingBloom = true;
+        try {
+            this.render(context, -1, -1, delta);
+        } finally {
+            renderingBloom = false;
+        }
+    }
+
+    public static boolean isRenderingBloom() {
+        return renderingBloom;
+    }
+
+    public static boolean isLiquidGlassBackgroundActive() {
+        return liquidGlassBackgroundActive;
+    }
+
+    public static void setLiquidGlassBackgroundActive(final boolean active) {
+        liquidGlassBackgroundActive = active;
     }
 
     @Override

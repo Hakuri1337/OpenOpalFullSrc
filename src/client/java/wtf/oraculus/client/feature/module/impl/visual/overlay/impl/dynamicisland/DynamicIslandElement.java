@@ -7,6 +7,7 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.preset.DefaultIsland;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI;
 import wtf.oraculus.event.EventDispatcher;
@@ -85,7 +86,7 @@ public final class DynamicIslandElement implements IOverlayElement, IEventSubscr
         // illegal while that pass is open. Keep the island background in bloom
         // but render all trigger content only in the normal HUD pass.
         if (isBloom) {
-            if (!custom) {
+            if (!custom && !this.module.isDynamicIslandLiquidGlassV2()) {
                 this.renderIslandBackground(animatedX, animatedY, animatedWidth, animatedHeight);
             }
             return;
@@ -161,8 +162,25 @@ public final class DynamicIslandElement implements IOverlayElement, IEventSubscr
     }
 
     public void renderIslandBackground(float x, float y, float width, float height) {
+        if (this.module.isDynamicIslandLiquidGlassV2()
+                && LiquidGlassV2Renderer.draw(
+                        x + 1, y + 1, width - 2, height - 2, 13,
+                        this.module.getDynamicIslandLiquidGlassV2Settings()
+                )) {
+            return;
+        }
+
         NVGRenderer.roundedRect(x + 1, y + 1, width - 2, height - 2, 13, NVGRenderer.BLUR_PAINT);
         NVGRenderer.roundedRect(x + 1, y + 1, width - 2, height - 2, 13, 0x80090909);
+    }
+
+    public static boolean isBackgroundVisible() {
+        if (mc.currentScreen instanceof DropdownClickGUI clickGUI
+                && (!clickGUI.isClosing() || clickGUI.getIslandSearchProgress() > 0.001F)) {
+            return true;
+        }
+
+        return !(ACTIVE_TRIGGERS.getFirst() instanceof CustomIslandTrigger);
     }
 
     private void renderClickGuiSearch(
@@ -215,12 +233,14 @@ public final class DynamicIslandElement implements IOverlayElement, IEventSubscr
         SEARCH_BOUNDS_HEIGHT = this.searchBaseHeight;
         SEARCH_BOUNDS_VISIBLE = true;
 
-        this.renderIslandBackground(
-                animatedX,
-                this.searchBaseY,
-                animatedWidth,
-                this.searchBaseHeight
-        );
+        if (!isBloom || !this.module.isDynamicIslandLiquidGlassV2()) {
+            this.renderIslandBackground(
+                    animatedX,
+                    this.searchBaseY,
+                    animatedWidth,
+                    this.searchBaseHeight
+            );
+        }
 
         if (isBloom || textAlpha <= 0) {
             return;

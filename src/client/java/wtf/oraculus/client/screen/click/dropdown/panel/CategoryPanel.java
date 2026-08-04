@@ -4,9 +4,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.input.KeyInput;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.visual.ClickGUIModule;
 import wtf.oraculus.client.renderer.NVGRenderer;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.screen.click.OraculusPanelComponent;
+import wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI;
 import wtf.oraculus.utility.misc.HoverUtility;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.ClientTheme;
@@ -60,14 +63,31 @@ public final class CategoryPanel extends OraculusPanelComponent {
         final float openAnimationValue = openAnimation.getValue();
         final float scissorHeight = Math.min(mc.getWindow().getScaledHeight() - y, totalHeight * openAnimationValue);
         final float scrollOffset = scroller.getAnimation().getValue();
+        final ClickGUIModule clickGUI = OraculusClient.getInstance().getModuleRepository().getModule(ClickGUIModule.class);
+        final boolean liquidGlass = clickGUI != null && clickGUI.isLiquidGlassV2();
+        final boolean bloomPass = DropdownClickGUI.isRenderingBloom();
+        final float glassHeight = Math.min(scissorHeight, totalHeight);
+        final boolean liquidGlassRendered = liquidGlass
+                && !bloomPass
+                && glassHeight > 0
+                && LiquidGlassV2Renderer.draw(
+                        x, y, width, glassHeight, 5,
+                        clickGUI.getLiquidGlassV2Settings(), openAnimationValue
+                );
+        final boolean renderNormalBackground = !liquidGlass || (!bloomPass && !liquidGlassRendered);
 
         NVGRenderer.globalAlpha(openAnimationValue);
+        DropdownClickGUI.setLiquidGlassBackgroundActive(liquidGlass && (bloomPass || liquidGlassRendered));
         NVGRenderer.scissor(x, y, width, scissorHeight, () -> {
             final float bottomRadius = visiblePanels.isEmpty() ? 5 : 0;
-            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, NVGRenderer.BLUR_PAINT);
             final boolean sigmaStyle = ColorUtility.getClientTheme().first.equals(ClientTheme.SIGMA.getColors().first);
             final int panelColor = sigmaStyle ? 0xeef7fbff : 0xd90f0f0f;
-            NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, panelColor);
+            if (renderNormalBackground) {
+                NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, panelColor);
+            } else if (liquidGlassRendered) {
+                NVGRenderer.roundedRectVarying(x, y + scrollOffset, width, height, 5, 5, bottomRadius, bottomRadius, panelColor);
+            }
             FontRepository.getFont("productsans-bold").drawString(category.getName(), x + 5, y + scrollOffset + 13, 9, -1);
             FontRepository.getFont("materialicons-outlined").drawString(category.getIcon(), x + width - 15.5F, y + scrollOffset + 15, 10, -1);
 
@@ -83,6 +103,7 @@ public final class CategoryPanel extends OraculusPanelComponent {
                 currentY[0] += panelHeight;
             }
         });
+        DropdownClickGUI.setLiquidGlassBackgroundActive(false);
         NVGRenderer.globalAlpha(1);
 
         scroller.onScroll(getMaxOffset(totalHeight));

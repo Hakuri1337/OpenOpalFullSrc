@@ -6,6 +6,7 @@ import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.DeprecatedModule;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.LiquidGlassV2Settings;
 import wtf.oraculus.client.feature.module.property.Property;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.MultipleBooleanProperty;
@@ -13,6 +14,7 @@ import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.event.impl.press.KeyPressEvent;
 import wtf.oraculus.event.impl.render.RenderBloomEvent;
@@ -27,50 +29,76 @@ import static wtf.oraculus.client.Constants.mc;
 
 public final class TabGUIModule extends Module {
 
+    private final LiquidGlassV2Settings liquidGlassV2 = new LiquidGlassV2Settings(
+            "tab-gui", "tab-gui-liquid-glass-v2", () -> true
+    );
+
     private int categoryIndex;
 
     private boolean categoryExpanded;
 
     public TabGUIModule() {
         super("Tab GUI", "A display for interacting with client features.", ModuleCategory.VISUAL);
+        this.addProperties(this.liquidGlassV2.getProperties());
     }
 
-    public void render() {
+    public void render(final boolean isBloom) {
         NVGTextRenderer font = FontRepository.getFont("productsans-medium");
         Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
 
         float x = 5, y = 40, width = 75, panelHeight = 16, border = 2;
-        renderPanel(x, y, width, panelHeight, ModuleCategory.VALUES.length);
+        final boolean renderCategoryBackground = renderPanel(
+                x, y, width, panelHeight, ModuleCategory.VALUES.length, isBloom
+        );
 
         for (int i = 0; i < ModuleCategory.VALUES.length; i++) {
             float yPos = y + (i * panelHeight);
             boolean isCurrent = (i == categoryIndex);
-            renderTab(x, yPos, width, panelHeight, i, ModuleCategory.VALUES.length, isCurrent, colors);
+            renderTab(
+                    x, yPos, width, panelHeight, i, ModuleCategory.VALUES.length,
+                    isCurrent, colors, renderCategoryBackground
+            );
             font.drawString(ModuleCategory.VALUES[i].getName(), x + 5, yPos + 11, 8.25F,
                     isCurrent ? -1 : ColorUtility.brighter(ColorUtility.MUTED_COLOR, 0.3F));
         }
 
         if (categoryExpanded) {
-            renderModules(font, colors, x + width + 7, y, width, panelHeight);
+            renderModules(font, colors, x + width + 7, y, width, panelHeight, isBloom);
         }
 
     }
 
-    private void renderPanel(float x, float y, float width, float panelHeight, int itemCount) {
+    private boolean renderPanel(
+            float x, float y, float width, float panelHeight, int itemCount, boolean isBloom
+    ) {
         float height = panelHeight * itemCount;
         float border = 2;
-        NVGRenderer.roundedRect(x - border, y - border, width + border * 2, height + border * 2, 5.5F, NVGRenderer.BLUR_PAINT);
-        NVGRenderer.roundedRect(x - border, y - border, width + border * 2, height + border * 2, 5.5F, 0x80090909);
+        final boolean liquidGlass = this.isLiquidGlassV2();
+        final boolean liquidGlassRendered = liquidGlass
+                && !isBloom
+                && LiquidGlassV2Renderer.draw(
+                        x - border, y - border, width + border * 2, height + border * 2, 5.5F,
+                        this.liquidGlassV2, 1
+                );
+        final boolean renderNormalBackground = !liquidGlass || (!isBloom && !liquidGlassRendered);
+        if (renderNormalBackground) {
+            NVGRenderer.roundedRect(x - border, y - border, width + border * 2, height + border * 2, 5.5F, NVGRenderer.BLUR_PAINT);
+            NVGRenderer.roundedRect(x - border, y - border, width + border * 2, height + border * 2, 5.5F, 0x80090909);
+        }
+        return renderNormalBackground;
     }
 
-    private void renderTab(float x, float y, float width, float height, int index, int total, boolean isCurrent, Pair<Integer, Integer> colors) {
+    private void renderTab(
+            float x, float y, float width, float height, int index, int total,
+            boolean isCurrent, Pair<Integer, Integer> colors, boolean renderNormalBackground
+    ) {
         boolean isFirst = (index == 0), isLast = (index == total - 1);
         float radius = 4;
 
-        if (isFirst || isLast) {
+        if (renderNormalBackground && (isFirst || isLast)) {
             NVGRenderer.roundedRectVarying(x, y, width, height, isFirst ? radius : 0, isFirst ? radius : 0, isLast ? radius : 0, isLast ? radius : 0, NVGRenderer.BLUR_PAINT);
             NVGRenderer.roundedRectVarying(x, y, width, height, isFirst ? radius : 0, isFirst ? radius : 0, isLast ? radius : 0, isLast ? radius : 0, 0x80090909);
-        } else {
+        } else if (renderNormalBackground) {
             NVGRenderer.rect(x, y, width, height, NVGRenderer.BLUR_PAINT);
             NVGRenderer.rect(x, y, width, height, 0x80090909);
         }
@@ -91,29 +119,40 @@ public final class TabGUIModule extends Module {
         }
     }
 
-    private void renderModules(NVGTextRenderer font, Pair<Integer, Integer> colors, float x, float y, float width, float panelHeight) {
+    private void renderModules(
+            NVGTextRenderer font, Pair<Integer, Integer> colors,
+            float x, float y, float width, float panelHeight, boolean isBloom
+    ) {
         ModuleCategory category = ModuleCategory.VALUES[categoryIndex];
         List<Module> modules = getVisibleModules(category);
         if (modules.isEmpty()) return;
 
         normalizeModuleIndex(category, modules);
 
-        renderPanel(x, y, width, panelHeight, modules.size());
+        final boolean renderModuleBackground = renderPanel(
+                x, y, width, panelHeight, modules.size(), isBloom
+        );
 
         for (int i = 0; i < modules.size(); i++) {
             float yPos = y + (i * panelHeight);
             boolean isCurrent = (i == category.getModuleIndex());
-            renderTab(x, yPos, width, panelHeight, i, modules.size(), isCurrent, colors);
+            renderTab(
+                    x, yPos, width, panelHeight, i, modules.size(),
+                    isCurrent, colors, renderModuleBackground
+            );
             font.drawString(modules.get(i).getName(), x + 5, yPos + 11, 8.25F,
                     isCurrent ? -1 : ColorUtility.brighter(ColorUtility.MUTED_COLOR, 0.3F));
 
             if (isCurrent && modules.get(i).isExpanded()) {
-                renderProperties(font, colors, x + width + 7, y, panelHeight, modules.get(i));
+                renderProperties(font, colors, x + width + 7, y, panelHeight, modules.get(i), isBloom);
             }
         }
     }
 
-    private void renderProperties(NVGTextRenderer font, Pair<Integer, Integer> colors, float x, float y, float panelHeight, Module module) {
+    private void renderProperties(
+            NVGTextRenderer font, Pair<Integer, Integer> colors,
+            float x, float y, float panelHeight, Module module, boolean isBloom
+    ) {
         List<Property<?>> properties = module.getPropertyList();
         if (properties.isEmpty()) return;
 
@@ -121,12 +160,22 @@ public final class TabGUIModule extends Module {
                 .mapToDouble(p -> font.getStringWidth(p.getName() + ": " + getPropertyValue(p), 8.25F))
                 .max().orElse(0);
 
-        renderPanel(x, y, (float) (maxLength + 12.5F), panelHeight, properties.size());
+        final float width = (float) (maxLength + 12.5F);
+        final boolean renderPropertyBackground = renderPanel(
+                x, y, width, panelHeight, properties.size(), isBloom
+        );
 
         for (int i = 0; i < properties.size(); i++) {
             float yPos = y + (i * panelHeight);
             boolean isCurrent = (i == module.getPropertyIndex());
-            renderTab(x, yPos, (float) (maxLength + 12.5F), panelHeight, i, properties.size(), isCurrent, Pair.of(ColorUtility.darker(colors.first, properties.get(i).isFocused() ? 0.35F : 0), ColorUtility.darker(colors.second, properties.get(i).isFocused() ? 0.35F : 0)));
+            renderTab(
+                    x, yPos, width, panelHeight, i, properties.size(), isCurrent,
+                    Pair.of(
+                            ColorUtility.darker(colors.first, properties.get(i).isFocused() ? 0.35F : 0),
+                            ColorUtility.darker(colors.second, properties.get(i).isFocused() ? 0.35F : 0)
+                    ),
+                    renderPropertyBackground
+            );
 
             String propertyName = properties.get(i).getName() + ": ";
             float textX = x + 5;
@@ -298,12 +347,20 @@ public final class TabGUIModule extends Module {
 
     @Subscribe
     public void onRenderScreen(final RenderScreenEvent event) {
-        render();
+        render(false);
     }
 
     @Subscribe
     public void onBloomRender(final RenderBloomEvent event) {
-        render();
+        render(true);
+    }
+
+    public boolean isLiquidGlassV2() {
+        return this.isEnabled() && this.liquidGlassV2.isEnabled();
+    }
+
+    public LiquidGlassV2Settings getLiquidGlassV2Settings() {
+        return this.liquidGlassV2;
     }
 
 }

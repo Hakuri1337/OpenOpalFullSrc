@@ -13,11 +13,15 @@ import net.minecraft.util.Colors;
 import net.minecraft.util.Identifier;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.LiquidGlassV2Settings;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
+import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
+import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.event.impl.render.RenderScreenEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
 import wtf.oraculus.utility.render.ColorUtility;
@@ -45,6 +49,9 @@ import static wtf.oraculus.client.Constants.mc;
 
 public final class PotionModule extends Module {
 
+    private static final NVGTextRenderer MODERN_NAME_FONT = FontRepository.getFont("productsans-semibold");
+    private static final NVGTextRenderer MODERN_SUB_FONT = FontRepository.getFont("productsans-regular");
+
     private final Map<RegistryEntry<StatusEffect>, Integer> potionMaxDurations = new HashMap<>();
     private List<StatusEffectInstance> currentEffects = new ArrayList<>();
 
@@ -55,10 +62,16 @@ public final class PotionModule extends Module {
     private final NumberProperty scale = new NumberProperty("Scale", 1, 0.5, 1.5, 0.01).id("scale");
     private final NumberProperty fontScale = new NumberProperty("Font scale", 1, 0.7, 1.5, 0.01).id("font-scale");
     private final BooleanProperty blur = new BooleanProperty("Blur", false).id("blur");
+    private final LiquidGlassV2Settings liquidGlassV2 = new LiquidGlassV2Settings(
+            "potion", "potion-liquid-glass-v2",
+            () -> this.isEnabled() && this.displayMode.is(DisplayMode.MODERN)
+    );
 
     public PotionModule() {
         super("Potion", "Displays active potion effects.", ModuleCategory.VISUAL);
-        this.addProperties(this.side, this.displayMode, this.offsetX, this.offsetY, this.scale, this.fontScale, this.blur);
+        this.addProperties(this.liquidGlassV2.after(
+                this.side, this.displayMode, this.offsetX, this.offsetY, this.scale, this.fontScale, this.blur
+        ));
     }
 
     private String getPotionName(final StatusEffectInstance effect) {
@@ -117,6 +130,11 @@ public final class PotionModule extends Module {
         final boolean isRight = this.side.is(Side.RIGHT);
         final boolean doBlur = this.blur.getValue();
 
+        if (this.displayMode.is(DisplayMode.MODERN)) {
+            this.renderModern(event.drawContext(), 0, doBlur, isRight, scale);
+            return;
+        }
+
         nvgSave(VG);
         nvgScale(VG, scale, scale);
         if (this.displayMode.is(DisplayMode.CIRCLE)) {
@@ -125,6 +143,105 @@ public final class PotionModule extends Module {
             this.renderBar(event.drawContext(), 0, doBlur, inverseScale, isRight);
         }
         nvgRestore(VG);
+    }
+
+    private void renderModern(
+            final DrawContext context,
+            int index,
+            final boolean doBlur,
+            final boolean isRight,
+            final float scale
+    ) {
+        final float screenWidth = mc.getWindow().getScaledWidth();
+        final float cardWidth = 144.0F * scale;
+        final float cardHeight = 36.0F * scale;
+        final float gap = 4.0F * scale;
+        final float radius = 7.0F * scale;
+        final float textScale = this.fontScale.getValue().floatValue() * scale;
+        final float subScale = Math.max(0.72F, this.fontScale.getValue().floatValue() * 0.76F) * scale;
+        final float iconBox = 25.0F * scale;
+        final float iconSize = 17.0F * scale;
+        final float offX = (this.offsetX.getValue().floatValue() + 6.0F) * scale;
+        final float offY = (this.offsetY.getValue().floatValue() + 6.0F) * scale;
+        final float baseX = isRight ? screenWidth - cardWidth - offX : offX;
+        final float baseY = offY;
+        final float step = cardHeight + gap;
+        final boolean liquidGlass = this.liquidGlassV2.isEnabled();
+
+        for (final StatusEffectInstance effect : this.currentEffects) {
+            final RegistryEntry<StatusEffect> type = effect.getEffectType();
+            final StatusEffect potion = type.value();
+            final int maximumDuration = this.potionMaxDurations.getOrDefault(type, Math.max(effect.getDuration(), 1));
+            final float ratio = Math.min((float) effect.getDuration() / maximumDuration, 1.0F);
+            final int themeColor = 0xFF000000 | potion.getColor();
+            final float textX = 38.0F * scale;
+            final float nameMaxWidth = cardWidth - textX - 18.0F * scale;
+            final String name = ellipsize(MODERN_NAME_FONT, this.getPotionName(effect), nameMaxWidth, textScale);
+            final String duration = ellipsize(MODERN_SUB_FONT, this.getDurationString(effect), nameMaxWidth, subScale);
+            final float x = baseX;
+            final float y = baseY + index * step;
+
+            final boolean liquidGlassRendered = liquidGlass && LiquidGlassV2Renderer.draw(
+                    x, y, cardWidth, cardHeight, radius,
+                    this.liquidGlassV2
+            );
+            final boolean renderNormalBackground = !liquidGlass || !liquidGlassRendered;
+            if (doBlur && renderNormalBackground) {
+                NVGRenderer.roundedRect(x, y, cardWidth, cardHeight, radius, NVGRenderer.BLUR_PAINT);
+            }
+            if (renderNormalBackground) {
+                NVGRenderer.roundedRect(x + 1.0F * scale, y + 2.0F * scale, cardWidth, cardHeight, radius, 0x23000000);
+                NVGRenderer.roundedRect(x, y, cardWidth, cardHeight, radius, 0xB80C0E14);
+            }
+
+            final int iconBackground = ColorUtility.applyOpacity(themeColor, 0.19F);
+            final int accent = ColorUtility.applyOpacity(themeColor, 0.86F);
+            NVGRenderer.roundedRect(x + 6.0F * scale, y + 5.5F * scale, iconBox, iconBox, 6.0F * scale, iconBackground);
+            NVGRenderer.roundedRect(x + cardWidth - 7.0F * scale, y + 6.0F * scale, 3.0F * scale, cardHeight - 12.0F * scale, 1.5F * scale, 0x1EFFFFFF);
+            NVGRenderer.roundedRect(
+                    x + cardWidth - 7.0F * scale,
+                    y + cardHeight - 6.0F * scale - (cardHeight - 12.0F * scale) * ratio,
+                    3.0F * scale,
+                    (cardHeight - 12.0F * scale) * ratio,
+                    1.5F * scale,
+                    accent
+            );
+
+            this.queuePotionIcon(context, type, x + 10.0F * scale, y + 9.5F * scale, iconSize);
+            MODERN_NAME_FONT.drawString(name, x + textX, y + 10.0F * scale, 9.0F * textScale, 0xF5F5F7FC);
+            MODERN_SUB_FONT.drawString(duration, x + textX, y + 24.0F * scale, 9.0F * subScale, 0xDCBCC4D2);
+            index++;
+        }
+    }
+
+    private void queuePotionIcon(
+            final DrawContext context,
+            final RegistryEntry<StatusEffect> type,
+            final float x,
+            final float y,
+            final float size
+    ) {
+        final Identifier texture = InGameHud.getEffectTexture(type);
+        MinecraftRenderer.addToQueue(() -> {
+            context.drawGuiTexture(
+                    RenderPipelines.GUI_TEXTURED, texture,
+                    (int) x, (int) y, (int) size, (int) size, Colors.WHITE
+            );
+        });
+    }
+
+    private static String ellipsize(
+            final NVGTextRenderer font,
+            final String text,
+            final float width,
+            final float size
+    ) {
+        if (font.getStringWidth(text, size) <= width) {
+            return text;
+        }
+        final String suffix = "...";
+        final float available = width - font.getStringWidth(suffix, size);
+        return available <= 0 ? suffix : font.trimStringToWidth(text, available, size) + suffix;
     }
 
     private void renderBar(
@@ -229,6 +346,10 @@ public final class PotionModule extends Module {
 
     private String getDurationString(final StatusEffectInstance effect) {
         return StatusEffectUtil.getDurationText(effect, 1.0F, mc.world.getTickManager().getTickRate()).getString();
+    }
+
+    public boolean isLiquidGlassV2() {
+        return this.liquidGlassV2.isEnabled();
     }
 
     private void queuePotionContent(
@@ -380,7 +501,8 @@ public final class PotionModule extends Module {
 
     public enum DisplayMode {
         BAR("Bar"),
-        CIRCLE("Circle");
+        CIRCLE("Circle"),
+        MODERN("Modern");
 
         private final String name;
 

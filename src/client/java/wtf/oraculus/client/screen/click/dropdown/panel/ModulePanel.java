@@ -61,16 +61,21 @@ public final class ModulePanel extends OraculusPanelComponent {
         final int baseColor = sigmaStyle ? 0xfff4f8fc : 0xff1e1e2d;
 
         final String font = module.isEnabled() ? "productsans-bold" : "productsans-medium";
+        final boolean liquidGlass = DropdownClickGUI.isLiquidGlassBackgroundActive();
 
         final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
         if (!lastModule) {
-            NVGRenderer.rect(x, y, width, height, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.rect(x, y, width, height, ColorUtility.applyOpacity(baseColor, 0.7F));
+            if (!liquidGlass) {
+                NVGRenderer.rect(x, y, width, height, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.rect(x, y, width, height, ColorUtility.applyOpacity(baseColor, 0.7F));
+            }
 
             NVGRenderer.rectGradient(x, y, width, height, ColorUtility.applyOpacity(colors.first, toggleAnimation.getValue()), ColorUtility.applyOpacity(colors.second, toggleAnimation.getValue()), 0);
         } else {
-            NVGRenderer.roundedRectVarying(x, y, width, height, 0, 0, 5, 5, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.roundedRectVarying(x, y, width, height, 0, 0, 5, 5, ColorUtility.applyOpacity(baseColor, 0.7F));
+            if (!liquidGlass) {
+                NVGRenderer.roundedRectVarying(x, y, width, height, 0, 0, 5, 5, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRectVarying(x, y, width, height, 0, 0, 5, 5, ColorUtility.applyOpacity(baseColor, 0.7F));
+            }
 
             NVGRenderer.roundedRectVaryingGradient(x, y, width, height, 0, 0, 5, 5, ColorUtility.applyOpacity(colors.first, toggleAnimation.getValue()), ColorUtility.applyOpacity(colors.second, toggleAnimation.getValue()), 0);
         }

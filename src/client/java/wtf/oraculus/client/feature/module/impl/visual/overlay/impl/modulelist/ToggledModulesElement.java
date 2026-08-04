@@ -5,6 +5,7 @@ import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.IOverlayElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
+import wtf.oraculus.client.feature.module.repository.ModuleRepository;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -22,16 +23,27 @@ public final class ToggledModulesElement implements IOverlayElement {
     }
 
     private List<ModuleElement> moduleList, visibleList;
+    private boolean initialized;
 
     public void initialize() {
-        Collection<Module> moduleList = OraculusClient.getInstance().getModuleRepository().getModules();
+        final ModuleRepository repository = OraculusClient.getInstance().getModuleRepository();
+        if (repository == null) {
+            return;
+        }
+
+        Collection<Module> moduleList = repository.getModules();
         this.moduleList = new ArrayList<>(moduleList.size());
         this.visibleList = new ArrayList<>(moduleList.size());
         moduleList.forEach(m -> this.moduleList.add(new ModuleElement(this.settings, m)));
+        this.initialized = true;
         this.markSortingDirty();
     }
 
     public float getTotalHeight() {
+        if (!this.ensureInitialized()) {
+            return 0;
+        }
+
         float height = 0;
         for (final ModuleElement element : this.visibleList) {
             height += ModuleElement.OFFSET * element.getHeightAnimation().getValue();
@@ -65,6 +77,10 @@ public final class ToggledModulesElement implements IOverlayElement {
     }
 
     private void renderPass(final DrawContext context, final boolean isBloom) {
+        if (!this.ensureInitialized()) {
+            return;
+        }
+
         if (this.sortingDirty) {
             this.tick();
             this.sort();
@@ -80,6 +96,10 @@ public final class ToggledModulesElement implements IOverlayElement {
 
     @Override
     public void tick() {
+        if (!this.ensureInitialized()) {
+            return;
+        }
+
         this.visibleList.clear();
 
         int index = 0;
@@ -93,6 +113,13 @@ public final class ToggledModulesElement implements IOverlayElement {
                 }
             }
         }
+    }
+
+    private boolean ensureInitialized() {
+        if (!this.initialized) {
+            this.initialize();
+        }
+        return this.initialized;
     }
 
     @Override

@@ -6,15 +6,20 @@ import wtf.oraculus.client.edition.EditionHooks;
 import wtf.oraculus.client.feature.helper.impl.render.ScaleProperty;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.visual.ClickGUIModule;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.client.ClientElements;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.lyrics.LyricsElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.modulelist.ToggledModulesElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications.NotificationsElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.targetinfo.TargetInfoElement;
+import wtf.oraculus.client.feature.module.impl.visual.PotionModule;
+import wtf.oraculus.client.feature.module.impl.visual.TabGUIModule;
 import wtf.oraculus.client.feature.module.property.impl.ColorProperty;
 import wtf.oraculus.client.feature.module.property.impl.GroupProperty;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
+import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.event.impl.client.PostClientInitializationEvent;
 import wtf.oraculus.event.impl.client.PropertyUpdateEvent;
 import wtf.oraculus.event.impl.game.PostGameTickEvent;
@@ -42,16 +47,25 @@ OverlayModule extends Module {
     private final BooleanProperty statusEffectOverlayEnabled = new BooleanProperty("Enabled", false);
     private final BooleanProperty scoreboardEnabled = new BooleanProperty("Enabled", true);
     private final BooleanProperty scoreboardTextShadow = new BooleanProperty("Text shadow", true).hideIf(() -> !scoreboardEnabled.getValue());
+    private final NumberProperty scoreboardCornerRadius = new NumberProperty("Corner Radius", 1.5, 0, 8, 0.25)
+            .hideIf(() -> !scoreboardEnabled.getValue()).id("scoreboard-corner-radius");
+    private final LiquidGlassV2Settings scoreboardLiquidGlassV2 = new LiquidGlassV2Settings(
+            "scoreboard", "scoreboard-liquid-glass-v2", scoreboardEnabled::getValue
+    );
     private final ScaleProperty scoreboardScale = ScaleProperty.newMinecraftElement();
     private final BooleanProperty bossbarEnabled = new BooleanProperty("Enabled", false);
 
     private final BooleanProperty dynamicIslandLeftAligned = new BooleanProperty("Left-aligned", false);
+    private final LiquidGlassV2Settings dynamicIslandLiquidGlassV2 = new LiquidGlassV2Settings(
+            "", "liquid-glass-v2", () -> true
+    );
 
     private final List<IOverlayElement> elements = new ArrayList<>();
 
     private final TargetInfoElement targetInfo;
     private final ToggledModulesElement toggledModules;
     private final NotificationsElement notifications;
+    private final LyricsElement lyrics;
 
     public OverlayModule() {
         super("Overlay", "Renders the clients display.", ModuleCategory.VISUAL);
@@ -67,10 +81,10 @@ OverlayModule extends Module {
                                 "Status effect overlay",
                                 statusEffectOverlayEnabled
                         ),
-                        new GroupProperty(
-                                "Scoreboard",
-                                scoreboardScale.get(), scoreboardEnabled, scoreboardTextShadow
-                        ),
+                        new GroupProperty("Scoreboard", scoreboardLiquidGlassV2.after(
+                                scoreboardScale.get(), scoreboardEnabled,
+                                scoreboardTextShadow, scoreboardCornerRadius
+                        )),
                         new GroupProperty(
                                 "Bossbar",
                                 bossbarEnabled
@@ -81,7 +95,10 @@ OverlayModule extends Module {
         this.targetInfo = this.register(new TargetInfoElement(this));
         this.toggledModules = this.register(new ToggledModulesElement(this));
         this.register(new ClientElements(this));
-        this.addProperties(new GroupProperty("Dynamic island", dynamicIslandLeftAligned));
+        this.lyrics = this.register(new LyricsElement(this));
+        this.addProperties(new GroupProperty(
+                "Dynamic island", dynamicIslandLiquidGlassV2.after(dynamicIslandLeftAligned)
+        ));
         this.notifications = this.register(new NotificationsElement(this));
 
         this.register(new DynamicIslandElement(this));
@@ -173,12 +190,51 @@ OverlayModule extends Module {
         return notifications;
     }
 
+    public LyricsElement getLyrics() {
+        return this.lyrics;
+    }
+
     public boolean isDynamicIslandLeftAligned() {
         return dynamicIslandLeftAligned.getValue();
     }
 
+    public boolean isDynamicIslandLiquidGlassV2() {
+        return this.dynamicIslandLiquidGlassV2.isEnabled();
+    }
+
+    public LiquidGlassV2Settings getDynamicIslandLiquidGlassV2Settings() {
+        return this.dynamicIslandLiquidGlassV2;
+    }
+
+    public boolean isAnyLiquidGlassV2() {
+        final PotionModule potion = OraculusClient.getInstance().getModuleRepository().getModule(PotionModule.class);
+        final ClickGUIModule clickGUI = OraculusClient.getInstance().getModuleRepository().getModule(ClickGUIModule.class);
+        final TabGUIModule tabGUI = OraculusClient.getInstance().getModuleRepository().getModule(TabGUIModule.class);
+        return this.isDynamicIslandLiquidGlassV2()
+                || this.isScoreboardLiquidGlassV2()
+                || (this.notifications != null && this.notifications.isLiquidGlassV2())
+                || (this.toggledModules != null && this.toggledModules.getSettings().isLiquidGlassV2())
+                || (this.targetInfo != null && this.targetInfo.getSettings().isLiquidGlassV2())
+                || (this.lyrics != null && this.lyrics.getSettings().isLiquidGlassV2())
+                || (clickGUI != null && clickGUI.isLiquidGlassV2())
+                || (tabGUI != null && tabGUI.isLiquidGlassV2())
+                || (potion != null && potion.isLiquidGlassV2());
+    }
+
     public boolean isScoreboardTextShadow() {
         return scoreboardEnabled.getValue() && scoreboardTextShadow.getValue();
+    }
+
+    public boolean isScoreboardLiquidGlassV2() {
+        return this.scoreboardLiquidGlassV2.isEnabled();
+    }
+
+    public LiquidGlassV2Settings getScoreboardLiquidGlassV2Settings() {
+        return this.scoreboardLiquidGlassV2;
+    }
+
+    public float getScoreboardCornerRadius() {
+        return this.scoreboardCornerRadius.getValue().floatValue();
     }
 
     public float getScoreboardScale() {

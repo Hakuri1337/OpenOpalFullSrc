@@ -9,6 +9,7 @@ import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.animation.Animation;
@@ -45,13 +46,15 @@ public final class ModuleElement implements Comparable<ModuleElement> {
 
 
         final float radius = 1.F;
+        final boolean liquidGlass = this.settings.isLiquidGlassV2();
         final boolean roundList = this.settings.isRoundList();
+        final boolean roundedBackground = roundList || liquidGlass;
         final float backgroundX = posX - 6.5F;
         final float backgroundY = posY;
         final float backgroundWidth = this.width + 6.5F;
         final float backgroundHeight = OFFSET;
-        final float backgroundRadius = roundList ? 3.F : 0;
-        final float radiusBottomLeft = !roundList
+        final float backgroundRadius = roundedBackground ? 3.F : 0;
+        final float radiusBottomLeft = !roundedBackground
                 ? 0
                 : Float.isNaN(nextWidth)
                 ? backgroundRadius
@@ -69,13 +72,30 @@ public final class ModuleElement implements Comparable<ModuleElement> {
         final float scaledBackgroundY = backgroundY * scale;
         final float scaledBackgroundWidth = backgroundWidth * scale;
         final float scaledBackgroundHeight = backgroundHeight * scale;
-        if (roundList) {
+        final float seamOverlap = index > 0
+                ? Math.min(
+                        scaledBackgroundHeight * 0.5F,
+                        scaledBackgroundHeight * this.settings.getLiquidGlassV2Settings().getEdgeWidth() * 0.5F
+                                + 0.75F * scale
+                )
+                : 0;
+        final boolean liquidGlassRendered = liquidGlass
+                && !isBloom
+                && LiquidGlassV2Renderer.drawVarying(
+                        scaledBackgroundX, scaledBackgroundY - seamOverlap,
+                        scaledBackgroundWidth, scaledBackgroundHeight + seamOverlap,
+                        0, 0, 0, radiusBottomLeft * scale,
+                        index == 0 ? 1 : 0, 1, 1, 1,
+                        this.settings.getLiquidGlassV2Settings(), 1
+                );
+        final boolean renderNormalBackground = !liquidGlass || (!isBloom && !liquidGlassRendered);
+        if (renderNormalBackground && roundedBackground) {
             NVGRenderer.roundedRectVarying(
                     scaledBackgroundX, scaledBackgroundY, scaledBackgroundWidth, scaledBackgroundHeight,
                     0, 0, 0, radiusBottomLeft * scale,
                     NVGRenderer.BLUR_PAINT
             );
-        } else {
+        } else if (renderNormalBackground) {
             NVGRenderer.rect(
                     scaledBackgroundX, scaledBackgroundY,
                     scaledBackgroundWidth, scaledBackgroundHeight, NVGRenderer.BLUR_PAINT
@@ -89,10 +109,10 @@ public final class ModuleElement implements Comparable<ModuleElement> {
                 0,
                 0,
                 () -> {
-                    if (this.settings.isBackgroundFade()) {
+                    if (renderNormalBackground && this.settings.isBackgroundFade()) {
                         final int backgroundFirstColor = ColorUtility.applyOpacity(this.settings.getBackgroundFirstColor(), 0.5F);
                         final int backgroundSecondColor = ColorUtility.applyOpacity(this.settings.getBackgroundSecondColor(), 0.5F);
-                        if (roundList) {
+                        if (roundedBackground) {
                             NVGRenderer.roundedRectVaryingGradient(
                                     backgroundX, backgroundY, backgroundWidth, backgroundHeight,
                                     0, 0, 0, radiusBottomLeft,
@@ -104,13 +124,13 @@ public final class ModuleElement implements Comparable<ModuleElement> {
                                     backgroundFirstColor, backgroundSecondColor, 0
                             );
                         }
-                    } else if (roundList) {
+                    } else if (renderNormalBackground && roundedBackground) {
                         NVGRenderer.roundedRectVarying(
                                 backgroundX, backgroundY, backgroundWidth, backgroundHeight,
                                 0, 0, 0, radiusBottomLeft,
                                 0x80090909
                         );
-                    } else {
+                    } else if (renderNormalBackground) {
                         NVGRenderer.rect(backgroundX, backgroundY, backgroundWidth, backgroundHeight, 0x80090909);
                     }
 

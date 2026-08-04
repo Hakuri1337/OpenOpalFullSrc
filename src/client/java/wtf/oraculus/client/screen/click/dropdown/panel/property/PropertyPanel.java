@@ -4,6 +4,7 @@ import net.minecraft.client.gui.DrawContext;
 import wtf.oraculus.client.feature.module.property.Property;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.screen.click.OraculusPanelComponent;
+import wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI;
 import wtf.oraculus.utility.render.ColorUtility;
 
 public abstract class PropertyPanel<T extends Property<?>> extends OraculusPanelComponent {
@@ -21,6 +22,9 @@ public abstract class PropertyPanel<T extends Property<?>> extends OraculusPanel
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        if (DropdownClickGUI.isLiquidGlassBackgroundActive()) {
+            return;
+        }
         if (lastProperty)
             NVGRenderer.roundedRectVarying(x, y, width, height, 0, 0, 5, 5, ColorUtility.applyOpacity(0xff000000, 0.25F));
         else

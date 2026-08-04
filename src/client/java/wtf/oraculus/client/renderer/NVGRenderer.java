@@ -208,6 +208,42 @@ public final class NVGRenderer {
         nvgClosePath(VG);
     }
 
+    public static void roundedRectOutlineGradient(
+            final float x,
+            final float y,
+            final float width,
+            final float height,
+            final float radius,
+            final float thickness,
+            final int color1,
+            final int color2,
+            final float angleDegrees
+    ) {
+        applyColor(color1, NVG_COLOR_1);
+        applyColor(color2, NVG_COLOR_2);
+
+        final float angleRadians = (float) Math.toRadians(angleDegrees);
+        final float dx = (float) Math.cos(angleRadians);
+        final float dy = (float) Math.sin(angleRadians);
+        nvgLinearGradient(
+                VG,
+                x + width * 0.5F - dx * width * 0.5F,
+                y + height * 0.5F - dy * height * 0.5F,
+                x + width * 0.5F + dx * width * 0.5F,
+                y + height * 0.5F + dy * height * 0.5F,
+                NVG_COLOR_1,
+                NVG_COLOR_2,
+                NVG_PAINT
+        );
+
+        nvgBeginPath(VG);
+        nvgStrokePaint(VG, NVG_PAINT);
+        nvgStrokeWidth(VG, thickness);
+        nvgRoundedRect(VG, x, y, width, height, radius);
+        nvgStroke(VG);
+        nvgClosePath(VG);
+    }
+
     private static final List<ScreenPosition> scissors = new ArrayList<>();
 
     public static void scissor(final float x, final float y, final float width, final float height, final Runnable content) {

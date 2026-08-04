@@ -2,6 +2,7 @@ package wtf.oraculus.client.feature.module.impl.visual.overlay.impl.modulelist;
 
 import wtf.oraculus.client.feature.helper.impl.render.ScaleProperty;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.LiquidGlassV2Settings;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.property.impl.ColorProperty;
 import wtf.oraculus.client.feature.module.property.impl.GroupProperty;
@@ -24,6 +25,7 @@ public final class ToggledSettings {
     private final ColorProperty backgroundSecondColor;
     private final BooleanProperty roundList;
     private final BooleanProperty vanillaFont;
+    private final LiquidGlassV2Settings liquidGlassV2;
     private final MultipleBooleanProperty visibleCategories;
     private final ModeProperty<BarMode> barMode;
 
@@ -41,9 +43,14 @@ public final class ToggledSettings {
         this.backgroundSecondColor = new ColorProperty("Background second color", 0xFF090909);
         this.roundList = new BooleanProperty("Round List", false);
         this.vanillaFont = new BooleanProperty("Vanilla Font", false);
+        this.liquidGlassV2 = new LiquidGlassV2Settings(
+                "module-list", "liquid-glass-v2", this.enabled::getValue
+        );
 
-        this.backgroundFirstColor.hideIf(() -> !this.backgroundFade.getValue());
-        this.backgroundSecondColor.hideIf(() -> !this.backgroundFade.getValue());
+        this.backgroundFade.hideIf(this.liquidGlassV2::isEnabled);
+        this.backgroundFirstColor.hideIf(() -> !this.backgroundFade.getValue() || this.liquidGlassV2.isEnabled());
+        this.backgroundSecondColor.hideIf(() -> !this.backgroundFade.getValue() || this.liquidGlassV2.isEnabled());
+        this.roundList.hideIf(this.liquidGlassV2::isEnabled);
 
         this.visibleCategories = new MultipleBooleanProperty("Visible categories",
                 Stream.of(ModuleCategory.VALUES)
@@ -51,15 +58,12 @@ public final class ToggledSettings {
                         .toArray(BooleanProperty[]::new)
         );
 
-        module.addProperties(
-                new GroupProperty(
-                        "Toggled modules",
-                        this.scale.get(), this.barMode, this.enabled, this.lowercase, this.showSuffix,
-                        this.backgroundFade, this.backgroundFirstColor, this.backgroundSecondColor,
-                        this.roundList, this.vanillaFont,
-                        this.noRenderModule, this.offsetScoreboard, this.visibleCategories
-                )
-        );
+        module.addProperties(new GroupProperty("Toggled modules", this.liquidGlassV2.after(
+                this.scale.get(), this.barMode, this.enabled, this.lowercase, this.showSuffix,
+                this.backgroundFade, this.backgroundFirstColor, this.backgroundSecondColor,
+                this.roundList, this.vanillaFont,
+                this.noRenderModule, this.offsetScoreboard, this.visibleCategories
+        )));
     }
 
     public float getScale() {
@@ -104,6 +108,14 @@ public final class ToggledSettings {
 
     public boolean isVanillaFont() {
         return this.vanillaFont.getValue();
+    }
+
+    public boolean isLiquidGlassV2() {
+        return this.liquidGlassV2.isEnabled();
+    }
+
+    public LiquidGlassV2Settings getLiquidGlassV2Settings() {
+        return this.liquidGlassV2;
     }
 
     public MultipleBooleanProperty getVisibleCategories() {

@@ -11,6 +11,7 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland
 import wtf.oraculus.client.notification.Notification;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.animation.Animation;
@@ -58,6 +59,10 @@ public final class NotificationsElement implements IOverlayElement, IslandTrigge
         return this.settings;
     }
 
+    public boolean isLiquidGlassV2() {
+        return this.settings.isLiquidGlassV2();
+    }
+
     @Override
     public void render(final DrawContext context, final float delta, boolean isBloom) {
         final List<Notification> notifications = OraculusClient.getInstance().getNotificationManager().getNotifications();
@@ -80,10 +85,10 @@ public final class NotificationsElement implements IOverlayElement, IslandTrigge
             return;
         }
 
-        this.renderLegacy(notifications);
+        this.renderLegacy(notifications, isBloom);
     }
 
-    private void renderLegacy(final List<Notification> notifications) {
+    private void renderLegacy(final List<Notification> notifications, final boolean isBloom) {
 
         final float padding = 3;
         final float height = 21;
@@ -121,8 +126,17 @@ public final class NotificationsElement implements IOverlayElement, IslandTrigge
             final float progress = (float) notification.getTime() / notification.getDuration();
             final int iconColor = notification.getType().getIconColor();
 
-            NVGRenderer.roundedRect(x, y, width, height, 4, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.roundedRect(x, y, width, height, 4, 0x80090909);
+            final boolean liquidGlass = this.settings.isLiquidGlassV2();
+            final boolean liquidGlassRendered = liquidGlass
+                    && !isBloom
+                    && LiquidGlassV2Renderer.draw(
+                            x, y, width, height, 4,
+                            this.settings.getLiquidGlassV2Settings()
+                    );
+            if (!liquidGlass || (!isBloom && !liquidGlassRendered)) {
+                NVGRenderer.roundedRect(x, y, width, height, 4, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRect(x, y, width, height, 4, 0x80090909);
+            }
 
             nvgShapeAntiAlias(VG, false);
             NVGRenderer.roundedRectVaryingGradient(x + 0.5F, y + height - 4, (width - 0.5F) * progress, 4, 0, 0, progress > 0.95F ? 4 : 0, 4, Color.BITMASK, ColorUtility.applyOpacity(iconColor, 0.25F), 90);
@@ -225,7 +239,7 @@ public final class NotificationsElement implements IOverlayElement, IslandTrigge
             );
             final float remaining = Math.max(0, Math.min(1,
                     1F - (float) notification.getTime() / Math.max(1, notification.getDuration())));
-            NVGRenderer.roundedRect(contentX, barY, barWidth, ISLAND_PROGRESS_HEIGHT, ISLAND_PROGRESS_HEIGHT / 2, 0xD0101114);
+            NVGRenderer.roundedRect(contentX, barY, barWidth, ISLAND_PROGRESS_HEIGHT, ISLAND_PROGRESS_HEIGHT / 2, 0x66000000);
             if (remaining > 0) {
                 NVGRenderer.roundedRectGradient(
                         contentX,

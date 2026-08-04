@@ -8,6 +8,7 @@ import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.client.screen.click.dropdown.panel.property.PropertyPanel;
 import wtf.oraculus.client.screen.click.dropdown.panel.property.PropertyProvider;
+import wtf.oraculus.client.screen.click.dropdown.DropdownClickGUI;
 import wtf.oraculus.utility.misc.HoverUtility;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.animation.Animation;
@@ -62,7 +63,9 @@ public final class GroupPropertyComponent extends PropertyPanel<GroupProperty> {
         final float cornerRadius = 4 * (1 - expandAnimation.getValue());
         final NVGTextRenderer font = FontRepository.getFont("productsans-bold");
 
-        NVGRenderer.roundedRect(adjustedX, adjustedY, adjustedWidth, adjustedHeight, cornerRadius, ColorUtility.applyOpacity(0xff000000, 0.2F));
+        if (!DropdownClickGUI.isLiquidGlassBackgroundActive()) {
+            NVGRenderer.roundedRect(adjustedX, adjustedY, adjustedWidth, adjustedHeight, cornerRadius, ColorUtility.applyOpacity(0xff000000, 0.2F));
+        }
         font.drawString(
                 getProperty().getName(),
                 adjustedX + (adjustedWidth - font.getStringWidth(getProperty().getName(), 7)) / 2,

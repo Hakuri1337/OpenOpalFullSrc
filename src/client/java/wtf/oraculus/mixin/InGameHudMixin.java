@@ -37,6 +37,7 @@ import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.repository.ModuleRepository;
 import wtf.oraculus.client.renderer.MinecraftRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.shader.ShaderFramebuffer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.event.EventDispatcher;
@@ -130,6 +131,7 @@ public abstract class InGameHudMixin {
     private void applyPostProcessing(final DrawContext context, final float tickDelta) {
         NVGTextRenderer.blockTextRendering = true;
         ShaderFramebuffer.applyBlurToFullScreen();
+        ShaderFramebuffer.applyLiquidGlassToFullScreen();
 
         final PostProcessingModule postProcessingModule = OraculusClient.getInstance().getModuleRepository().getModule(PostProcessingModule.class);
 
@@ -286,12 +288,28 @@ public abstract class InGameHudMixin {
         if (sbRectWidth == 0 || sbRectHeight == 0) {
             return;
         }
-        if (bloom) {
-            NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, 1.5F, ColorUtility.applyOpacity(Colors.BLACK, 0.75F));
+        final OverlayModule overlayModule = OraculusClient.getInstance().getModuleRepository().getModule(OverlayModule.class);
+        final float cornerRadius = overlayModule.getScoreboardCornerRadius();
+        if (overlayModule.isScoreboardLiquidGlassV2()) {
+            if (!bloom && !LiquidGlassV2Renderer.draw(
+                    sbRectX, sbRectY, sbRectWidth, sbRectHeight, cornerRadius,
+                    overlayModule.getScoreboardLiquidGlassV2Settings()
+            )) {
+                oraculus$renderDefaultScoreboardRect();
+            }
+        } else if (bloom) {
+            NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, cornerRadius, ColorUtility.applyOpacity(Colors.BLACK, 0.75F));
         } else {
-            NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, 1.5F, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, 1.5F, mc.options.getTextBackgroundColor(0.4F));
+            oraculus$renderDefaultScoreboardRect();
         }
+    }
+
+    @Unique
+    private void oraculus$renderDefaultScoreboardRect() {
+        final float cornerRadius = OraculusClient.getInstance().getModuleRepository()
+                .getModule(OverlayModule.class).getScoreboardCornerRadius();
+        NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, cornerRadius, NVGRenderer.BLUR_PAINT);
+        NVGRenderer.roundedRect(sbRectX, sbRectY, sbRectWidth, sbRectHeight, cornerRadius, mc.options.getTextBackgroundColor(0.4F));
     }
 
     @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)

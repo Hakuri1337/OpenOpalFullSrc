@@ -29,6 +29,7 @@ import wtf.oraculus.client.Constants;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.helper.impl.LocalDataWatch;
 import wtf.oraculus.client.feature.helper.impl.server.impl.HypixelServer;
+import wtf.oraculus.client.feature.module.impl.combat.TeamsModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.target.CurrentTarget;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.IOverlayElement;
@@ -41,6 +42,7 @@ import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.client.renderer.image.NVGImageRenderer;
 import wtf.oraculus.client.renderer.repository.FontRepository;
 import wtf.oraculus.client.renderer.repository.ImageRepository;
+import wtf.oraculus.client.renderer.shader.LiquidGlassV2Renderer;
 import wtf.oraculus.client.renderer.text.NVGTextRenderer;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
 import wtf.oraculus.utility.render.ColorUtility;
@@ -71,6 +73,7 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
     private static final NVGTextRenderer MEDIUM_FONT = FontRepository.getFont("productsans-medium");
     private static final NVGTextRenderer ICON_FONT = FontRepository.getFont("materialicons-regular");
     private static final DecimalFormat HEALTH_DF = new DecimalFormat("0.#");
+    private static final float RVN_VANILLA_TEXT_SCALE = 1.44F;
     public static final Map<String, AtomicInteger> playerHealthMap = new HashMap<>();
 
     private final Animation targetAnimation, healthAnimation;
@@ -87,6 +90,10 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
         this.targetAnimation.setValue(1);
 
         this.healthAnimation = new Animation(Easing.EASE_OUT_EXPO, 1000);
+    }
+
+    public TargetInfoSettings getSettings() {
+        return this.settings;
     }
 
     public void initialize() {
@@ -150,6 +157,16 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
             return;
         }
 
+        if (this.settings.isRvn()) {
+            this.renderRvn(context, target, isBloom);
+            return;
+        }
+
+        if (this.settings.isLiquidGlassMode()) {
+            this.renderLiquidGlass(target, delta, isBloom);
+            return;
+        }
+
         final float scale = this.settings.getScale();
 
         final float targetNameSize = 6;
@@ -189,12 +206,22 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
 
 
         final String finalTargetName = targetName;
+        final boolean liquidGlass = this.settings.isLiquidGlassV2();
+        final boolean liquidGlassRendered = liquidGlass
+                && !isBloom
+                && LiquidGlassV2Renderer.draw(
+                        x, y, width * scale, height * scale, 4 * scale,
+                        this.settings.getLiquidGlassV2Settings(), targetAnimationProgress
+                );
+        final boolean renderNormalBackground = !liquidGlass || (!isBloom && !liquidGlassRendered);
         NVGRenderer.scale(scale, x, y, 0, 0, () -> {
             NVGRenderer.globalAlpha(targetAnimationProgress);
 
             // background
-            NVGRenderer.roundedRect(x, y, width, height, 4, NVGRenderer.BLUR_PAINT);
-            NVGRenderer.roundedRect(x, y, width, height, 4, 0x80090909);
+            if (renderNormalBackground) {
+                NVGRenderer.roundedRect(x, y, width, height, 4, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRect(x, y, width, height, 4, 0x80090909);
+            }
 
             // name
             BOLD_FONT.drawString(finalTargetName, x + padding + headOffset, y + 9, targetNameSize, targetNameColor);
@@ -528,7 +555,7 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
 
             final float barX = x + contentXOffset;
             final float barY = y + healthBarY;
-            NVGRenderer.roundedRect(barX, barY, contentWidth, healthBarHeight, radius, 0xCC050505);
+            NVGRenderer.roundedRect(barX, barY, contentWidth, healthBarHeight, radius, 0x66000000);
             if (displayHealthPercent > 0.01F) {
                 NVGRenderer.roundedRectGradient(
                         barX, barY, contentWidth * displayHealthPercent, healthBarHeight, radius,
@@ -562,6 +589,334 @@ public final class TargetInfoElement implements IOverlayElement, IslandTrigger {
                 GlStateManager._disableBlend();
             });
         }
+    }
+
+    private void renderRvn(final DrawContext context, final Target target, final boolean isBloom) {
+        final LivingEntity entity = target.entity;
+        final float scale = this.settings.getScale();
+        final float padding = 4;
+        final float textSize = 12.8F;
+        final float height = 38;
+        final boolean vanillaFont = this.settings.isRvnFontVanilla();
+        final float textGap = vanillaFont ? 5 : 3;
+
+        final String teamLetter = this.getRvnTeamLetter(entity);
+        final String targetName = entity.getName().getString();
+        final String healthText = String.format(
+                Locale.ROOT,
+                entity.getAbsorptionAmount() > 0.05F ? "%.1f+%.1f" : "%.1f",
+                (double) entity.getHealth(), (double) entity.getAbsorptionAmount()
+        );
+        final String direction = this.getRvnDirection(entity);
+        final float teamWidth = this.getRvnTextWidth(teamLetter, textSize, vanillaFont, true);
+        final float nameWidth = this.getRvnTextWidth(targetName, textSize, vanillaFont, true);
+        final float healthWidth = this.getRvnTextWidth(healthText, textSize, vanillaFont, false);
+        final float directionWidth = this.getRvnTextWidth(direction, textSize, vanillaFont, false);
+        final float width = padding * 2 + teamWidth + nameWidth + healthWidth + directionWidth + textGap * 3;
+
+        final ScreenPositionProperty screenPosition = this.settings.getScreenPosition();
+        screenPosition.setWidth(width * scale);
+        screenPosition.setHeight(height * scale);
+        final float x = screenPosition.getScaledX();
+        final float y = screenPosition.getScaledY();
+
+        final float absorption = entity.getAbsorptionAmount();
+        final float health = Math.max(0, entity.getHealth() + absorption);
+        final float maximumHealth = Math.max(1, entity.getMaxHealth() + absorption);
+        final float healthPercent = MathHelper.clamp(health / maximumHealth, 0, 1);
+        this.healthAnimation.run(healthPercent);
+        final float animatedHealthPercent = MathHelper.clamp(this.healthAnimation.getValue(), 0, 1);
+        final float targetAnimationProgress = this.targetAnimation.getValue();
+        final Pair<Integer, Integer> theme = ColorUtility.getClientTheme();
+        final int teamColor = this.getRvnTeamColor(entity);
+        final int healthColor = this.settings.isRvnHealthBarTheme()
+                ? theme.first
+                : this.getRvnHealthColor(health);
+        final int oldHealthColor = this.settings.isRvnHealthBarTheme()
+                ? ColorUtility.darker(theme.first, 0.55F)
+                : ColorUtility.darker(this.getRvnHealthColor(animatedHealthPercent * maximumHealth), 0.45F);
+        final float radius = this.settings.isRvnLiquidGlassV2()
+                ? this.settings.getRvnLiquidGlassCornerRadius()
+                : this.settings.getRvnBackgroundCornerRadius();
+
+        final boolean liquidGlass = this.settings.isRvnLiquidGlassV2();
+        final boolean liquidGlassRendered = liquidGlass
+                && !isBloom
+                && LiquidGlassV2Renderer.draw(
+                        x, y, width * scale, height * scale, radius * scale,
+                        this.settings.getRvnLiquidGlassV2Settings(), targetAnimationProgress
+                );
+        final boolean renderNormalBackground = !liquidGlass || (!isBloom && !liquidGlassRendered);
+
+        NVGRenderer.scale(scale, x, y, 0, 0, () -> {
+            NVGRenderer.globalAlpha(targetAnimationProgress);
+
+            if (this.settings.isRvnOutline()) {
+                NVGRenderer.roundedRectOutlineGradient(
+                        x, y, width, height, radius, 1.25F,
+                        theme.first, theme.second, 0
+                );
+            }
+
+            if (renderNormalBackground) {
+                NVGRenderer.roundedRect(x, y, width, height, radius, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRect(x, y, width, height, radius, ColorUtility.applyOpacity(Colors.BLACK, 0.1F));
+            }
+
+            final float teamX = x + padding;
+            final float nameX = teamX + teamWidth + textGap;
+            final float healthX = nameX + nameWidth + textGap;
+            final float directionX = healthX + healthWidth + textGap;
+            if (!vanillaFont) {
+                final float textY = y + 16;
+                BOLD_FONT.drawString(teamLetter, teamX, textY, textSize, teamColor);
+                BOLD_FONT.drawString(targetName, nameX, textY, textSize, teamColor);
+                MEDIUM_FONT.drawString(healthText, healthX, textY, textSize, this.getRvnHealthColor(health));
+                MEDIUM_FONT.drawString(direction, directionX, textY, textSize, 0xFFFFFFFF);
+            }
+
+            final float barX = x + padding;
+            final float barY = y + height - 13;
+            final float barWidth = width - padding * 2;
+            final float barHeight = 5;
+            final float barRadius = Math.min(2.5F, radius);
+            NVGRenderer.roundedRect(barX, barY, barWidth, barHeight, barRadius, 0x66333333);
+
+            if (animatedHealthPercent > healthPercent + 0.001F) {
+                if (this.settings.isRvnHealthBarTheme()) {
+                    NVGRenderer.roundedRectGradient(
+                            barX, barY, barWidth * animatedHealthPercent, barHeight, barRadius,
+                            oldHealthColor, ColorUtility.darker(theme.second, 0.55F), 0
+                    );
+                } else {
+                    NVGRenderer.roundedRect(
+                            barX, barY, barWidth * animatedHealthPercent, barHeight, barRadius, oldHealthColor
+                    );
+                }
+            }
+
+            if (healthPercent > 0.001F) {
+                if (this.settings.isRvnHealthBarTheme()) {
+                    NVGRenderer.roundedRectGradient(
+                            barX, barY, barWidth * healthPercent, barHeight, barRadius,
+                            theme.first, theme.second, 0
+                    );
+                } else {
+                    NVGRenderer.roundedRect(
+                            barX, barY, barWidth * healthPercent, barHeight, barRadius, healthColor
+                    );
+                }
+            }
+
+            NVGRenderer.globalAlpha(1);
+        });
+
+        if (vanillaFont && !isBloom && targetAnimationProgress >= 0.01F) {
+            final float finalTeamX = x + padding;
+            final float finalNameX = finalTeamX + teamWidth + textGap;
+            final float finalHealthX = finalNameX + nameWidth + textGap;
+            final float finalDirectionX = finalHealthX + healthWidth + textGap;
+            final int animatedTeamColor = ColorUtility.applyOpacity(teamColor, targetAnimationProgress);
+            final int animatedHealthColor = ColorUtility.applyOpacity(this.getRvnHealthColor(health), targetAnimationProgress);
+            final int animatedWhite = ColorUtility.applyOpacity(Colors.WHITE, targetAnimationProgress);
+            MinecraftRenderer.addToQueue(() -> {
+                context.getMatrices().pushMatrix();
+                context.getMatrices().scale(scale * RVN_VANILLA_TEXT_SCALE, scale * RVN_VANILLA_TEXT_SCALE);
+                final int textY = (int) ((y + 7) / (scale * RVN_VANILLA_TEXT_SCALE));
+                context.drawText(mc.textRenderer, Text.literal(teamLetter), (int) (finalTeamX / (scale * RVN_VANILLA_TEXT_SCALE)), textY, animatedTeamColor, false);
+                context.drawText(mc.textRenderer, Text.literal(targetName), (int) (finalNameX / (scale * RVN_VANILLA_TEXT_SCALE)), textY, animatedTeamColor, false);
+                context.drawText(mc.textRenderer, Text.literal(healthText), (int) (finalHealthX / (scale * RVN_VANILLA_TEXT_SCALE)), textY, animatedHealthColor, false);
+                context.drawText(mc.textRenderer, Text.literal(direction), (int) (finalDirectionX / (scale * RVN_VANILLA_TEXT_SCALE)), textY, animatedWhite, false);
+                context.getMatrices().popMatrix();
+            });
+        }
+    }
+
+    private void renderLiquidGlass(final Target target, final float delta, final boolean isBloom) {
+        final LivingEntity entity = target.entity;
+        final float scale = this.settings.getScale();
+        final float padding = 4;
+        final float headSize = 26;
+        final float contentGap = 5;
+        final float nameSize = 7;
+        final float height = 34;
+        final float radius = 10;
+        final String name = Formatting.WHITE + target.getFormattedName();
+        final float nameWidth = BOLD_FONT.getStringWidth(name, nameSize);
+        final float contentWidth = Math.max(48, nameWidth + 2);
+        final float width = padding + headSize + contentGap + contentWidth + padding + 1;
+
+        final ScreenPositionProperty screenPosition = this.settings.getScreenPosition();
+        final float x = screenPosition.getScaledX();
+        final float y = screenPosition.getScaledY();
+        screenPosition.setWidth(width * scale);
+        screenPosition.setHeight(height * scale);
+
+        final float absorption = entity.getAbsorptionAmount();
+        final float health = Math.max(0, entity.getHealth() + absorption);
+        final float maximumHealth = Math.max(1, entity.getMaxHealth() + absorption);
+        final float healthPercent = MathHelper.clamp(health / maximumHealth, 0, 1);
+        this.healthAnimation.run(healthPercent);
+        final float animatedHealthPercent = MathHelper.clamp(this.healthAnimation.getValue(), 0, 1);
+        final float targetAnimationProgress = this.targetAnimation.getValue();
+        final Pair<Integer, Integer> theme = ColorUtility.getClientTheme();
+
+        final float contentX = x + padding + headSize + contentGap;
+        final float barY = y + 22.5F;
+        final float barHeight = 3;
+        final float rawDamageProgress = entity.maxHurtTime <= 0
+                ? 0
+                : MathHelper.clamp((entity.hurtTime - delta) / entity.maxHurtTime, 0, 1);
+        final float damageProgress = rawDamageProgress * rawDamageProgress;
+        final boolean liquidGlassV2 = this.settings.isLiquidGlassModeV2();
+        final boolean liquidGlassV2Rendered = liquidGlassV2
+                && !isBloom
+                && LiquidGlassV2Renderer.draw(
+                        x, y, width * scale, height * scale, radius * scale,
+                        this.settings.getLiquidGlassModeV2Settings(), targetAnimationProgress
+                );
+        final boolean renderNormalBackground = !liquidGlassV2 || (!isBloom && !liquidGlassV2Rendered);
+
+        NVGRenderer.scale(scale, x, y, 0, 0, () -> {
+            NVGRenderer.globalAlpha(targetAnimationProgress);
+
+            if (renderNormalBackground) {
+                NVGRenderer.roundedRect(x, y, width, height, radius, NVGRenderer.BLUR_PAINT);
+                NVGRenderer.roundedRect(x, y, width, height, radius, 0x2EFFFFFF);
+                NVGRenderer.roundedRectOutline(
+                        x + 0.35F, y + 0.35F, width - 0.7F, height - 0.7F,
+                        radius - 0.35F, 0.65F, 0xA6FFFFFF
+                );
+            }
+
+            if (!isBloom) {
+                final int skinTextureGlId = this.getSkinTextureGlId(entity);
+                if (skinTextureGlId != -1) {
+                    this.renderLiquidGlassHead(
+                            target, x + padding, y + padding, headSize, 5, skinTextureGlId
+                    );
+                } else {
+                    NVGRenderer.roundedRect(x + padding, y + padding, headSize, headSize, 5, 0x66FFFFFF);
+                }
+
+                if (damageProgress > 0.001F) {
+                    NVGRenderer.roundedRect(
+                            x + padding, y + padding, headSize, headSize, 5,
+                            ColorUtility.applyOpacity(0xFFFF3434, damageProgress * 0.48F)
+                    );
+                    NVGRenderer.roundedRectOutline(
+                            x + padding, y + padding, headSize, headSize, 5,
+                            0.75F + damageProgress * 2.25F,
+                            ColorUtility.applyOpacity(0xFFFF3C3C, damageProgress * 0.95F)
+                    );
+                }
+            }
+
+            BOLD_FONT.drawString(name, contentX, y + 13, nameSize, Colors.WHITE);
+            NVGRenderer.rect(contentX, barY, contentWidth, barHeight, 0x66565A5D);
+            if (animatedHealthPercent > 0.001F) {
+                NVGRenderer.rectGradient(
+                        contentX, barY, contentWidth * animatedHealthPercent, barHeight,
+                        theme.first, theme.second, 0
+                );
+            }
+
+            NVGRenderer.globalAlpha(1);
+        });
+
+        if (this.currentTarget != null) {
+            this.lastTarget = this.currentTarget;
+        }
+    }
+
+    private void renderLiquidGlassHead(
+            final Target target,
+            final float x,
+            final float y,
+            final float size,
+            final float radius,
+            final int skinTextureGlId
+    ) {
+        final int skinTextureHandle = target.getSkinTextureHandle(skinTextureGlId);
+        this.renderLiquidGlassSkinLayer(skinTextureHandle, x, y, size, radius, 8, 8);
+        this.renderLiquidGlassSkinLayer(skinTextureHandle, x, y, size, radius, 40, 8);
+    }
+
+    private void renderLiquidGlassSkinLayer(
+            final int skinTextureHandle,
+            final float x,
+            final float y,
+            final float size,
+            final float radius,
+            final int sourceX,
+            final int sourceY
+    ) {
+        final float skinScale = size / 8.F;
+        nvgBeginPath(VG);
+        nvgImagePattern(
+                VG, x - sourceX * skinScale, y - sourceY * skinScale,
+                64 * skinScale, 64 * skinScale, 0, skinTextureHandle, 1, NVGRenderer.NVG_PAINT
+        );
+        nvgFillPaint(VG, NVGRenderer.NVG_PAINT);
+        nvgRoundedRect(VG, x, y, size, size, radius);
+        nvgFill(VG);
+        nvgClosePath(VG);
+    }
+
+    private float getRvnTextWidth(final String text, final float size, final boolean vanillaFont, final boolean bold) {
+        if (!vanillaFont) {
+            return (bold ? BOLD_FONT : MEDIUM_FONT).getStringWidth(text, size);
+        }
+
+        // TextRenderer.getWidth can bake glyphs and upload textures. Rvn is also
+        // rendered during the bloom pass, where that upload is illegal. Keep the
+        // layout deterministic without touching the Minecraft font renderer here.
+        float width = 0;
+        for (int index = 0; index < text.length(); index++) {
+            final char character = text.charAt(index);
+            width += character > 0xFF
+                    ? 8.5F
+                    : switch (character) {
+                case ' ', '.', ':', 'i', 'l', 'I', '!', '|' -> 3.0F;
+                case 'W', 'M', '@', '#' -> 7.0F;
+                default -> 6.0F;
+            };
+        }
+        return width * RVN_VANILLA_TEXT_SCALE;
+    }
+
+    private String getRvnTeamLetter(final LivingEntity entity) {
+        String team = TeamsModule.getTeam(entity);
+        if ((team == null || team.isBlank()) && entity.getScoreboardTeam() != null) {
+            team = entity.getScoreboardTeam().getName();
+        }
+        return team == null || team.isBlank()
+                ? "?"
+                : team.substring(0, 1).toUpperCase(Locale.ROOT);
+    }
+
+    private int getRvnTeamColor(final LivingEntity entity) {
+        return 0xFF000000 | (entity.getTeamColorValue() & 0x00FFFFFF);
+    }
+
+    private String getRvnDirection(final LivingEntity entity) {
+        final int direction = Math.floorMod(Math.round(MathHelper.wrapDegrees(entity.getYaw()) / 90F), 4);
+        return switch (direction) {
+            case 0 -> "S";
+            case 1 -> "W";
+            case 2 -> "N";
+            default -> "E";
+        };
+    }
+
+    private int getRvnHealthColor(final float health) {
+        if (health <= 8) {
+            return 0xFFE53232;
+        }
+        if (health <= 16) {
+            return 0xFFFFD447;
+        }
+        return 0xFF35DD5B;
     }
 
     private void renderGayHead(

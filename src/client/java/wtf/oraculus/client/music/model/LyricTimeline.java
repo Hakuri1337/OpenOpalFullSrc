@@ -37,7 +37,25 @@ public final class LyricTimeline {
     }
 
     public Line lineAt(final long positionMillis) {
-        if (lines.isEmpty()) return null;
+        final int index = this.indexAt(positionMillis);
+        return index < 0 ? null : this.lines.get(index);
+    }
+
+    public Context contextAt(final long positionMillis) {
+        final int index = this.indexAt(positionMillis);
+        if (index < 0) {
+            return new Context(null, null, this.lines.isEmpty() ? null : this.lines.getFirst());
+        }
+
+        return new Context(
+                index > 0 ? this.lines.get(index - 1) : null,
+                this.lines.get(index),
+                index + 1 < this.lines.size() ? this.lines.get(index + 1) : null
+        );
+    }
+
+    private int indexAt(final long positionMillis) {
+        if (lines.isEmpty()) return -1;
         int low = 0;
         int high = lines.size() - 1;
         int result = -1;
@@ -50,7 +68,7 @@ public final class LyricTimeline {
                 high = middle - 1;
             }
         }
-        return result < 0 ? null : lines.get(result);
+        return result;
     }
 
     private static Map<Long, String> parseLines(final String raw) {
@@ -78,5 +96,8 @@ public final class LyricTimeline {
     }
 
     public record Line(long timeMillis, String text, String translated) {
+    }
+
+    public record Context(Line previous, Line current, Line next) {
     }
 }

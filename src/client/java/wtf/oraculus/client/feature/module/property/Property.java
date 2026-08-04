@@ -68,6 +68,27 @@ public class Property<T> {
         return id;
     }
 
+    public final boolean matchesIdentifier(final String identifier) {
+        final String normalizedIdentifier = normalizeIdentifier(identifier);
+        return normalizeIdentifier(this.id).equals(normalizedIdentifier)
+                || normalizeIdentifier(this.name).equals(normalizedIdentifier);
+    }
+
+    private static String normalizeIdentifier(final String identifier) {
+        if (identifier == null) {
+            return "";
+        }
+
+        final StringBuilder normalized = new StringBuilder(identifier.length());
+        for (int index = 0; index < identifier.length(); index++) {
+            final char character = identifier.charAt(index);
+            if (Character.isLetterOrDigit(character)) {
+                normalized.append(Character.toLowerCase(character));
+            }
+        }
+        return normalized.toString();
+    }
+
     @SuppressWarnings("unchecked")
     public final <R extends Property<T>> R id(String id) {
         this.id = id;
