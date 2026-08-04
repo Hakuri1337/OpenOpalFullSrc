@@ -3,6 +3,8 @@ package wtf.oraculus.client.feature.module;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import wtf.oraculus.client.OraculusClient;
+import wtf.oraculus.client.auth.RuntimeAccessGate;
+import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.client.binding.IBindable;
 import wtf.oraculus.client.feature.helper.impl.render.ScreenPositionManager;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
@@ -62,10 +64,16 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
         if (this.enabled == enabled) {
             return;
         }
+        if (enabled) {
+            RuntimeAccessGate.require(RuntimeDomain.MODULE_ENABLE);
+        }
         final ModuleToggleEvent event = new ModuleToggleEvent(this, enabled);
         EventDispatcher.dispatch(event);
         if (event.isCancelled()) {
             return;
+        }
+        if (enabled) {
+            RuntimeAccessGate.require(RuntimeDomain.MODULE_ENABLE);
         }
         this.enabled = enabled;
         if (enabled) {
@@ -124,7 +132,7 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
     }
 
     public final boolean isEnabled() {
-        return enabled;
+        return enabled && RuntimeAccessGate.allowsHotPath();
     }
 
     public final boolean isVisible() {
@@ -206,7 +214,7 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
 
     @Override
     public final boolean isHandlingEvents() {
-        return enabled;
+        return isEnabled();
     }
 
 }

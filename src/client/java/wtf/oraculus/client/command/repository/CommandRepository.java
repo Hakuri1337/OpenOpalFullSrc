@@ -1,21 +1,27 @@
 package wtf.oraculus.client.command.repository;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestions;
 import net.minecraft.command.CommandSource;
+import wtf.oraculus.client.auth.RuntimeAccessGate;
+import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.client.command.Command;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static wtf.oraculus.client.Constants.mc;
 
 public final class CommandRepository {
 
-    public static final CommandDispatcher<CommandSource> DISPATCHER = new CommandDispatcher<>();
-    public static final List<Command> COMMANDS = new ArrayList<>();
+    private static final CommandDispatcher<CommandSource> DISPATCHER = new CommandDispatcher<>();
+    private static final List<Command> COMMANDS = new ArrayList<>();
 
     private CommandRepository(final Builder builder) {
         for (Command command : builder.commands) {
@@ -32,11 +38,23 @@ public final class CommandRepository {
     }
 
     public static void dispatch(final String message) throws CommandSyntaxException {
+        RuntimeAccessGate.require(RuntimeDomain.COMMAND_EXECUTE);
         DISPATCHER.execute(message, mc.getNetworkHandler().getCommandSource());
     }
 
+    public static ParseResults<CommandSource> parse(final StringReader reader) {
+        RuntimeAccessGate.require(RuntimeDomain.COMMAND_EXECUTE);
+        return DISPATCHER.parse(reader, mc.getNetworkHandler().getCommandSource());
+    }
+
+    public static CompletableFuture<Suggestions> getCompletionSuggestions(
+            final ParseResults<CommandSource> parse, final int cursor) {
+        RuntimeAccessGate.require(RuntimeDomain.COMMAND_EXECUTE);
+        return DISPATCHER.getCompletionSuggestions(parse, cursor);
+    }
+
     public List<Command> getCommands() {
-        return COMMANDS;
+        return List.copyOf(COMMANDS);
     }
 
     public static Builder builder() {

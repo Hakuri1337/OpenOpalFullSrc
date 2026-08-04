@@ -249,6 +249,7 @@ class AuthService {
     this.hwidPepper = secret(keyDir, 'hwid-pepper');
     this.ipPepper = secret(keyDir, 'ip-pepper');
     this.passwordPepper = secret(keyDir, 'password-pepper');
+    this.entitlementSigner = entitlementSigner(keyDir);
   }
 
   ready() {
@@ -300,11 +301,11 @@ class AuthService {
     this.audit(null, user.id, 'SELF_REGISTER', true, remoteIp, 'tier=FREE', requestId);
     if (edition === 'BETA') {
       if (this.betaPublicAccess().enabled) {
-        return this.issueSession(user, hwidHash, 'BETA', clientVersion, buildId, launcherVersion, remoteIp, requestId);
+        return this.issueSession(user, hwidHash, fingerprint, 'BETA', clientVersion, buildId, launcherVersion, remoteIp, requestId);
       }
       return { Ok: true, Message: '注册成功，当前账号为 Free，Beta 需要管理员开通', Account: accountView(user) };
     }
-    return this.issueSession(user, hwidHash, 'FREE', clientVersion, buildId, launcherVersion, remoteIp, requestId);
+    return this.issueSession(user, hwidHash, fingerprint, 'FREE', clientVersion, buildId, launcherVersion, remoteIp, requestId);
   }
 
   login(request, remoteIp, requestId) {
@@ -345,7 +346,7 @@ class AuthService {
       this.audit(user.id, user.id, 'CLIENT_LOGIN', false, remoteIp, 'hwid_mismatch', requestId);
       return error('HWID_MISMATCH', '当前设备与账号绑定设备不一致');
     }
-    return this.issueSession(user, hwidHash, edition, clientVersion, buildId, launcherVersion, remoteIp, requestId);
+    return this.issueSession(user, hwidHash, fingerprint, edition, clientVersion, buildId, launcherVersion, remoteIp, requestId);
   }
 
   refresh(request, remoteIp, requestId) {
@@ -393,7 +394,10 @@ class AuthService {
       return error('SESSION_REVOKED', '刷新令牌已被使用，会话已撤销');
     }
     this.audit(user.id, user.id, 'TOKEN_REFRESH', true, remoteIp, null, requestId);
-    return successSession(this.clientAccountView(user, edition), access, refresh, accessExpiresAt, refreshExpiresAt);
+    const account = this.clientAccountView(user, edition);
+    return successSession(account, access, refresh, accessExpiresAt, refreshExpiresAt,
+      this.entitlementProof(user, account, fingerprint, edition, clientVersion, buildId,
+        access, timestamp, accessExpiresAt, refreshExpiresAt));
   }
 
   heartbeat(accessToken, remoteIp, requestId) {
@@ -684,7 +688,7 @@ class AuthService {
     return created;
   }
 
-  issueSession(user, hwidHash, edition, clientVersion, buildId, launcherVersion, remoteIp, requestId) {
+  issueSession(user, hwidHash, fingerprint, edition, clientVersion, buildId, launcherVersion, remoteIp, requestId) {
     const access = randomToken(); const refresh = randomToken(); const timestamp = now();
     const accessExpiresAt = timestamp + this.config.AccessTokenMinutes * 60;
     const refreshExpiresAt = timestamp + this.config.RefreshTokenDays * 86400;
@@ -695,7 +699,34 @@ class AuthService {
       createdAtUtc: timestamp, lastSeenAtUtc: timestamp, revokedAtUtc: null, revokeReason: null
     }));
     this.audit(user.id, user.id, 'CLIENT_LOGIN', true, remoteIp, `edition=${edition}`, requestId);
-    return successSession(this.clientAccountView(user, edition), access, refresh, accessExpiresAt, refreshExpiresAt);
+    const account = this.clientAccountView(user, edition);
+    return successSession(account, access, refresh, accessExpiresAt, refreshExpiresAt,
+      this.entitlementProof(user, account, fingerprint, edition, clientVersion, buildId,
+        access, timestamp, accessExpiresAt, refreshExpiresAt));
+  }
+
+  entitlementProof(user, account, fingerprint, edition, clientVersion, buildId,
+                   accessToken, issuedAt, accessExpiresAt, refreshExpiresAt) {
+    const claims = {
+      version: 1,
+      keyId: this.entitlementSigner.keyId,
+      subject: user.id,
+      username: account.username,
+      edition: upper(edition),
+      tier: account.tier,
+      clientVersion: text(clientVersion),
+      buildId: text(buildId),
+      deviceFingerprintHash: sha256(fingerprint),
+      accessTokenHash: sha256(accessToken),
+      issuedAt,
+      accessExpiresAt,
+      refreshExpiresAt,
+      betaExpiresAt: account.betaExpiresAt == null ? null : account.betaExpiresAt
+    };
+    const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+    const signature = crypto.sign(null, Buffer.from(payload, 'ascii'), this.entitlementSigner.privateKey)
+      .toString('base64url');
+    return `${payload}.${signature}`;
   }
 
   clientSession(accessToken) {
@@ -1046,6 +1077,39 @@ function secret(directory, name) {
   fs.writeFileSync(file, value, { mode: 0o600 });
   return value;
 }
+function entitlementSigner(directory) {
+  const privatePath = path.join(directory, 'entitlement-ed25519-private.pem');
+  const publicPath = path.join(directory, 'entitlement-ed25519-public.der');
+  let privateKey;
+  if (fs.existsSync(privatePath)) {
+    privateKey = crypto.createPrivateKey(fs.readFileSync(privatePath));
+  } else {
+    const generated = crypto.generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'der' }
+    });
+    const temporary = `${privatePath}.new`;
+    fs.writeFileSync(temporary, generated.privateKey, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporary, privatePath);
+    privateKey = crypto.createPrivateKey(generated.privateKey);
+    if (!fs.existsSync(publicPath)) fs.writeFileSync(publicPath, generated.publicKey, { mode: 0o644 });
+  }
+  fs.chmodSync(privatePath, 0o600);
+  const publicKey = crypto.createPublicKey(privateKey);
+  const publicDer = publicKey.export({ type: 'spki', format: 'der' });
+  if (fs.existsSync(publicPath)) {
+    const existing = fs.readFileSync(publicPath);
+    if (!existing.equals(publicDer)) throw new Error(`entitlement public key does not match ${privatePath}`);
+  } else {
+    fs.writeFileSync(publicPath, publicDer, { mode: 0o644 });
+  }
+  return {
+    privateKey,
+    publicKey,
+    keyId: crypto.createHash('sha256').update(publicDer).digest('base64url').slice(0, 16),
+    publicDer
+  };
+}
 function text(value) { return value == null ? '' : String(value); }
 function normalizeUsername(value) { return text(value).trim().toUpperCase(); }
 function validUsername(value) { return /^[A-Za-z0-9_]{3,24}$/.test(text(value)); }
@@ -1077,9 +1141,18 @@ function accountView(user, overrides) {
     passwordChangedAt: user.passwordChangedAtUtc, hwidChangedAt: user.hwidChangedAtUtc,
     forcePasswordChange: Boolean(user.forcePasswordChange) };
 }
-function successSession(account, access, refresh, accessExpiresAt, refreshExpiresAt) {
+function successSession(account, access, refresh, accessExpiresAt, refreshExpiresAt, entitlementProof) {
   return { Ok: true, Message: '登录成功', AccessToken: access, RefreshToken: refresh,
-    AccessExpiresAt: accessExpiresAt, RefreshExpiresAt: refreshExpiresAt, Account: account };
+    AccessExpiresAt: accessExpiresAt, RefreshExpiresAt: refreshExpiresAt, Account: account,
+    EntitlementProof: entitlementProof || '' };
+}
+function verifiedEntitlementClaims(proof, publicKey) {
+  const parts = text(proof).split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error('entitlement proof format is invalid');
+  const signature = Buffer.from(parts[1], 'base64url');
+  if (!crypto.verify(null, Buffer.from(parts[0], 'ascii'), publicKey, signature))
+    throw new Error('entitlement proof signature is invalid');
+  return JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
 }
 function revokeAll(data, userId, reason) {
   for (const session of data.sessions) if (session.userId === userId && !session.revokedAtUtc) { session.revokedAtUtc = now(); session.revokeReason = reason; }
@@ -1520,6 +1593,23 @@ function selfTest() {
       throw new Error('launcher version rejection self-test failed');
     const registered = auth.register({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-register');
     if (!registered.Ok || !registered.AccessToken || !registered.RefreshToken) throw new Error('registration self-test failed');
+    const registeredClaims = verifiedEntitlementClaims(registered.EntitlementProof, auth.entitlementSigner.publicKey);
+    if (registeredClaims.version !== 1 || registeredClaims.keyId !== auth.entitlementSigner.keyId
+      || registeredClaims.subject !== registered.Account.id || registeredClaims.username !== registered.Account.username
+      || registeredClaims.edition !== 'FREE' || registeredClaims.clientVersion !== 'b6'
+      || registeredClaims.buildId !== 'b6-free' || registeredClaims.deviceFingerprintHash !== sha256(fingerprint)
+      || registeredClaims.accessTokenHash !== sha256(registered.AccessToken)
+      || registeredClaims.accessExpiresAt !== registered.AccessExpiresAt
+      || registeredClaims.refreshExpiresAt !== registered.RefreshExpiresAt)
+      throw new Error('registration entitlement claims self-test failed');
+    const proofParts = registered.EntitlementProof.split('.');
+    let tamperedProofRejected = false;
+    try {
+      const tamperedPayload = `${proofParts[0][0] === 'A' ? 'B' : 'A'}${proofParts[0].slice(1)}`;
+      verifiedEntitlementClaims(`${tamperedPayload}.${proofParts[1]}`, auth.entitlementSigner.publicKey);
+    }
+    catch { tamperedProofRejected = true; }
+    if (!tamperedProofRejected) throw new Error('tampered entitlement proof self-test failed');
     const clientOnly = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free' }, '127.0.0.1', 'self-client-only-login');
     if (!clientOnly.Ok || !auth.heartbeat(clientOnly.AccessToken, '127.0.0.1', 'self-client-only-heartbeat').Ok)
       throw new Error('client-only version gate self-test failed');
@@ -1566,6 +1656,11 @@ function selfTest() {
     if (!auth.heartbeat(registered.AccessToken, '127.0.0.1', 'self-heartbeat').Ok) throw new Error('heartbeat self-test failed');
     const refreshed = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-refresh');
     if (!refreshed.Ok || refreshed.RefreshToken === registered.RefreshToken) throw new Error('refresh self-test failed');
+    const refreshedClaims = verifiedEntitlementClaims(refreshed.EntitlementProof, auth.entitlementSigner.publicKey);
+    if (refreshedClaims.accessTokenHash !== sha256(refreshed.AccessToken)
+      || refreshedClaims.deviceFingerprintHash !== sha256(fingerprint)
+      || refreshedClaims.accessExpiresAt !== refreshed.AccessExpiresAt)
+      throw new Error('refresh entitlement claims self-test failed');
     const replay = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-replay');
     if (replay.Ok || auth.heartbeat(refreshed.AccessToken, '127.0.0.1', 'self-heartbeat-2').Ok) throw new Error('refresh replay self-test failed');
     const beta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b6', buildId: 'b6-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-beta');

@@ -7,6 +7,8 @@ import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 import wtf.oraculus.client.auth.AuthService;
+import wtf.oraculus.client.auth.RuntimeAccessGate;
+import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.JoinWorldEvent;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
@@ -60,6 +62,7 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
     }
 
     public void start() {
+        RuntimeAccessGate.require(RuntimeDomain.NETWORK_START);
         if (!this.running.compareAndSet(false, true)) return;
         this.status = "正在连接";
         this.executor.execute(this::streamLoop);
@@ -84,6 +87,10 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
     }
 
     public void reconnect() {
+        if (!RuntimeAccessGate.allowsHotPath()) {
+            this.stop();
+            return;
+        }
         if (!this.running.get()) {
             this.start();
             return;
@@ -100,6 +107,7 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
     }
 
     public CompletableFuture<Boolean> sendMessage(final String content) {
+        if (!RuntimeAccessGate.allowsHotPath()) return CompletableFuture.completedFuture(false);
         final String token = this.auth.ircAccessToken();
         if (!this.connected.get() || token.isBlank()) return CompletableFuture.completedFuture(false);
         final JsonObject payload = new JsonObject();
@@ -131,7 +139,7 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
 
     @Subscribe
     public void onPreGameTick(final PreGameTickEvent event) {
-        if (!this.running.get() || !this.connected.get()) return;
+        if (!RuntimeAccessGate.allowsHotPath() || !this.running.get() || !this.connected.get()) return;
         if (++this.presenceTick >= 100) {
             this.presenceTick = 0;
             this.publishPresence();
@@ -149,7 +157,7 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
     }
 
     private void streamLoop() {
-        while (this.running.get()) {
+        while (this.running.get() && RuntimeAccessGate.allowsHotPath()) {
             final String token = this.auth.ircAccessToken();
             if (token.isBlank()) {
                 this.waitBeforeReconnect();
@@ -261,7 +269,7 @@ public final class IrcService implements AutoCloseable, IEventSubscriber {
     }
 
     private void publishPresence() {
-        if (!this.running.get() || !this.connected.get()) return;
+        if (!RuntimeAccessGate.allowsHotPath() || !this.running.get() || !this.connected.get()) return;
         final UUID uuid = mc.getSession().getUuidOrNull();
         if (uuid == null) return;
         final JsonObject payload = new JsonObject();

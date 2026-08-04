@@ -44,4 +44,5 @@ public final class MoveInputEvent {
     public void setSneak(boolean sneak) {
         this.sneak = sneak;
     }
+
 }

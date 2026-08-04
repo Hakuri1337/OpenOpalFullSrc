@@ -3,6 +3,10 @@ package wtf.oraculus.client.auth;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import nhcm.bytecodevm.sdk.annotation.Virtualize;
+import nhcm.bytecodevm.sdk.annotation.config.VMOptions;
+import nhcm.bytecodevm.sdk.enums.Toggle;
+import nhcm.bytecodevm.sdk.enums.VMStructure;
 import wtf.oraculus.client.ReleaseInfo;
 import wtf.oraculus.client.edition.EditionBuildInfo;
 
@@ -64,6 +68,12 @@ public final class AuthApiClient {
         return send("auth/logout", new JsonObject(), accessToken);
     }
 
+    @Virtualize(vm = @VMOptions(
+            structure = VMStructure.THREADED_DIRECT,
+            encrypt = Toggle.ENABLED,
+            shuffle = Toggle.DISABLED,
+            obfuscate = Toggle.ENABLED
+    ))
     private JsonObject commonDeviceRequest(final DeviceFingerprintProvider.Fingerprint fingerprint) {
         final JsonObject body = new JsonObject();
         body.addProperty("deviceFingerprint", fingerprint.value());
@@ -108,10 +118,12 @@ public final class AuthApiClient {
                     number(json, "AccessExpiresAt"),
                     number(json, "RefreshExpiresAt"),
                     string(json, "requestId"),
+                    account == null ? "" : string(account, "id"),
                     account == null ? "" : string(account, "username"),
                     account == null ? "" : string(account, "tier"),
                     account == null ? null : nullableNumber(account, "betaExpiresAt"),
                     account == null ? "" : string(account, "hwidQuality"),
+                    string(json, "EntitlementProof"),
                     response.statusCode()
             );
         } catch (Exception exception) {
@@ -159,10 +171,12 @@ public final class AuthApiClient {
             long accessExpiresAt,
             long refreshExpiresAt,
             String requestId,
+            String accountId,
             String username,
             String tier,
             Long betaExpiresAt,
             String hwidQuality,
+            String entitlementProof,
             int statusCode
     ) {
     }

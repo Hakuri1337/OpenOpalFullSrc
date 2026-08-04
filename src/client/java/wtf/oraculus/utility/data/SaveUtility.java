@@ -3,6 +3,8 @@ package wtf.oraculus.utility.data;
 import com.google.gson.*;
 import com.ibm.icu.impl.Pair;
 import wtf.oraculus.client.OraculusClient;
+import wtf.oraculus.client.auth.RuntimeAccessGate;
+import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.client.binding.BindingService;
 import wtf.oraculus.client.binding.IBindable;
 import wtf.oraculus.client.binding.type.InputType;
@@ -113,6 +115,7 @@ public final class SaveUtility {
     }
 
     public static void loadBindings() {
+        RuntimeAccessGate.require(RuntimeDomain.CONFIG_APPLY);
         final File file = new File(DIRECTORY, "bindings.json");
         if (!file.exists()) {
             return;
@@ -177,6 +180,7 @@ public final class SaveUtility {
     }
 
     public static boolean loadConfigFile(final String name) {
+        RuntimeAccessGate.require(RuntimeDomain.CONFIG_APPLY);
         final String normalizedName = sanitizeConfigName(name);
         if (normalizedName.isEmpty()) {
             return false;
@@ -263,6 +267,7 @@ public final class SaveUtility {
     }
 
     private static boolean applyConfig(final String jsonString, final String configName) {
+        RuntimeAccessGate.require(RuntimeDomain.CONFIG_APPLY);
         try {
             final JsonElement rootElement = JsonParser.parseString(jsonString);
             if (!rootElement.isJsonArray()) {

@@ -16,8 +16,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec2f;
 import wtf.oraculus.client.OraculusClient;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.impl.Heypixel3Velocity;
 import wtf.oraculus.client.feature.module.impl.movement.noslow.NoSlowModule;
 import wtf.oraculus.client.feature.module.impl.utility.disabler.DisablerModule;
 import wtf.oraculus.client.feature.module.impl.utility.disabler.impl.HeypixelDisabler;
@@ -84,36 +82,11 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         return stack.contains(DataComponentTypes.FOOD) || stack.getItem() instanceof PotionItem;
     }
 
-    private boolean isVelocityDelaying() {
-        VelocityModule velocityModule = OraculusClient.getInstance().getModuleRepository().getModule(VelocityModule.class);
-        if (velocityModule != null && velocityModule.isEnabled()) {
-            if (velocityModule.getActiveMode() instanceof Heypixel3Velocity heypixelVelocity) {
-                return heypixelVelocity.isDelaying();
-            }
-        }
-        return false;
-    }
-
-    private boolean isVelocityQueueing() {
-        VelocityModule velocityModule = OraculusClient.getInstance().getModuleRepository().getModule(VelocityModule.class);
-        if (velocityModule != null && velocityModule.isEnabled()) {
-            if (velocityModule.getActiveMode() instanceof Heypixel3Velocity heypixelVelocity) {
-                return heypixelVelocity.hasQueuedPackets();
-            }
-        }
-        return false;
-    }
-
     private boolean isBlocked() {
         if (mc.player == null) return false;
         
         // Both hands holding slowing items
         if (isSlowingUse(mc.player.getMainHandStack()) && isSlowingUse(mc.player.getOffHandStack())) {
-            return true;
-        }
-
-        // Velocity module check
-        if (isVelocityDelaying() || isVelocityQueueing()) {
             return true;
         }
 
@@ -514,12 +487,6 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
             return;
         }
 
-        if (this.step != Step.NONE && (isVelocityDelaying() || isVelocityQueueing())) {
-            this.lockUseUntilRelease = false;
-            abort(this.step != Step.USING);
-            return;
-        }
-
         if (isBlocked()) {
             if (this.step != Step.NONE) {
                 abort(true);
@@ -706,7 +673,6 @@ public final class NoC0FNoSlow extends ModuleMode<NoSlowModule> {
         }
 
         Packet<?> packet = event.getPacket();
-
         if (packet instanceof PlayerPositionLookS2CPacket) {
             OraculusClient.getInstance().getNotificationManager()
                     .builder(NotificationType.WARN)

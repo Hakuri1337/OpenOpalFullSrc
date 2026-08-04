@@ -118,6 +118,11 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
 
         if (event.isCancelled()) {
             ci.cancel();
+        } else if (event.getPacket() != packet) {
+            ci.cancel();
+            @SuppressWarnings("rawtypes")
+            final Packet replacement = event.getPacket();
+            replacement.apply(listener);
         }
     }
 

@@ -25,7 +25,7 @@ https://auth.hakuri.tech/api/v1/
 - `/user/*`
 - `/admin/*`
 
-客户端版本、启动器版本、构建 ID、Free/Beta 权限、HWID、访问令牌、刷新令牌轮换和刷新令牌重放撤销逻辑均由 `node-server/server.js` 实现。`launcherVersion` 为可选字段：提供时仅校验启动器版本（当前允许 `v0.9.21`）；未提供时改为校验 `edition + clientVersion + buildId`。
+客户端版本、启动器版本、构建 ID、Free/Beta 权限、HWID、访问令牌、刷新令牌轮换和刷新令牌重放撤销逻辑均由 `node-server/server.js` 实现。成功会话附带 Ed25519 签名的 `EntitlementProof`，客户端必须验证其账号、版本、设备和令牌绑定。`launcherVersion` 为可选字段：提供时仅校验启动器版本（当前允许 `v0.9.21`）；未提供时改为校验 `edition + clientVersion + buildId`。
 
 ## 管理权限
 
@@ -93,5 +93,8 @@ sudo bash install.sh
 /var/lib/oraculus-auth/oraculus-auth.json
 /var/lib/oraculus-auth/keys/
 ```
+
+`keys/` 同时包含 HWID/IP/密码 pepper 与 entitlement Ed25519 私钥。私钥丢失或被替换后，
+已发布客户端将无法验证新签发的会话，因此密钥轮换必须作为显式客户端版本迁移处理。
 
 JSON 数据和 `keys/` 缺少任意一方都会导致现有密码、HWID 或会话数据无法正确验证。

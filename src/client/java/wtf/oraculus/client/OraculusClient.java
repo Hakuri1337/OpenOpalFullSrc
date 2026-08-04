@@ -3,6 +3,8 @@ package wtf.oraculus.client;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import wtf.oraculus.client.auth.AuthBootstrap;
 import wtf.oraculus.client.auth.AuthService;
+import wtf.oraculus.client.auth.ModuleBootPolicy;
+import wtf.oraculus.client.auth.RuntimePermit;
 import wtf.oraculus.client.binding.repository.BindRepository;
 import wtf.oraculus.client.edition.EditionModuleCatalog;
 import wtf.oraculus.client.edition.EditionHooks;
@@ -31,7 +33,6 @@ import wtf.oraculus.client.feature.helper.impl.render.ScreenPositionManager;
 import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.impl.movement.*;
 import wtf.oraculus.client.feature.module.impl.movement.clipper.ClipperModule;
 import wtf.oraculus.client.feature.module.impl.movement.flight.FlightModule;
@@ -100,7 +101,8 @@ public final class OraculusClient {
         AuthBootstrap.initialize(this);
     }
 
-    public synchronized void runAuthenticatedInitializations() {
+    public synchronized void runAuthenticatedInitializations(final RuntimePermit permit) {
+        final RuntimePermit acceptedPermit = ModuleBootPolicy.requireRuntimeStart(permit);
         if (!this.bootstrapInitialization) {
             this.runBootstrapInitializations();
         }
@@ -118,7 +120,7 @@ public final class OraculusClient {
         }
 
         if (this.moduleRepository == null) {
-            this.moduleRepository = ModuleRepository.fromModules(EditionModuleCatalog.createModules());
+            this.moduleRepository = ModuleRepository.fromModules(EditionModuleCatalog.createModules(acceptedPermit));
         }
 
         SaveUtility.loadBindings();
@@ -160,6 +162,15 @@ public final class OraculusClient {
     }
 
     @Deprecated
+    public synchronized void runAuthenticatedInitializations() {
+        final AuthService authService = AuthBootstrap.getService();
+        if (authService == null) {
+            throw new SecurityException("Authentication has not been initialized");
+        }
+        authService.resumeAuthenticatedRuntime();
+    }
+
+    @Deprecated
     public void runPostInitializations() {
         this.runAuthenticatedInitializations();
     }
@@ -174,11 +185,9 @@ public final class OraculusClient {
         }
         try (SaveUtility.AutoSaveScope ignored = SaveUtility.suppressAutoSave()) {
             for (final var module : this.moduleRepository.getModules()) {
-                if (module.isEnabled()) {
-                    try {
-                        module.setEnabled(false);
-                    } catch (RuntimeException ignoredFailure) {
-                    }
+                try {
+                    module.setEnabled(false);
+                } catch (RuntimeException ignoredFailure) {
                 }
             }
         }

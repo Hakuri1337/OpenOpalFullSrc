@@ -52,9 +52,6 @@ public final class EditionConfigCompatibility {
         if (moduleId.equals("overlay")) {
             return isUnsupportedTheme(getPropertyValue(module, "theme"));
         }
-        if (moduleId.equals("antikb")) {
-            return isUnsupportedVelocityMode(mode);
-        }
         return false;
     }
 
@@ -184,17 +181,6 @@ public final class EditionConfigCompatibility {
         }
         final String value = normalize(String.valueOf(theme));
         return value.equals("sigma") || value.equals("sigmastyle");
-    }
-
-    private static boolean isUnsupportedVelocityMode(final Object mode) {
-        if (mode instanceof Number number) {
-            // Current Free modes end at JumpReset (ordinal 4). Older Beta
-            // configurations may contain removed or Beta-only mode ordinals.
-            return number.intValue() > 4;
-        }
-        final String value = normalize(String.valueOf(mode));
-        return value.equals("attackreduce") || value.equals("noxz")
-                || value.equals("hypixelreduce") || value.equals("reduce") || value.equals("intave");
     }
 
     private static Object getPropertyValue(final JsonObject module, final String propertyName) {

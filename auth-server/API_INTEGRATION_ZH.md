@@ -86,9 +86,74 @@
   "RefreshToken": "一次性刷新令牌",
   "AccessExpiresAt": 1785250600,
   "RefreshExpiresAt": 1785854800,
+  "EntitlementProof": "base64url(payload).base64url(ed25519Signature)",
   "Account": {}
 }
 ```
+
+`EntitlementProof` 仅在成功签发 AccessToken 的登录、注册或刷新响应中出现。只返回
+`Ok=true`、但没有签发 AccessToken 的注册响应不会包含 Proof，也不能据此启动客户端运行时。
+
+Proof 使用以下紧凑格式：
+
+```text
+base64url(UTF-8 JSON claims).base64url(Ed25519 signature)
+```
+
+签名输入不是解码后的 JSON，而是第一段 Base64URL 文本本身的 ASCII 字节。两段均使用
+RFC 4648 Base64URL 字母表且不带 `=` padding；Ed25519 签名解码后固定为 64 字节。
+
+当前生产验证材料：
+
+```text
+keyId: Bf3yBGht-SsN9Hvi
+algorithm: Ed25519
+publicKeyFormat: X.509 SubjectPublicKeyInfo DER
+publicKeyBase64: MCowBQYDK2VwAyEAy/fEZHAN9u1e/iPCZMjwJ8Ra3TPS7449CESmOKgrueE=
+```
+
+第一段解码后的 claims 结构如下：
+
+```json
+{
+  "version": 1,
+  "keyId": "Bf3yBGht-SsN9Hvi",
+  "subject": "账号 ID",
+  "username": "example_user",
+  "edition": "BETA",
+  "tier": "BETA",
+  "clientVersion": "b6",
+  "buildId": "b6-beta",
+  "deviceFingerprintHash": "标准 Base64 编码的 SHA-256",
+  "accessTokenHash": "标准 Base64 编码的 SHA-256",
+  "issuedAt": 1785250000,
+  "accessExpiresAt": 1785250600,
+  "refreshExpiresAt": 1785854800,
+  "betaExpiresAt": 1785854800
+}
+```
+
+`deviceFingerprintHash` 和 `accessTokenHash` 是对原始 UTF-8 字符串计算 SHA-256 后的标准
+Base64，不是 Base64URL。`betaExpiresAt` 在 Free 会话中为 `null`；限时 Beta 公益会话必须
+与响应 `Account.betaExpiresAt` 完全一致。
+
+客户端必须按以下顺序进行 fail-closed 校验：
+
+1. Proof 总长度不得超过 16 KiB，确认恰好有两段合法 Base64URL；解码后 payload 不得为空或超过 8 KiB，签名必须为 64 字节。
+2. 根据 `keyId` 选择内置公钥，并对第一段 Base64URL 文本的 ASCII 字节验证 Ed25519 签名。
+3. 严格解析 claims 类型；`version`、时间字段必须是整数，字符串字段不得用其他 JSON 类型替代。
+4. 核对 `subject/username/tier/betaExpiresAt` 与响应 Account，核对 `edition/clientVersion/buildId` 与当前构建。
+5. 重新计算设备指纹与 AccessToken 的 SHA-256，并使用常量时间比较核对两个 hash。
+6. 核对响应和 claims 中的 Access/Refresh 到期时间完全一致，并确认 `issuedAt < accessExpiresAt`。
+7. 当前客户端只接受签发时间不早于本机时间 300 秒、且不晚于本机时间 60 秒的 Proof。
+
+任一步失败都属于本地 `INVALID_SERVER_PROOF`：不得签发 RuntimePermit、不得初始化模块目录，
+也不得使用响应中的 AccessToken 进入受保护功能。该错误不是服务端业务错误码，客户端诊断日志
+只能记录验证阶段与 `requestId`，不能记录 Proof、令牌、设备指纹或 claims 原文。
+
+服务端私钥保存在数据目录的 `keys/entitlement-ed25519-private.pem`，不得分发到客户端。
+服务启动时会从私钥推导公钥，并拒绝公钥文件与私钥不匹配的配置。当前协议没有多 key 信任窗口；
+轮换私钥前必须先发布同时信任新旧 key ID 的客户端版本，否则现有客户端会拒绝所有新会话。
 
 字段名目前使用 PascalCase。接入代码应以本节字段为准，但可兼容首字母小写，
 避免服务端未来统一 JSON 命名时产生迁移故障。
@@ -172,6 +237,11 @@ Beta 会话，账号持久化等级仍为 Free。注册限制为同一 IP 每小
 
 成功后服务端同时轮换 AccessToken 和 RefreshToken。旧 RefreshToken 必须立即
 丢弃；重复使用已消费的刷新令牌会撤销对应会话，这是安全机制，不得自动重试。
+
+刷新响应必须先完成 `EntitlementProof` 验证。由于服务端在成功响应产生时已经消费旧
+RefreshToken，客户端应在 Proof 验证通过后将新 RefreshToken、到期时间作为同一个事务原子
+写入安全存储。若本地持久化失败，不能回退使用旧令牌；客户端可以继续使用本次已验证的
+内存会话，但必须禁用记住登录，并在下次启动时要求重新登录。
 
 默认 AccessToken 有效期为 10 分钟，RefreshToken 为 7 天；生产配置可在允许
 范围内调整，客户端必须以响应中的到期时间为准。
@@ -458,12 +528,14 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 ## 5. 推荐客户端会话流程
 
 1. 启动时读取本地 RefreshToken，并判断本地记录的刷新到期时间。
-2. 有效时调用刷新；成功后原子替换全部令牌与到期时间。
-3. 刷新返回 `SESSION_REVOKED` 时清空本地凭据并显示登录界面。
-4. 登录/注册成功后只在本机安全存储中保存令牌，不写入日志。
-5. 在 AccessToken 到期前主动刷新；心跳失败不能继续使用受保护功能。
-6. 收到账号、许可证、HWID、客户端/启动器版本或强制改密错误时立即退出受保护界面。
-7. 退出时调用 logout；无论网络结果如何都删除本地令牌。
+2. 有效时调用刷新；收到成功响应后先验证完整 `EntitlementProof`，再原子替换令牌与到期时间。
+3. Proof 验证成功后签发仅存在于内存的 RuntimePermit；模块目录和功能模块只能在 Permit 门禁后初始化。
+4. Proof 缺失、无效或字段不一致时清除本次响应、拒绝启动运行时并显示登录界面，不得降级放行。
+5. 刷新返回 `SESSION_REVOKED` 时清空本地凭据并显示登录界面。
+6. 登录/注册成功后只在本机安全存储中保存令牌，不写入日志；RuntimePermit 不得持久化。
+7. 在 AccessToken 到期前主动刷新；心跳失败不能继续使用受保护功能。
+8. 收到账号、许可证、HWID、客户端/启动器版本或强制改密错误时立即退出受保护界面。
+9. 退出时调用 logout；无论网络结果如何都删除本地令牌。
 
 不要记录密码、原始 HWID、AccessToken 或 RefreshToken。诊断日志只记录
 `requestId`、错误码、HTTP 状态和客户端版本信息。

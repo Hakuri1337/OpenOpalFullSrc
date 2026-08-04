@@ -2,7 +2,6 @@ package wtf.oraculus.client.feature.module.impl.combat.killaura;
 
 import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationProperty;
 import wtf.oraculus.client.feature.helper.impl.player.rotation.model.IRotationModel;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.model.impl.HeypixelRotationModel;
 import wtf.oraculus.client.feature.helper.impl.player.rotation.model.impl.InstantRotationModel;
 import wtf.oraculus.client.feature.helper.impl.player.swing.CPSProperty;
 import wtf.oraculus.client.feature.helper.impl.target.TargetProperty;
@@ -23,12 +22,11 @@ public final class KillAuraSettings {
     private final NumberProperty range, rotationRange, swingRange;
     private final BooleanProperty hideFakeSwings;
 
-    private final BooleanProperty requireAttackKey, requireWeapon, hitSelect;
+    private final BooleanProperty requireAttackKey, requireWeapon;
     private final BooleanProperty overrideRaycast, tickLookahead, throughWalls;
-    private final BooleanProperty heypixelBypass;
-    private final ModeProperty<AutoblockMode> autoblockMode;
     private final BooleanProperty smartWeapon;
     private final BooleanProperty attackCooldown19;
+    private final BooleanProperty blockAnimationWhenTargeting;
     private final NumberProperty fov;
     private final ModeProperty<RotationInjector.RotationMode> rotationMode;
 
@@ -37,24 +35,22 @@ public final class KillAuraSettings {
     public KillAuraSettings(final KillAuraModule module) {
         this.rotationProperty = new RotationProperty(InstantRotationModel.INSTANCE);
         this.targetProperty = new TargetProperty(true, false, false, false, false, true);
-        this.cpsProperty = new CPSProperty(module, "Attack CPS", false);
-        this.swingCpsProperty = new CPSProperty(module, "Swing CPS", false);
+        this.cpsProperty = new CPSProperty(module, "Attack CPS", true);
+        this.swingCpsProperty = new CPSProperty(module, "Swing CPS", false).hideIf(this.cpsProperty::isModernDelay);
 
         this.range = new NumberProperty("Range", 3.D, 3.D, 6.D, 0.1D);
         this.rotationRange = new NumberProperty("Rotation range", 5.D, 3.D, 8.D, 0.1D);
-        this.swingRange = new NumberProperty("Swing range", 5.D, 3.D, 8.D, 0.1D);
-        this.hideFakeSwings = new BooleanProperty("Hide fake swings", true);
+        this.swingRange = new NumberProperty("Swing range", 5.D, 3.D, 8.D, 0.1D).hideIf(this.cpsProperty::isModernDelay);
+        this.hideFakeSwings = new BooleanProperty("Hide fake swings", true).hideIf(this.cpsProperty::isModernDelay);
 
         this.requireAttackKey = new BooleanProperty("Require attack key", false);
         this.requireWeapon = new BooleanProperty("Require weapon", false);
-        this.hitSelect = new BooleanProperty("Hit Select", false);
         this.overrideRaycast = new BooleanProperty("Override raycast", true);
         this.tickLookahead = new BooleanProperty("Tick lookahead", false).hideIf(() -> !this.isOverrideRaycast());
         this.throughWalls = new BooleanProperty("Through Walls", false);
-        this.heypixelBypass = new BooleanProperty("Heypixel Bypass", false);
-        this.autoblockMode = new ModeProperty<>("Autoblock", AutoblockMode.OFF);
         this.smartWeapon = new BooleanProperty("SmartWeapon", false);
         this.attackCooldown19 = new BooleanProperty("1.9+ Attack Cooldown", false);
+        this.blockAnimationWhenTargeting = new BooleanProperty("FakeBlock", true);
         this.mode = new ModeProperty<>("Mode", Mode.SWITCH);
         this.fov = new NumberProperty("FOV", 180, 1, 180, 1);
         this.rotationMode = new ModeProperty<>("Rotation Mode", module, RotationInjector.RotationMode.NORMAL);
@@ -65,40 +61,21 @@ public final class KillAuraSettings {
         );
 
         module.addProperties(
-                rotationProperty.get(), new GroupProperty("Requirements", requireWeapon, requireAttackKey, hitSelect),
+                rotationProperty.get(), new GroupProperty("Requirements", requireWeapon, requireAttackKey),
                 mode, range, rotationRange, swingRange, hideFakeSwings, targetProperty.get(),
-                fov, overrideRaycast, tickLookahead, throughWalls, heypixelBypass, autoblockMode,
-                smartWeapon, attackCooldown19, rotationMode, visuals
+                fov, overrideRaycast, tickLookahead, visuals, blockAnimationWhenTargeting,
+                throughWalls, smartWeapon, attackCooldown19, rotationMode
         );
     }
 
-    public boolean isHitSelect() {
-        return hitSelect.getValue();
-    }
-
-    public boolean isFakeAutoBlock() {
-        return autoblockMode.getValue() == AutoblockMode.FAKE;
-    }
-
-    public boolean isVanillaAutoBlock() {
-        return autoblockMode.getValue() == AutoblockMode.VANILLA;
-    }
-
-    public AutoblockMode getAutoblockMode() {
-        return autoblockMode.getValue();
-    }
-
-    public boolean isHeypixelBypass() {
-        return heypixelBypass.getValue();
+    public double getRange() {
+        return this.range.getValue();
     }
 
     public double getSwingRange() {
         return this.swingRange.getValue();
     }
 
-    public double getRange() {
-        return this.range.getValue();
-    }
 
     public boolean isThroughWalls() {
         return this.throughWalls.getValue();
@@ -109,7 +86,7 @@ public final class KillAuraSettings {
     }
 
     public boolean isOverrideRaycast() {
-        return this.overrideRaycast.getValue() && !this.isHeypixelBypass();
+        return this.overrideRaycast.getValue();
     }
 
     public boolean isTickLookahead() {
@@ -145,7 +122,7 @@ public final class KillAuraSettings {
     }
 
     public IRotationModel createRotationModel() {
-        return isHeypixelBypass() ? new HeypixelRotationModel(rotationProperty.getMaxAngle()) : rotationProperty.createModel();
+        return rotationProperty.createModel();
     }
 
     public RotationInjector.RotationMode getRotationMode() {
@@ -168,6 +145,10 @@ public final class KillAuraSettings {
         return smartWeapon.getValue();
     }
 
+    public boolean isBlockAnimationWhenTargeting() {
+        return blockAnimationWhenTargeting.getValue();
+    }
+
     public enum Mode {
         SINGLE("Single"),
         SWITCH("Switch");
@@ -175,23 +156,6 @@ public final class KillAuraSettings {
         private final String name;
 
         Mode(String name) {
-            this.name = name;
-        }
-
-        @Override
-        public String toString() {
-            return name;
-        }
-    }
-
-    public enum AutoblockMode {
-        OFF("Off"),
-        VANILLA("Vanilla"),
-        FAKE("Fake");
-
-        private final String name;
-
-        AutoblockMode(String name) {
             this.name = name;
         }
 

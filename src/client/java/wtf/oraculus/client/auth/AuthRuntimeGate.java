@@ -15,7 +15,8 @@ public final class AuthRuntimeGate implements IEventSubscriber {
 
     @Subscribe(priority = 10000)
     public void onModuleToggle(final ModuleToggleEvent event) {
-        if (event.isEnabled() && !authService.snapshot().allowsRuntime()) {
+        if (event.isEnabled() && (!authService.snapshot().allowsRuntime()
+                || !RuntimeAccessGate.allowsHotPath())) {
             event.setCancelled();
         }
     }

@@ -3,7 +3,6 @@ package wtf.oraculus.client.feature.module.impl.utility.disabler.impl;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.edition.EditionHooks;
 import wtf.oraculus.client.feature.helper.impl.player.packet.blockage.impl.OutboundNetworkBlockage;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.impl.movement.StuckModule;
 import wtf.oraculus.client.feature.module.impl.utility.BlinkModule;
 import wtf.oraculus.client.feature.module.impl.utility.disabler.DisablerModule;
@@ -128,16 +127,6 @@ public abstract class AbstractMinibloxDisabler extends ModuleMode<DisablerModule
         disableIfEnabled(repository.getModule(BlinkModule.class), "Blink", disabledModules);
         disableIfEnabled(repository.getModule(StuckModule.class), "Stuck", disabledModules);
         EditionHooks.disableEditionPacketBuffers(repository, disabledModules);
-
-        final VelocityModule velocity = repository.getModule(VelocityModule.class);
-        if (velocity != null
-                && velocity.isEnabled()
-                && (velocity.getActiveMode() != null
-                && (velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER
-                || velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER_JUMP_RESET))) {
-            velocity.setEnabled(false);
-            disabledModules.add("AntiKB Buffer");
-        }
 
         if (!disabledModules.isEmpty()) {
             ChatUtility.print(this.label() + " | disabled " + String.join(", ", disabledModules)

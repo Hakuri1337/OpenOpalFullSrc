@@ -15,10 +15,8 @@ import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
 import wtf.oraculus.client.renderer.world.WorldRenderer;
@@ -82,12 +80,6 @@ public final class BacktrackModule extends Module {
             return;
         }
 
-        if (this.resetOnVelocity.getValue() && this.isVelocityActive()) {
-            this.positionTracker = null;
-            this.releasePackets("velocity reset");
-            return;
-        }
-
         tracker.applyPos();
         if (this.backtrackingActive) {
             this.checkBacktrackRange(tracker);
@@ -109,11 +101,6 @@ public final class BacktrackModule extends Module {
             return;
         }
 
-        if (this.resetOnVelocity.getValue() && this.isVelocityActive()) {
-            this.debug("skip attack because velocity is active");
-            return;
-        }
-
         if (this.positionTracker == null) {
             this.releasePackets("retarget");
             this.positionTracker = new PositionTracker(player, player.getEntityPos());
@@ -124,12 +111,6 @@ public final class BacktrackModule extends Module {
     @Subscribe(priority = 1)
     public void onReceivePacket(final ReceivePacketEvent event) {
         if (this.releasingPackets || event.isCancelled()) {
-            return;
-        }
-
-        if (this.resetOnVelocity.getValue() && this.isVelocityActive()) {
-            this.positionTracker = null;
-            this.releasePackets("velocity reset");
             return;
         }
 
@@ -351,23 +332,6 @@ public final class BacktrackModule extends Module {
     private ClientConnection getConnection() {
         final ClientPlayNetworkHandler networkHandler = mc.getNetworkHandler();
         return networkHandler == null ? null : networkHandler.getConnection();
-    }
-
-    private boolean isVelocityActive() {
-        final VelocityModule velocityModule = OraculusClient.getInstance().getModuleRepository().getModule(VelocityModule.class);
-        if (!velocityModule.isEnabled() || velocityModule.isInvalid()) {
-            return false;
-        }
-
-        if (velocityModule.shouldStopBacktrack()) {
-            return true;
-        }
-
-        if (velocityModule.isPaused()) {
-            return false;
-        }
-
-        return mc.player != null && mc.player.hurtTime > 0;
     }
 
     private void drawOutlinedBox(final WorldRenderer renderer, final RenderWorldEvent event, final Vec3d min, final Vec3d dimensions, final int color) {

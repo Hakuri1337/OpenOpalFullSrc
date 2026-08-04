@@ -21,11 +21,12 @@ import wtf.oraculus.client.feature.helper.impl.player.slot.SlotHelper;
 import wtf.oraculus.client.feature.helper.impl.player.swing.SwingDelay;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
+import wtf.oraculus.client.feature.module.impl.combat.BlockModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.target.CurrentTarget;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.target.KillAuraTargeting;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode;
-import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.impl.visual.AnimationsModule;
+import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
+import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.renderer.world.WorldRenderer;
 import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
@@ -38,6 +39,7 @@ import wtf.oraculus.utility.misc.math.RandomUtility;
 import wtf.oraculus.utility.player.PlayerUtility;
 import wtf.oraculus.utility.player.RaycastUtility;
 import wtf.oraculus.utility.player.RotationInjector;
+import wtf.oraculus.utility.player.SkipTickUtility;
 import wtf.oraculus.utility.render.ColorUtility;
 import wtf.oraculus.utility.render.CustomRenderLayers;
 
@@ -49,13 +51,16 @@ public final class KillAuraModule extends Module {
 
     private final KillAuraSettings settings = new KillAuraSettings(this);
     private final KillAuraTargeting targeting = new KillAuraTargeting(this.settings);
+    private final wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty skipTick = new wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty("SkipTick", false);
+    private final wtf.oraculus.client.feature.module.property.impl.number.NumberProperty skipTickDuration = new wtf.oraculus.client.feature.module.property.impl.number.NumberProperty("SkipTick Duration", 2.0D, 1.0D, 5.0D, 1.0D).hideIf(() -> !this.skipTick.getValue());
 
     public KillAuraModule() {
         super(
-                "KillAura",
+                "Aura",
                 "Finds and attacks the most relevant nearby entities.",
                 ModuleCategory.COMBAT
         );
+        this.addProperties(this.skipTick, this.skipTickDuration);
     }
 
     public KillAuraSettings getSettings() {
@@ -94,7 +99,7 @@ public final class KillAuraModule extends Module {
     }
 
     public boolean isFakeBlocking() {
-        return this.settings.isFakeAutoBlock() && this.targeting.getTarget() != null && this.shouldRun();
+        return this.settings.isBlockAnimationWhenTargeting() && this.targeting.getTarget() != null && this.shouldRun();
     }
 
     public boolean requestVelocityResetAttack(final int clicks, final int windowTicks, final boolean wasSprinting, final Double sprintSlowdown) {
@@ -123,7 +128,7 @@ public final class KillAuraModule extends Module {
 
         if (target == null || mc.crosshairTarget == null || mc.crosshairTarget.getType() == HitResult.Type.MISS) {
             final double closestDistance = this.targeting.getClosestDistance();
-            if (closestDistance <= this.settings.getSwingRange() && SwingDelay.isSwingAvailable(this.settings.getSwingCpsProperty()) && PlayerUtility.getBlockOver() == null) {
+            if (!this.settings.getCpsProperty().isModernDelay() && closestDistance <= this.settings.getSwingRange() && SwingDelay.isSwingAvailable(this.settings.getSwingCpsProperty()) && PlayerUtility.getBlockOver() == null) {
                 final MouseButton leftButton = MouseHelper.getLeftButton();
                 leftButton.setPressed(true, RandomUtility.getRandomInt(2));
                 if (this.settings.isHideFakeSwings() && (mc.crosshairTarget == null || mc.crosshairTarget.getType() != HitResult.Type.ENTITY)) {
@@ -134,26 +139,13 @@ public final class KillAuraModule extends Module {
             return;
         }
 
-        final AnimationsModule animationsModule = OraculusClient.getInstance().getModuleRepository().getModule(AnimationsModule.class);
-        final boolean allowSwingWhenUsing = animationsModule.isEnabled() && animationsModule.isSwingWhileUsing();
+        final BlockModule blockModule = OraculusClient.getInstance().getModuleRepository().getModule(BlockModule.class);
+        final boolean allowSwingWhenUsing = blockModule != null && blockModule.isEnabled() && blockModule.isSwingAllowed();
         if (mc.player.isUsingItem() && !allowSwingWhenUsing) {
             return;
         }
 
         if (mc.crosshairTarget.getType() == HitResult.Type.ENTITY) {
-            final VelocityModule velocityModule = OraculusClient.getInstance().getModuleRepository().getModule(VelocityModule.class);
-            if (this.settings.isHitSelect() && velocityModule != null && velocityModule.isEnabled()) {
-                if (velocityModule.getActiveMode() instanceof VelocityMode velocityMode) {
-                    if (velocityMode.getHitSelectSkips() > 0) {
-                        velocityMode.consumeHitSelectSkip();
-                        return;
-                    }
-                    if (velocityMode.isAttacking()) {
-                        return;
-                    }
-                }
-            }
-
             if (this.isAttackSwingAvailable(target)) {
                 final EntityHitResult hitResult = (EntityHitResult) mc.crosshairTarget;
                 if (hitResult.getEntity() == target.getEntity()) {
@@ -192,13 +184,6 @@ public final class KillAuraModule extends Module {
             return mc.player.getAttackCooldownProgress(0.5F) >= 1.0F;
         }
 
-        if (settings.isHeypixelBypass()) {
-            final long time = System.currentTimeMillis();
-            final double baseDelay = 1000.0 / settings.getCpsProperty().getCPS();
-            final long delay = (long) (baseDelay + (Math.random() - 0.5) * baseDelay * 0.4);
-            return time - lastAttackTime >= delay;
-        }
-
         if (target.getKillAuraTarget().isAttackAvailable() || this.attacks > 0) {
             return true;
         }
@@ -207,8 +192,8 @@ public final class KillAuraModule extends Module {
 
     private void recordAttack(final CurrentTarget target) {
         target.getKillAuraTarget().onAttack(this.attacks == 0);
-        if (this.settings.isHeypixelBypass()) {
-            this.lastAttackTime = System.currentTimeMillis();
+        if (this.skipTick.getValue()) {
+            SkipTickUtility.addSkipTicks(this.skipTickDuration.getValue().intValue());
         }
         if (this.attacks > 0) {
             this.attacks--;
@@ -247,7 +232,6 @@ public final class KillAuraModule extends Module {
 
     private int attacks;
     private int attackCooldownTicks;
-    public long lastAttackTime;
 
     private boolean onTickRotationApplied;
     private BufferAllocator worldAllocator;
@@ -335,7 +319,6 @@ public final class KillAuraModule extends Module {
         final CurrentTarget target = this.targeting.getRotationTarget();
         if (target == null) {
             this.clearOnTickRotation();
-            updateAutoblock();
             return;
         }
 
@@ -351,7 +334,6 @@ public final class KillAuraModule extends Module {
                 settings.createRotationModel()
         );
 
-        updateAutoblock();
     }
 
     @Subscribe
@@ -367,6 +349,11 @@ public final class KillAuraModule extends Module {
             return;
         }
 
+        final BreakerModule breaker = OraculusClient.getInstance().getModuleRepository().getModule(BreakerModule.class);
+        if (breaker != null && breaker.isEnabled() && breaker.isBreaking()) {
+            return;
+        }
+
         event.setYaw(mc.player.getYaw());
         event.setPitch(mc.player.getPitch());
     }
@@ -378,50 +365,7 @@ public final class KillAuraModule extends Module {
         }
         final CurrentTarget target = this.targeting.getTarget();
         Predicate<Entity> entityPredicate = target == null ? Predicates.alwaysTrue() : e -> e == target.getEntity();
-        this.hitResult = RaycastUtility.raycastEntity(this.settings.getRange(), 1.0F, mc.player.getYaw(), mc.player.getPitch(), entityPredicate);
-    }
-
-    private void updateAutoblock() {
-        if (mc.player == null || mc.currentScreen != null || mc.getOverlay() != null) {
-            releaseAutoblock();
-            return;
-        }
-
-        if (isConsumingFoodOrPotion()) {
-            releaseAutoblock();
-            return;
-        }
-
-        final KillAuraSettings.AutoblockMode autoblockMode = this.settings.getAutoblockMode();
-        if (autoblockMode == KillAuraSettings.AutoblockMode.OFF) {
-            releaseAutoblock();
-            return;
-        }
-
-        final CurrentTarget target = this.targeting.getTarget();
-        if (target == null) {
-            releaseAutoblock();
-            return;
-        }
-
-        if (autoblockMode == KillAuraSettings.AutoblockMode.FAKE) {
-            return;
-        }
-
-        if (!mc.player.getMainHandStack().isIn(ItemTags.SWORDS)) {
-            releaseAutoblock();
-            return;
-        }
-
-        final MouseButton rightButton = MouseHelper.getRightButton();
-        rightButton.setPressed(true, 2);
-        rightButton.setShowSwings(false);
-    }
-
-    private void releaseAutoblock() {
-        final MouseButton rightButton = MouseHelper.getRightButton();
-        rightButton.setPressed(false, 0);
-        rightButton.setShowSwings(true);
+        this.hitResult = RaycastUtility.raycastEntity(mc.player.getEntityInteractionRange(), 1.0F, mc.player.getYaw(), mc.player.getPitch(), entityPredicate);
     }
 
     private boolean shouldRun() {
@@ -440,6 +384,11 @@ public final class KillAuraModule extends Module {
         final ItemStack heldItem = SlotHelper.getInstance().getMainHandStack(mc.player);
         if (settings.isRequireWeapon() &&
                 !(heldItem.isIn(ItemTags.SWORDS) || heldItem.isIn(ItemTags.AXES) || heldItem.isIn(ItemTags.PICKAXES))) {
+            return false;
+        }
+
+        final ScaffoldModule scaffold = OraculusClient.getInstance().getModuleRepository().getModule(ScaffoldModule.class);
+        if (scaffold != null && scaffold.isEnabled()) {
             return false;
         }
 
@@ -463,7 +412,7 @@ public final class KillAuraModule extends Module {
         this.attacks = 0;
         this.attackCooldownTicks = 0;
         this.haloTrailHeights.clear();
-        releaseAutoblock();
+        SkipTickUtility.reset();
         super.onDisable();
     }
 

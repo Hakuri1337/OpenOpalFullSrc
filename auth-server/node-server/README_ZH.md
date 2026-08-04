@@ -16,7 +16,7 @@ node server.js --config server.production.json --check-config
 - `--check-ready`：检查持久化数据结构；
 - `--ensure-admin root_admin`：从标准输入读取初始密码；仅在账号不存在时创建，不会在重复部署时重置现有管理员密码。
 
-生产数据由一个原子替换写入的 JSON 文件和独立密钥目录组成。备份时必须同时保存数据文件与 `keys/`。
+生产数据由一个原子替换写入的 JSON 文件和独立密钥目录组成。`keys/` 包含 entitlement Ed25519 私钥；备份时必须同时保存数据文件与完整 `keys/`，不得单独轮换或恢复其中一部分。
 
 管理后台角色：
 

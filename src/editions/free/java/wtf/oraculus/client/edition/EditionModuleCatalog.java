@@ -1,5 +1,11 @@
 package wtf.oraculus.client.edition;
 
+import nhcm.bytecodevm.sdk.annotation.Virtualize;
+import nhcm.bytecodevm.sdk.annotation.config.VMOptions;
+import nhcm.bytecodevm.sdk.enums.Toggle;
+import nhcm.bytecodevm.sdk.enums.VMStructure;
+import wtf.oraculus.client.auth.ModuleBootPolicy;
+import wtf.oraculus.client.auth.RuntimePermit;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
@@ -27,18 +33,22 @@ import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
-import wtf.oraculus.client.feature.module.impl.world.fucker.FuckerModule;
 import wtf.oraculus.client.music.MusicPlayerModule;
 
 public final class EditionModuleCatalog {
     private EditionModuleCatalog() {
     }
 
-    public static Module[] createModules() {
+    @Virtualize(integrityCheck = Toggle.ENABLED, vm = @VMOptions(
+            structure = VMStructure.GRAPH, encrypt = Toggle.ENABLED,
+            shuffle = Toggle.ENABLED, obfuscate = Toggle.ENABLED))
+    public static Module[] createModules(final RuntimePermit permit) {
+        ModuleBootPolicy.requireModuleCatalog(permit);
         return new Module[]{
                 new KillAuraModule(), new TpAuraModule(), new TeamsModule(), new BacktrackModule(), new BlockModule(),
                 new ReachModule(), new PiercingModule(), new AutoClickerModule(), new AttackDelayModule(),
-                new CriticalsModule(), new VelocityModule(), new AutoHeadModule(), new AutoThrowModule(),
+                new CriticalsModule(),
+                new VelocityModule(), new AutoHeadModule(), new AutoThrowModule(),
                 new CrystalAuraModule(),
 
                 new ClickGUIModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
@@ -47,7 +57,7 @@ public final class EditionModuleCatalog {
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
                 new PostProcessingModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(), new PotionModule(),
 
-                new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FuckerModule(), new FastBreakModule(),
+                new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
                 new ChestAuraModule(),
 
                 new FlightModule(), new SpeedModule(), new JumpCooldownModule(), new SprintModule(),

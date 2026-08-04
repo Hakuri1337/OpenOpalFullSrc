@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import net.fabricmc.loom.task.RemapJarTask
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.compile.JavaCompile
@@ -26,6 +27,15 @@ def zkmJar = file("obfuscation/ZKM-25.0.0-licensed/Zelix KlassMaster 25.0.0.jar"
 def zkmHome = file("obfuscation/ZKM-25.0.0-licensed/ZKM 25.0.0")
 def zkmTemplate = file("obfuscation/zkm/oraculus.zkm.template")
 def zkmAvailable = zkmJar.isFile() && zkmHome.isDirectory() && zkmTemplate.isFile()
+def bytecodeVmToolJar = file("BytecodeVM-mirror/build/libs/BytecodeVM-2.0.1.jar")
+def bytecodeVmSdkJar = file("BytecodeVM-mirror/sdk/build/libs/bytecodevm-sdk-2.0.0.jar")
+def bytecodeVmTemplate = file("obfuscation/bytecodevm/oraculus.yml.template")
+if (!bytecodeVmSdkJar.isFile()) {
+    throw new GradleException("BytecodeVM SDK is not built. Run 'gradle -p BytecodeVM-mirror sdk:jar'.")
+}
+if (zkmAvailable && (!bytecodeVmToolJar.isFile() || !bytecodeVmTemplate.isFile())) {
+    throw new GradleException("BytecodeVM release tooling is unavailable. Run 'gradle -p BytecodeVM-mirror shadowJar sdk:jar'.")
+}
 def zkmRequired = providers.gradleProperty("zkmRequired").map { it.toBoolean() }.orElse(false).get()
 if (zkmRequired && !zkmAvailable) {
     throw new GradleException("ZKM is required but its local installation or script template is unavailable.")
@@ -159,6 +169,7 @@ dependencies {
 	compileOnly("com.viaversion:viaversion-common:5.6.0") {
 		transitive = false
 	}
+	compileOnly files(bytecodeVmSdkJar)
 
 	modApi include("org.lwjgl:lwjgl-nanovg:3.3.3")
 	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-linux")
@@ -233,7 +244,19 @@ def zkmOutputJar = zkmNamedInputJarName.flatMap { name ->
 def zkmChangeLog = layout.buildDirectory.file("zkm/${activeEdition}/Oraculus-${editionDisplayName}-ChangeLog.txt")
 def zkmParseLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-parse.log")
 def zkmRunLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-run.log")
+def zkmRemappedJar = layout.buildDirectory.file("bytecodevm/${activeEdition}/input/${obfuscatedReleaseJarName}-Zkm.jar")
+def bytecodeVmConfig = layout.buildDirectory.file("bytecodevm/${activeEdition}/oraculus.yml")
+def bytecodeVmInspectionReport = layout.buildDirectory.file("bytecodevm/${activeEdition}/inspection.json")
+def bytecodeVmProtectionReport = layout.buildDirectory.file("bytecodevm/${activeEdition}/protection.json")
+def expectedBytecodeVmStructures = [
+        GRAPH            : 7,
+        REGISTER_BASED   : 5,
+        THREADED_DIRECT  : 4
+]
+def expectedBytecodeVmMethodCount = expectedBytecodeVmStructures.values().sum()
 def remapObfuscatedJar = null
+def protectObfuscatedJar = null
+def sanitizeObfuscatedManifest = null
 def verifyObfuscatedEditionArtifact = null
 
 if (zkmAvailable) {
@@ -302,8 +325,8 @@ if (zkmAvailable) {
     remapObfuscatedJar = tasks.register("remap${editionDisplayName}ObfuscatedJar", RemapJarTask) {
         dependsOn(obfuscateNamedJar)
         inputFile.set(zkmOutputJar)
-        archiveFileName.set("${obfuscatedReleaseJarName}.jar")
-        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+        archiveFileName.set("${obfuscatedReleaseJarName}-Zkm.jar")
+        destinationDirectory.set(layout.buildDirectory.dir("bytecodevm/${activeEdition}/input"))
         sourceNamespace.set(remapNoObfJar.flatMap { it.sourceNamespace })
         targetNamespace.set(remapNoObfJar.flatMap { it.targetNamespace })
         includesClientOnlyClasses.set(remapNoObfJar.flatMap { it.includesClientOnlyClasses })
@@ -314,6 +337,150 @@ if (zkmAvailable) {
         addNestedDependencies.set(remapNoObfJar.flatMap { it.addNestedDependencies })
         classpath.from(remapNoObfJar.map { it.classpath })
         customMappings.from(remapNoObfJar.map { it.customMappings })
+    }
+
+    def generateBytecodeVmConfig = tasks.register("generate${editionDisplayName}BytecodeVmConfig") {
+        dependsOn(remapObfuscatedJar)
+        inputs.file(bytecodeVmTemplate)
+        inputs.file(zkmRemappedJar)
+        inputs.property("edition", activeEdition)
+        outputs.file(bytecodeVmConfig)
+
+        doLast {
+            final File config = bytecodeVmConfig.get().asFile
+            config.parentFile.mkdirs()
+            config.setText(bytecodeVmTemplate.getText("UTF-8")
+                    .replace("@INPUT_JAR@", zkmPath(zkmRemappedJar.get().asFile))
+                    .replace("@OUTPUT_JAR@", zkmPath(obfuscatedEditionJar.get().asFile)), "UTF-8")
+        }
+    }
+
+    def inspectBytecodeVmPlan = tasks.register("inspect${editionDisplayName}BytecodeVmPlan", Exec) {
+        dependsOn(generateBytecodeVmConfig)
+        inputs.file(bytecodeVmConfig)
+        inputs.file(zkmRemappedJar)
+        outputs.file(bytecodeVmInspectionReport)
+        executable(zkmJavaExecutable.absolutePath)
+        args "-jar", bytecodeVmToolJar.absolutePath, "inspect",
+                bytecodeVmConfig.get().asFile.absolutePath,
+                "--report", bytecodeVmInspectionReport.get().asFile.absolutePath,
+                "--quiet"
+    }
+
+    def verifyBytecodeVmPlan = tasks.register("verify${editionDisplayName}BytecodeVmPlan") {
+        dependsOn(inspectBytecodeVmPlan)
+        inputs.file(bytecodeVmInspectionReport)
+
+        doLast {
+            final Map report = (Map) new JsonSlurper().parse(bytecodeVmInspectionReport.get().asFile)
+            final List<Map> methods = (List<Map>) report.methods
+            if (methods.size() != expectedBytecodeVmMethodCount) {
+                throw new GradleException("BytecodeVM selected ${methods.size()} methods for ${editionDisplayName}; " +
+                        "expected ${expectedBytecodeVmMethodCount} annotation targets.")
+            }
+            final List<Map> unexpected = methods.findAll { it.selection != "SDK_ANNOTATION" }
+            if (!unexpected.isEmpty()) {
+                throw new GradleException("BytecodeVM plan contains non-annotation targets: ${unexpected}")
+            }
+            final Map<String, Integer> structureCounts = methods.groupBy { it.structure }
+                    .collectEntries { structure, entries -> [(structure): entries.size()] }
+            if (structureCounts != expectedBytecodeVmStructures) {
+                throw new GradleException("Unexpected BytecodeVM structure distribution for ${editionDisplayName}: " +
+                        "${structureCounts}; expected ${expectedBytecodeVmStructures}")
+            }
+            if (((Number) report.vmSetCount).intValue() != expectedBytecodeVmStructures.size()) {
+                throw new GradleException("Unexpected BytecodeVM profile count for ${editionDisplayName}: ${report.vmSetCount}; " +
+                        "expected ${expectedBytecodeVmStructures.size()}")
+            }
+        }
+    }
+
+    protectObfuscatedJar = tasks.register("protect${editionDisplayName}ObfuscatedJar", Exec) {
+        dependsOn(verifyBytecodeVmPlan)
+        inputs.file(bytecodeVmConfig)
+        inputs.file(zkmRemappedJar)
+        inputs.file(bytecodeVmToolJar)
+        outputs.file(obfuscatedEditionJar)
+        outputs.file(bytecodeVmProtectionReport)
+        executable(zkmJavaExecutable.absolutePath)
+        args "-jar", bytecodeVmToolJar.absolutePath, "protect",
+                bytecodeVmConfig.get().asFile.absolutePath,
+                "--report", bytecodeVmProtectionReport.get().asFile.absolutePath,
+                "--verify-output",
+                "--quiet"
+    }
+
+    // Loom writes the pre-obfuscation client-only class inventory to the final
+    // manifest. That inventory is build metadata, not runtime data, and leaks
+    // the original package/class graph after ZKM and BytecodeVM have renamed it.
+    sanitizeObfuscatedManifest = tasks.register("sanitize${editionDisplayName}ObfuscatedManifest") {
+        dependsOn(protectObfuscatedJar)
+        inputs.file(obfuscatedEditionJar)
+        outputs.file(obfuscatedEditionJar)
+        outputs.upToDateWhen { false }
+
+        doLast {
+            final File artifact = obfuscatedEditionJar.get().asFile
+            if (!artifact.isFile() || artifact.length() == 0L) {
+                throw new GradleException("Cannot sanitize missing obfuscated artifact: ${artifact}")
+            }
+
+            final File temporary = new File(artifact.parentFile, ".${artifact.name}.manifest-sanitize.tmp")
+            if (temporary.exists()) {
+                throw new GradleException("Manifest sanitizer temporary file already exists: ${temporary}")
+            }
+
+            final java.util.jar.Attributes.Name leakedInventory =
+                    new java.util.jar.Attributes.Name("Fabric-Loom-Client-Only-Entries")
+            final java.util.zip.ZipFile input = new java.util.zip.ZipFile(artifact)
+            try {
+                final java.util.zip.ZipOutputStream output =
+                        new java.util.zip.ZipOutputStream(new java.io.BufferedOutputStream(
+                                new java.io.FileOutputStream(temporary)))
+                try {
+                    input.entries().each { entry ->
+                        final java.util.zip.ZipEntry replacement = new java.util.zip.ZipEntry(entry.name)
+                        if (entry.time >= 0L) {
+                            replacement.time = entry.time
+                        }
+                        output.putNextEntry(replacement)
+                        if (!entry.directory) {
+                            if (entry.name == "META-INF/MANIFEST.MF") {
+                                final java.util.jar.Manifest manifest = input.getInputStream(entry).withCloseable { stream ->
+                                    new java.util.jar.Manifest(stream)
+                                }
+                                manifest.mainAttributes.remove(leakedInventory)
+                                final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()
+                                manifest.write(bytes)
+                                output.write(bytes.toByteArray())
+                            } else {
+                                input.getInputStream(entry).withCloseable { stream ->
+                                    stream.transferTo(output)
+                                }
+                            }
+                        }
+                        output.closeEntry()
+                    }
+                } finally {
+                    output.close()
+                }
+            } finally {
+                input.close()
+            }
+
+            try {
+                java.nio.file.Files.move(
+                        temporary.toPath(),
+                        artifact.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                java.nio.file.Files.move(
+                        temporary.toPath(),
+                        artifact.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
     }
 } else {
     logger.lifecycle("ZKM local installation is unavailable; ${editionDisplayName} Obf artifact will be skipped. Use -PzkmRequired=true to fail instead.")
@@ -401,11 +568,12 @@ def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}Re
 
 if (zkmAvailable) {
     verifyObfuscatedEditionArtifact = tasks.register("verify${editionDisplayName}ObfuscatedReleaseArtifact") {
-        dependsOn(remapNoObfJar, remapObfuscatedJar)
+        dependsOn(remapNoObfJar, sanitizeObfuscatedManifest)
         inputs.file(obfuscatedEditionJar)
         inputs.file(remappedEditionJar)
         inputs.file(zkmNamedInputJar)
         inputs.file(zkmChangeLog)
+        inputs.file(bytecodeVmProtectionReport)
 
         doLast {
             final def artifact = obfuscatedEditionJar.get().asFile
@@ -414,6 +582,28 @@ if (zkmAvailable) {
             }
             if (!zkmChangeLog.get().asFile.isFile() || zkmChangeLog.get().asFile.length() == 0L) {
                 throw new GradleException("ZKM did not produce a usable change log for ${editionDisplayName}.")
+            }
+            final Map bytecodeVmReport = (Map) new JsonSlurper().parse(bytecodeVmProtectionReport.get().asFile)
+            final List<Map> protectedMethods = (List<Map>) bytecodeVmReport.methods
+            if (protectedMethods.size() != expectedBytecodeVmMethodCount
+                    || protectedMethods.any { it.selection != "SDK_ANNOTATION" }) {
+                throw new GradleException("BytecodeVM protection report does not match the " +
+                        "${expectedBytecodeVmMethodCount} approved annotation targets.")
+            }
+            final Map<String, Integer> protectedStructureCounts = protectedMethods.groupBy { it.structure }
+                    .collectEntries { structure, entries -> [(structure): entries.size()] }
+            if (protectedStructureCounts != expectedBytecodeVmStructures) {
+                throw new GradleException("Protected BytecodeVM structure distribution changed for ${editionDisplayName}: " +
+                        "${protectedStructureCounts}; expected ${expectedBytecodeVmStructures}")
+            }
+            if (!Boolean.TRUE.equals(bytecodeVmReport.outputVerified)) {
+                throw new GradleException("BytecodeVM did not ASM-verify the generated ${editionDisplayName} artifact.")
+            }
+            final int generatedClasses = ((Number) bytecodeVmReport.generatedClasses).intValue()
+            final int minimumGeneratedClasses = expectedBytecodeVmMethodCount + expectedBytecodeVmStructures.size()
+            if (generatedClasses < minimumGeneratedClasses) {
+                throw new GradleException("BytecodeVM generated too few support classes for ${editionDisplayName}: " +
+                        "${generatedClasses}; expected at least ${minimumGeneratedClasses} for the protected methods and profiles")
             }
 
             boolean readingMixinClass = false
@@ -493,7 +683,8 @@ if (zkmAvailable) {
                         line.startsWith("\t\t") &&
                         (line.contains("public ") || line.contains("protected ")) &&
                         line.contains("(") &&
-                        line.contains("=>")) {
+                        line.contains("=>") &&
+                        !line.contains("Manufactured:")) {
                     throw new GradleException("ZKM renamed a Minecraft Screen callback/API method: ${line.trim()}")
                 } else if (line.startsWith("\t\t") && line.contains("=>")) {
                     final String currentInternalName = currentOriginalClass.replace('.', '/')
@@ -515,6 +706,24 @@ if (zkmAvailable) {
 
             final def archive = new java.util.zip.ZipFile(artifact)
             try {
+                final def manifestEntry = archive.getEntry("META-INF/MANIFEST.MF")
+                if (manifestEntry == null) {
+                    throw new GradleException("${artifact.name} is missing META-INF/MANIFEST.MF")
+                }
+                archive.getInputStream(manifestEntry).withCloseable { input ->
+                    final def manifest = new java.util.jar.Manifest(input)
+                    final String clientOnlyInventory = manifest.mainAttributes.getValue(
+                            "Fabric-Loom-Client-Only-Entries")
+                    if (clientOnlyInventory != null) {
+                        throw new GradleException("${artifact.name} still exposes Fabric-Loom-Client-Only-Entries")
+                    }
+                    final String manifestValues = manifest.mainAttributes.values().collect { it.toString() }.join("\n")
+                    ["wtf/oraculus/client/", "wtf.oraculus.client/"].each { leakedPrefix ->
+                        if (manifestValues.contains(leakedPrefix)) {
+                            throw new GradleException("${artifact.name} manifest still exposes original class prefix ${leakedPrefix}")
+                        }
+                    }
+                }
                 ["fabric.mod.json", "oraculus.mixins.json", "oraculus.accesswidener", "wtf/oraculus/OraculusFabric.class"].each { entry ->
                     if (archive.getEntry(entry) == null) {
                         throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
@@ -525,6 +734,30 @@ if (zkmAvailable) {
                 }
                 if (archive.getEntry("wtf/oraculus/client/feature/module/repository/ModuleRepository.class") != null) {
                     throw new GradleException("${artifact.name} still contains an unobfuscated ModuleRepository class")
+                }
+                if (!archive.entries().any { it.name.startsWith("wu_bo_han_is_fucking_hakuri/") && it.name.endsWith(".class") }) {
+                    throw new GradleException("${artifact.name} is missing the renamed BytecodeVM runtime package")
+                }
+                if (archive.entries().any { it.name.startsWith("BytecodeVM/") }) {
+                    throw new GradleException("${artifact.name} still exposes the legacy BytecodeVM package")
+                }
+
+                final List<String> leakedLocalVariableTables = []
+                archive.entries().each { entry ->
+                    if (!entry.directory && entry.name.endsWith(".class")
+                            && !entry.name.startsWith("wu_bo_han_is_fucking_hakuri/")) {
+                        archive.getInputStream(entry).withCloseable { input ->
+                            final def debugNode = new ClassNode()
+                            new ClassReader(input).accept(debugNode, ClassReader.SKIP_FRAMES)
+                            if (debugNode.methods.any { method -> method.localVariables != null && !method.localVariables.isEmpty() }) {
+                                leakedLocalVariableTables.add(entry.name)
+                            }
+                        }
+                    }
+                }
+                if (!leakedLocalVariableTables.isEmpty()) {
+                    throw new GradleException("ZKM left local variable tables in ${editionDisplayName}: " +
+                            "${leakedLocalVariableTables.take(20)}")
                 }
 
                 // ZKM 25 has been observed renaming a project-owned interface
@@ -541,6 +774,18 @@ if (zkmAvailable) {
                             projectClasses.put(node.name, node)
                         }
                     }
+                }
+
+                final String sdkAnnotationPrefix = "Lnhcm/bytecodevm/sdk/"
+                final boolean leakedSdkAnnotation = projectClasses.values().any { node ->
+                    final def classAnnotations = (node.visibleAnnotations ?: []) + (node.invisibleAnnotations ?: [])
+                    classAnnotations.any { it.desc.startsWith(sdkAnnotationPrefix) } || node.methods.any { method ->
+                        final def methodAnnotations = (method.visibleAnnotations ?: []) + (method.invisibleAnnotations ?: [])
+                        methodAnnotations.any { it.desc.startsWith(sdkAnnotationPrefix) }
+                    }
+                }
+                if (leakedSdkAnnotation) {
+                    throw new GradleException("BytecodeVM SDK annotations remain in ${artifact.name}")
                 }
 
                 final def methodKey = { method -> "${method.name}${method.desc}" }
@@ -603,17 +848,30 @@ if (zkmAvailable) {
 
             final def resourceDigests = { java.util.zip.ZipFile zip ->
                 final Map<String, String> resources = new TreeMap<>()
+                final java.util.jar.Attributes.Name leakedInventory =
+                        new java.util.jar.Attributes.Name("Fabric-Loom-Client-Only-Entries")
                 zip.entries().each { entry ->
                     if (entry.directory || entry.name.endsWith(".class")) {
                         return
                     }
                     final def digest = java.security.MessageDigest.getInstance("SHA-256")
                     zip.getInputStream(entry).withCloseable { input ->
-                        final byte[] buffer = new byte[65536]
-                        int read
-                        while ((read = input.read(buffer)) >= 0) {
-                            if (read > 0) {
-                                digest.update(buffer, 0, read)
+                        if (entry.name == "META-INF/MANIFEST.MF") {
+                            // The sanitizer intentionally removes Loom's client-only
+                            // inventory from the obfuscated manifest. Normalize both
+                            // sides before comparing release resources.
+                            final java.util.jar.Manifest manifest = new java.util.jar.Manifest(input)
+                            manifest.mainAttributes.remove(leakedInventory)
+                            final java.io.ByteArrayOutputStream normalized = new java.io.ByteArrayOutputStream()
+                            manifest.write(normalized)
+                            digest.update(normalized.toByteArray())
+                        } else {
+                            final byte[] buffer = new byte[65536]
+                            int read
+                            while ((read = input.read(buffer)) >= 0) {
+                                if (read > 0) {
+                                    digest.update(buffer, 0, read)
+                                }
                             }
                         }
                     }

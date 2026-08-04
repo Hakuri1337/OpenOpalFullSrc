@@ -41,6 +41,7 @@ public final class AuthService implements AutoCloseable {
     private volatile long nextHeartbeatAt;
     private volatile long networkGraceStartedAt;
     private volatile boolean rememberLogin;
+    private volatile RuntimePermit runtimePermit;
 
     AuthService(final OraculusClient oraculus) {
         this.oraculus = oraculus;
@@ -77,7 +78,8 @@ public final class AuthService implements AutoCloseable {
      * runtime is allowed to operate. Callers must never persist or log it.
      */
     public String ircAccessToken() {
-        return snapshot.get().allowsRuntime() && accessExpiresAt > now() ? accessToken : "";
+        return snapshot.get().allowsRuntime() && RuntimeAccessGate.allowsHotPath()
+                && accessExpiresAt > now() ? accessToken : "";
     }
 
     public String savedUsername() {
@@ -130,28 +132,41 @@ public final class AuthService implements AutoCloseable {
             requireLogin(networkMessage(throwable));
             return;
         }
-        if (!result.ok()) {
-            publish(AuthState.LOGIN_REQUIRED, result.message(), result.requestId(), username, "", null,
-                    fingerprint == null ? "" : fingerprint.quality());
+        if (result == null) {
+            requireLogin("认证服务器返回了空响应");
             return;
         }
-        if (result.accessToken().isBlank() || result.refreshToken().isBlank()) {
-            publish(AuthState.LOGIN_REQUIRED, result.message(), result.requestId(), result.username(),
-                    result.tier(), result.betaExpiresAt(), result.hwidQuality());
-            return;
-        }
-        if (!hasValidEntitlement(result)) {
-            rejectInvalidEntitlement(result);
-            return;
+        final AuthDecisionEvaluator.SessionDecision decision =
+                AuthDecisionEvaluator.evaluateSession(result, fingerprint, now());
+        switch (decision) {
+            case TEMPORARY_FAILURE, SERVER_REJECTED -> {
+                publish(AuthState.LOGIN_REQUIRED, result.message(), result.requestId(), username, "", null,
+                        fingerprint == null ? "" : fingerprint.quality());
+                return;
+            }
+            case MALFORMED_RESPONSE -> {
+                publish(AuthState.LOGIN_REQUIRED, result.message(), result.requestId(), result.username(),
+                        result.tier(), result.betaExpiresAt(), result.hwidQuality());
+                return;
+            }
+            case INVALID_ENTITLEMENT, INVALID_SERVER_PROOF -> {
+                rejectInvalidEntitlement(result);
+                return;
+            }
+            case ACCEPT -> {
+            }
         }
         acceptSession(result);
     }
 
     private void acceptSession(final AuthApiClient.ApiResult result) {
+        final RuntimePermit acceptedPermit = RuntimePermit.issue(result, fingerprint, now());
         accessToken = result.accessToken();
         refreshToken = result.refreshToken();
         accessExpiresAt = result.accessExpiresAt();
         refreshExpiresAt = result.refreshExpiresAt();
+        runtimePermit = acceptedPermit;
+        RuntimeAccessGate.install(acceptedPermit, now());
         nextHeartbeatAt = now() + HEARTBEAT_INTERVAL_SECONDS;
         networkGraceStartedAt = 0L;
         store.save(result.username(), refreshToken, refreshExpiresAt, rememberLogin);
@@ -161,7 +176,7 @@ public final class AuthService implements AutoCloseable {
             publish(AuthState.RUNTIME_STARTING, "正在启动 Oraculus 运行时", result.requestId(),
                     result.username(), result.tier(), result.betaExpiresAt(), result.hwidQuality());
             try {
-                oraculus.runAuthenticatedInitializations();
+                oraculus.runAuthenticatedInitializations(acceptedPermit);
                 publish(AuthState.READY, "登录成功", result.requestId(), result.username(),
                         result.tier(), result.betaExpiresAt(), result.hwidQuality());
                 if (MinecraftClient.getInstance().currentScreen instanceof OraculusLoginScreen screen)
@@ -190,17 +205,22 @@ public final class AuthService implements AutoCloseable {
                 }
                 return;
             }
-            if (!result.ok()) {
-                if (isTemporaryFailure(result)) {
-                    if (initial) requireLogin(result.message());
-                    else enterNetworkGrace(result.message());
-                } else {
-                    revoke(result.message(), result.requestId());
-                }
+            if (result == null) {
+                if (initial) requireLogin("认证服务器返回了空响应");
+                else enterNetworkGrace("认证服务器返回了空响应");
                 return;
             }
-            if (!hasValidEntitlement(result)) {
-                rejectInvalidEntitlement(result);
+            final AuthDecisionEvaluator.SessionDecision decision =
+                    AuthDecisionEvaluator.evaluateSession(result, fingerprint, now());
+            if (decision != AuthDecisionEvaluator.SessionDecision.ACCEPT) {
+                if (decision == AuthDecisionEvaluator.SessionDecision.TEMPORARY_FAILURE) {
+                    if (initial) requireLogin(result.message());
+                    else enterNetworkGrace(result.message());
+                } else if (decision == AuthDecisionEvaluator.SessionDecision.SERVER_REJECTED) {
+                    revoke(result.message(), result.requestId());
+                } else {
+                    rejectInvalidEntitlement(result);
+                }
                 return;
             }
             acceptSession(result);
@@ -216,7 +236,7 @@ public final class AuthService implements AutoCloseable {
                 return;
             }
             if (!result.ok()) {
-                if (isTemporaryFailure(result)) enterNetworkGrace(result.message());
+                if (AuthDecisionEvaluator.isTemporaryFailure(result)) enterNetworkGrace(result.message());
                 else revoke(result.message(), result.requestId());
                 return;
             }
@@ -251,8 +271,18 @@ public final class AuthService implements AutoCloseable {
         }
     }
 
-    private void enterNetworkGrace(final String message) {
-        if (networkGraceStartedAt == 0L) networkGraceStartedAt = now();
+    private synchronized void enterNetworkGrace(final String message) {
+        final long currentTime = now();
+        if (networkGraceStartedAt == 0L) {
+            networkGraceStartedAt = currentTime;
+            try {
+                RuntimeAccessGate.enterNetworkGrace(runtimePermit,
+                        networkGraceStartedAt + NETWORK_GRACE_SECONDS, currentTime);
+            } catch (SecurityException invalidPermit) {
+                revoke("认证运行时凭据已失效", "");
+                return;
+            }
+        }
         final AuthSnapshot current = snapshot.get();
         publish(AuthState.NETWORK_GRACE, message + "；已进入 10 分钟临时宽限", current.requestId(),
                 current.username(), current.tier(), current.betaExpiresAt(), current.hwidQuality());
@@ -285,14 +315,6 @@ public final class AuthService implements AutoCloseable {
                 fingerprint == null ? current.hwidQuality() : fingerprint.quality());
     }
 
-    private boolean hasValidEntitlement(final AuthApiClient.ApiResult result) {
-        if (result.accessExpiresAt() <= now() || result.refreshExpiresAt() <= now()) return false;
-        if (EditionBuildInfo.isFree()) return true;
-        return "BETA".equals(result.tier())
-                && result.betaExpiresAt() != null
-                && result.betaExpiresAt() > now();
-    }
-
     private void rejectInvalidEntitlement(final AuthApiClient.ApiResult result) {
         final String token = result.accessToken();
         clearCredentials();
@@ -301,10 +323,6 @@ public final class AuthService implements AutoCloseable {
                 result.requestId(), result.username(), result.tier(), result.betaExpiresAt(), result.hwidQuality());
         stopRuntimeAndShowLogin();
         if (token != null && !token.isBlank()) api.logout(token).exceptionally(throwable -> null);
-    }
-
-    private static boolean isTemporaryFailure(final AuthApiClient.ApiResult result) {
-        return "TEMPORARY_UNAVAILABLE".equals(result.error()) || result.statusCode() >= 500;
     }
 
     private boolean beginRequest() {
@@ -320,12 +338,22 @@ public final class AuthService implements AutoCloseable {
     }
 
     private void clearCredentials() {
+        RuntimeAccessGate.revoke();
         accessToken = "";
         refreshToken = "";
         accessExpiresAt = 0L;
         refreshExpiresAt = 0L;
         networkGraceStartedAt = 0L;
+        runtimePermit = null;
         store.clearSession();
+    }
+
+    public void resumeAuthenticatedRuntime() {
+        final RuntimePermit current = runtimePermit;
+        if (current == null || !snapshot.get().allowsRuntime()) {
+            throw new SecurityException("Authenticated runtime is unavailable");
+        }
+        oraculus.runAuthenticatedInitializations(current);
     }
 
     private void publish(final AuthState state, final String message, final String requestId,

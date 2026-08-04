@@ -5,7 +5,7 @@ import wtf.oraculus.event.EventCancellable;
 
 public final class ReceivePacketEvent extends EventCancellable {
 
-    private final Packet<?> packet;
+    private Packet<?> packet;
 
     public ReceivePacketEvent(final Packet<?> packet) {
         this.packet = packet;
@@ -13,6 +13,10 @@ public final class ReceivePacketEvent extends EventCancellable {
 
     public Packet<?> getPacket() {
         return packet;
+    }
+
+    public void setPacket(final Packet<?> packet) {
+        this.packet = packet;
     }
 
 }

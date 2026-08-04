@@ -393,6 +393,13 @@ public final class TpAuraModule extends Module implements DeprecatedModule {
     }
 
     private boolean isValidTarget(final LivingEntity entity, final Vec3d from, final double maximumDistance) {
+        // `currentEnemy` survives the outbound trip. Re-resolve its wrapper here so
+        // cached attacks observe the same configurable TargetFlags as fresh selection.
+        final var targetList = LocalDataWatch.getTargetList();
+        final TargetLivingEntity target = targetList == null
+                ? null
+                : targetList.getTarget(entity.getId(), TargetLivingEntity.class);
+        if (target == null || target.isLocal() || !target.isMatchingFlags(targets.getTargetFlags())) return false;
         if (!entity.isAlive() || !entity.isAttackable() || entity.hurtTime > hurtTime.getValue()) return false;
         if (AntiBotsModule.shouldFilter(entity) || TeamsModule.isTeammate(entity)) return false;
         if (LocalDataWatch.getFriendList().contains(entity.getName().getString().toUpperCase())) return false;

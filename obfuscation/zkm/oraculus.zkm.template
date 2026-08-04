@@ -82,6 +82,10 @@ exclude wtf.oraculus.^OraculusFabric + and
         wtf.oraculus..* implements com.mojang.brigadier.arguments.ArgumentType public *(*) and
         wtf.oraculus..* implements com.google.gson.JsonSerializer public *(*) and
         wtf.oraculus..* implements com.google.gson.JsonDeserializer public *(*) and
+        // AudioStream is remapped after ZKM runs. Keep every public method of
+        // implementations stable so the named-to-intermediary remapper can
+        // still bind getFormat/read to Minecraft's runtime interface methods.
+        wtf.oraculus..* implements net.minecraft.client.sound.AudioStream public *(*) and
         wtf.oraculus..* implements java.lang.AutoCloseable public close(*) and
         wtf.oraculus..* implements java.lang.Comparable public compareTo(*) and
         wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.CustomIslandTrigger public getIslandX(*) and
@@ -113,26 +117,26 @@ exclude wtf.oraculus.^OraculusFabric + and
         wtf.oraculus..* extends wtf.oraculus.client.feature.module.Module public getSuffix(*) and
         wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onEnable(*) and
         wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onDisable(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onEnable(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onDisable(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getSuffix(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldStopBacktrack(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldPauseKillAuraClicks(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isDelaying(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public hasQueuedPackets(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isAttacking(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getHitSelectSkips(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public consumeHitSelectSkip(*) and
-        wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public onVelocityResetAttackPerformed(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getSuffix(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldStopBacktrack(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldPauseKillAuraClicks(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isDelaying(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public hasQueuedPackets(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isAttacking(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getHitSelectSkips(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public consumeHitSelectSkip(*) and
-        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public onVelocityResetAttackPerformed(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onEnable(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.property.impl.mode.ModuleMode public onDisable(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getSuffix(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldStopBacktrack(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldPauseKillAuraClicks(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isDelaying(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public hasQueuedPackets(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isAttacking(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getHitSelectSkips(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public consumeHitSelectSkip(*) and
+          wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public onVelocityResetAttackPerformed(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getSuffix(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldStopBacktrack(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public shouldPauseKillAuraClicks(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isDelaying(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public hasQueuedPackets(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public isAttacking(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getHitSelectSkips(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public consumeHitSelectSkip(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public onVelocityResetAttackPerformed(*) and
         // Config loading and ClickGUI operate through Property references.
         // Preserve only the overridable data/component contract.
         wtf.oraculus.client.feature.module.property.Property public getValue(*) and
@@ -160,6 +164,10 @@ exclude wtf.oraculus.^OraculusFabric + and
 stringEncryptionExclude wtf.oraculus.mixin..* and
                         wtf.oraculus.^OraculusFabric and
                         wtf.oraculus.scripting..* and
+                        wtf.oraculus.client.renderer..* and
+                        wtf.oraculus.client.screen..* and
+                        wtf.oraculus.client.music.screen..* and
+                        wtf.oraculus.client.auth.OraculusLoginScreen and
                         wtf.oraculus.client.music.playback..* and
                         wtf.oraculus.client.feature.module.impl.movement.physics.PhysicsModule and
                         wtf.oraculus.client.feature.module.impl.utility.disabler.impl.MinibloxDisabler;
@@ -177,13 +185,27 @@ longEncryptionExclude wtf.oraculus.mixin..* and
                       wtf.oraculus.client.renderer..* and
                       wtf.oraculus.client.screen..*;
 
+// Flow obfuscation is opt-in. Keep framework, rendering and Tick paths out of
+// the transform, then enable it only at authentication gate boundaries.
+obfuscateFlowExclude wtf.oraculus..* +;
+
+obfuscateFlowUnexclude wtf.oraculus.client.auth.ModuleBootPolicy requireRuntimeStart(*) and
+                       wtf.oraculus.client.auth.ModuleBootPolicy requireModuleCatalog(*) and
+                       wtf.oraculus.client.auth.ModuleBootPolicy require(*) and
+                       wtf.oraculus.client.auth.RuntimeAccessGate install(*) and
+                       wtf.oraculus.client.auth.RuntimeAccessGate enterNetworkGrace(*) and
+                       wtf.oraculus.client.auth.RuntimeAccessGate revoke() and
+                       wtf.oraculus.client.auth.RuntimeAccessGate require(*);
+
 obfuscate
     changeLogFileOut="@CHANGE_LOG@"
     newNameCharacters=ASCII
     legalIdentifiers=true
     keepInnerClassInfo=true
+    // Gson resolves generic collection element types through reflected generic
+    // signatures, so this remains enabled until those models use explicit adapters.
     keepGenericsInfo=true
-    obfuscateFlow=none
+    obfuscateFlow=light
     // ZKM 25 exception obfuscation cannot be excluded per class. It injects
     // manufactured catch paths into every Mixin handler, which is unsafe once
     // Sponge merges those methods into Minecraft classes.
@@ -196,7 +218,7 @@ obfuscate
     obfuscateParameters=none
     obfuscateReferences=none
     lineNumbers=scramble
-    localVariables=keep
+    localVariables=delete
     methodParameters=keepVisibleIfNotObfuscated
     randomize=true;
 
