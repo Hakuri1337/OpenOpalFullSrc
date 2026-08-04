@@ -20,6 +20,7 @@ https://auth.hakuri.tech/api/v1/
 - `POST /api/v1/auth/heartbeat`
 - `GET /api/v1/auth/status`
 - `POST /api/v1/auth/logout`
+- `POST /api/v1/beta-codes/issue`（客户端登录态自动发卡）
 - `GET /health/live`
 - `GET /health/ready`
 - `/user/*`
@@ -31,10 +32,14 @@ https://auth.hakuri.tech/api/v1/
 
 - `SUPER_ADMIN`：可以创建和管理 `SUPPORT_ADMIN`，也可以执行全部普通用户管理操作；
 - `SUPPORT_ADMIN`：可以创建普通用户，并对普通用户执行与超级管理员相同的封禁、删除、改密、HWID 和 Free/Beta 管理操作，但不能创建或操作任何管理员；
-- `USER`：仅能使用客户端和个人账号面板；
+- `USER`：可以使用客户端、个人账号面板和客户端登录态自动发卡；
 - `FREE` / `BETA` 是独立于管理员角色的客户端授权等级。
 
 管理后台支持按用户名、ID、角色、等级、状态和创建来源搜索。账号列表使用每页 200 条的服务端分页，不再截断为前 500 个账号。`/admin/audit` 提供最近 200 条简明审计记录，完整审计数据仍持久化于认证数据文件中。
+
+客户端自动发卡批次会在 `/admin/beta-codes` 中显示请求账号、角色、客户端版本/build、生成数量、
+兑换状态和 `PENDING_REVIEW` 审查状态。只有 `SUPER_ADMIN` 可以标记已审或禁用异常批次；所有
+角色的发卡请求都会进入审计日志。
 
 管理员设置临时密码后，账号必须先进入用户面板完成强制改密，才能重新进入管理后台或客户端；这次强制改密不受 168 小时自助改密冷却限制。
 

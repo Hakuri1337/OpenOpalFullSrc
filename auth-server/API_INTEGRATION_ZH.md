@@ -277,7 +277,87 @@ RefreshToken，客户端应在 Proof 验证通过后将新 RefreshToken、到期
 请求体为 `{}`，携带 Bearer AccessToken。服务端撤销当前会话。即使令牌已经
 无效，退出接口仍返回成功，因此客户端应始终清除本地令牌。
 
-### 3.7 IRC、在线列表与 Minecraft 身份
+### 3.7 客户端登录态自动发卡
+
+`POST /api/v1/beta-codes/issue`
+
+该接口使用 Minecraft 客户端登录产生的 Bearer AccessToken，不使用网页 Cookie、网页
+CSRF 或 RefreshToken。`USER`、`SUPPORT_ADMIN`、`SUPER_ADMIN` 三种有效账号角色均可调用；
+每次生成会记录请求账号、角色、客户端会话、edition、版本、build、launcher、requestId 和
+来源 IP 摘要，管理员可以在 `/admin/beta-codes` 审查客户端批次。
+
+请求必须使用 HTTPS、`Content-Type: application/json`，并携带 16-128 个可见 ASCII 字符的
+`Idempotency-Key`。同一次逻辑发卡在超时或响应丢失后重试时必须复用原键，不能换新键：
+
+```http
+Authorization: Bearer <AccessToken>
+Idempotency-Key: order-20260804-0001-6f2a
+Content-Type: application/json
+```
+
+时长卡请求：
+
+```json
+{
+  "product": "BETA_DURATION",
+  "durationDays": 30,
+  "quantity": 10,
+  "label": "order-20260804-0001",
+  "note": "客户端自动发卡",
+  "codeExpiresAtUtc": null
+}
+```
+
+永久卡请求：
+
+```json
+{
+  "product": "BETA_PERMANENT",
+  "quantity": 1,
+  "label": "permanent-order-0002"
+}
+```
+
+参数规则：`BETA_DURATION` 的 `durationDays` 为 1-3650 的整数；永久卡不得提供
+`durationDays`；`quantity` 为 1-100 的整数；`label` 最长 80 个字符；`note` 最长 200 个字符；
+`codeExpiresAtUtc` 可为空，提供时必须是晚于当前时间的 Unix 秒。请求体未知字段会被拒绝。
+
+成功响应中的 `Codes` 是本批明文卡密，必须立即交付到安全位置，不得写入客户端日志：
+
+```json
+{
+  "requestId": "a1b2c3...",
+  "Ok": true,
+  "Batch": {
+    "id": "批次 ID",
+    "product": "BETA_DURATION",
+    "durationSeconds": 2592000,
+    "quantity": 10,
+    "status": "ACTIVE",
+    "reviewStatus": "PENDING_REVIEW",
+    "createdAtUtc": 1785850000
+  },
+  "Codes": ["ORA-BETA-..."],
+  "IdempotentReplay": false,
+  "DeliveryExpiresAtUtc": 1785850900
+}
+```
+
+客户端自动生成批次立即可兑换，但审查状态初始为 `PENDING_REVIEW`。超级管理员在网页
+Beta 卡密页面标记为 `REVIEWED`、填写备注或禁用批次；禁用只阻止尚未兑换的卡密，不撤销
+已经生效的账号授权。
+
+服务端按“请求账号 + Idempotency-Key + 规范化请求摘要”判定幂等：同键同请求在 15 分钟
+交付窗口内返回同一批次和同一组 `Codes`，并将 `IdempotentReplay` 设为 `true`；同键不同
+请求返回 `409 IDEMPOTENCY_KEY_REUSED`。窗口过期后返回 `409 ISSUE_RESULT_EXPIRED`，
+不得换键自动生成第二批。服务端仅以 AES-256-GCM 密文临时保存交付结果，明文不写入
+`oraculus-auth.json`；备份必须包含 `keys/beta-code-delivery-key.bin`。
+
+每个账号滚动 24 小时最多生成 1000 张，单账号 10 分钟最多 30 次，单来源 IP 10 分钟最多
+100 次。幂等重放不会重复计入生成数量，但仍必须重新通过会话、账号、HWID、版本和
+launcher 校验。
+
+### 3.8 IRC、在线列表与 Minecraft 身份
 
 所有 IRC 接口都复用当前 Bearer AccessToken。AccessToken 轮换或撤销后，
 客户端必须关闭旧 SSE 并使用新令牌重连。
@@ -501,7 +581,7 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 | 502 | `IRC_IDENTITY_PROVIDER_ERROR` | Mojang 服务暂不可用；指数退避后重新从 challenge 开始 |
 | 503 | `IRC_CAPACITY_REACHED` | 延迟重连，避免并发创建多个 SSE |
 
-### 3.8 健康检查
+### 3.9 健康检查
 
 - `GET /health/live`：进程可接收请求时返回 `200 {"ok":true}`
 - `GET /health/ready`：认证数据结构可用时返回 200，否则返回 503
@@ -512,15 +592,15 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 
 | HTTP | 主要错误码 | 客户端处理 |
 | --- | --- | --- |
-| 400 | `INVALID_USERNAME`、`INVALID_PASSWORD`、`HWID_UNAVAILABLE`、`CLIENT_VERSION_BLOCKED`、`LAUNCHER_VERSION_BLOCKED`、`REGISTRATION_DISABLED` | 显示业务消息；客户端或启动器版本阻止应引导对应组件更新 |
+| 400 | `INVALID_USERNAME`、`INVALID_PASSWORD`、`HWID_UNAVAILABLE`、`CLIENT_VERSION_BLOCKED`、`LAUNCHER_VERSION_BLOCKED`、`REGISTRATION_DISABLED`、`INVALID_BETA_CODE_REQUEST`、`INVALID_BETA_PRODUCT`、`INVALID_BETA_CODE_QUANTITY`、`INVALID_BETA_DURATION`、`INVALID_BETA_CODE_LABEL`、`INVALID_BETA_CODE_NOTE`、`INVALID_BETA_CODE_EXPIRY`、`INVALID_IDEMPOTENCY_KEY` | 显示业务消息并修正请求；客户端或启动器版本阻止应引导对应组件更新 |
 | 401 | `INVALID_CREDENTIALS`、`SESSION_REVOKED` | 登录失败或清除会话并重新登录 |
 | 403 | `ACCOUNT_BANNED`、`ACCOUNT_DELETED`、`LICENSE_REQUIRED`、`LICENSE_EXPIRED`、`HWID_MISMATCH`、`PASSWORD_CHANGE_REQUIRED` | 禁止进入；临时密码须先在用户面板修改 |
-| 409 | `USERNAME_TAKEN` | 提示更换用户名 |
+| 409 | `USERNAME_TAKEN`、`IDEMPOTENCY_KEY_REUSED`、`ISSUE_RESULT_EXPIRED` | 用户名冲突时更换用户名；幂等键冲突必须修正业务订单映射；交付过期时转人工按批次 ID 处理，禁止换键自动重发 |
 | 413 | `PAYLOAD_TOO_LARGE` | 修正客户端请求 |
 | 415 | `INVALID_CONTENT_TYPE` | 使用 JSON Content-Type |
 | 426 | `HTTPS_REQUIRED` | 禁止 HTTP 降级 |
-| 429 | `RATE_LIMITED`、`REGISTRATION_RATE_LIMITED` | 有上限地退避，不要立即循环重试 |
-| 500 | `INTERNAL_ERROR` | 记录 `requestId`，稍后重试 |
+| 429 | `RATE_LIMITED`、`REGISTRATION_RATE_LIMITED`、`BETA_CODE_ISSUE_RATE_LIMITED`、`BETA_CODE_DAILY_LIMIT` | 有上限地退避，不要立即循环重试；发卡请求必须保留原 Idempotency-Key |
+| 500 | `INTERNAL_ERROR`、`BETA_CODE_ISSUE_FAILED` | 记录 `requestId`，发卡失败时禁止换键重发，先查询审计或联系管理员 |
 | 503 | `SERVER_BUSY` | 短暂退避后重试 |
 
 未知错误码必须按“当前请求失败”处理，不能默认放行。

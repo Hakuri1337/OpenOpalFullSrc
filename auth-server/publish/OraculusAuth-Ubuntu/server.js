@@ -31,7 +31,19 @@ const PERMANENT_BETA_EXPIRES_AT_UTC = 4102444799;
 const MAX_DURATION_BETA_SECONDS = 3650 * 86400;
 const MAX_BETA_EXPIRY_SECONDS = 20 * 365 * 86400;
 const MAX_BETA_CODES_PER_BATCH = 100;
+const BETA_CODE_ISSUE_DELIVERY_SECONDS = 15 * 60;
+const BETA_CODE_ISSUE_RATE_WINDOW_SECONDS = 10 * 60;
+const BETA_CODE_ISSUE_USER_RATE_LIMIT = 30;
+const BETA_CODE_ISSUE_IP_RATE_LIMIT = 100;
 const BETA_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const BETA_CODE_VALUE_RULES = Object.freeze([
+  Object.freeze({ key: 'DAY_1', label: '1 天卡', days: 1, unitValue: 3 }),
+  Object.freeze({ key: 'DAY_2', label: '2 天卡', days: 2, unitValue: 5 }),
+  Object.freeze({ key: 'DAY_7', label: '周卡（7 天）', days: 7, unitValue: 10 }),
+  Object.freeze({ key: 'DAY_30', label: '月卡（30 天）', days: 30, unitValue: 25 }),
+  Object.freeze({ key: 'DAY_365', label: '年卡（365 天）', days: 365, unitValue: 40 }),
+  Object.freeze({ key: 'PERMANENT', label: '永久卡（含超过 400 天）', days: null, unitValue: 50 })
+]);
 const COMMON_PASSWORDS = new Set([
   '123456789012', '123456789123', 'password1234', 'password12345',
   'qwerty123456', 'qwertyuiop123', 'admin12345678', 'letmein123456',
@@ -68,6 +80,17 @@ function randomBetaCode() {
   const groups = body.match(/.{1,4}/g) || [];
   return `ORA-BETA-${groups.join('-')}`;
 }
+function betaCodeValueCategory(batch) {
+  const durationDays = Number(batch && batch.durationSeconds) / 86400;
+  if ((batch && batch.product) === 'BETA_PERMANENT' || durationDays > 400)
+    return BETA_CODE_VALUE_RULES.find(rule => rule.key === 'PERMANENT');
+  const exact = BETA_CODE_VALUE_RULES.find(rule => rule.days === durationDays);
+  if (exact) return exact;
+  const durationLabel = Number.isFinite(durationDays) && durationDays > 0
+    ? `${Number.isInteger(durationDays) ? durationDays : durationDays.toFixed(2)} 天`
+    : '未知时长';
+  return { key: `UNPRICED:${durationLabel}`, label: `${durationLabel}（未定价）`, days: durationDays, unitValue: null };
+}
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''), 'utf8');
   const b = Buffer.from(String(right || ''), 'utf8');
@@ -87,9 +110,12 @@ function apiStatus(code) {
   if (code === 'INVALID_CREDENTIALS' || code === 'SESSION_REVOKED') return 401;
   if (['ACCOUNT_BANNED', 'ACCOUNT_DELETED', 'LICENSE_REQUIRED', 'LICENSE_EXPIRED',
     'HWID_MISMATCH', 'PASSWORD_CHANGE_REQUIRED'].includes(code)) return 403;
-  if (code === 'RATE_LIMITED' || code === 'REGISTRATION_RATE_LIMITED' || code === 'REDEEM_RATE_LIMITED') return 429;
+  if (code === 'RATE_LIMITED' || code === 'REGISTRATION_RATE_LIMITED' || code === 'REDEEM_RATE_LIMITED'
+    || code === 'BETA_CODE_ISSUE_RATE_LIMITED' || code === 'BETA_CODE_DAILY_LIMIT') return 429;
   if (code === 'ACCOUNT_NOT_ACTIVE' || code === 'ADMIN_PERMISSION_DENIED') return 403;
-  if (code === 'USERNAME_TAKEN' || code === 'BETA_EXPIRY_LIMIT') return 409;
+  if (code === 'USERNAME_TAKEN' || code === 'BETA_EXPIRY_LIMIT' || code === 'IDEMPOTENCY_KEY_REUSED'
+    || code === 'ISSUE_RESULT_EXPIRED') return 409;
+  if (code === 'BETA_CODE_ISSUE_FAILED') return 500;
   return 400;
 }
 
@@ -223,6 +249,7 @@ class JsonStore {
     return {
       schemaVersion: 1, users: [], sessions: [], usedRefreshTokens: [],
       webSessions: [], rateLimitEvents: [], auditLogs: [], betaCodeBatches: [], betaCodes: [], betaRedemptions: [],
+      betaCodeIssueRequests: [],
       serviceSettings: { betaPublicAccessUntilUtc: 0, redemptionSchemaVersion: 1 }
     };
   }
@@ -240,7 +267,7 @@ class JsonStore {
     let migrated = false;
     for (const key of Object.keys(initial)) {
       if (key === 'schemaVersion' || key === 'serviceSettings') continue;
-      if (parsed[key] == null && ['betaCodeBatches', 'betaCodes', 'betaRedemptions'].includes(key)) {
+      if (parsed[key] == null && ['betaCodeBatches', 'betaCodes', 'betaRedemptions', 'betaCodeIssueRequests'].includes(key)) {
         parsed[key] = [];
         migrated = true;
       }
@@ -296,6 +323,7 @@ class AuthService {
     this.ipPepper = secret(keyDir, 'ip-pepper');
     this.passwordPepper = secret(keyDir, 'password-pepper');
     this.redeemCodePepper = secret(keyDir, 'redeem-code-pepper');
+    this.betaCodeDeliveryKey = secret(keyDir, 'beta-code-delivery-key');
     this.entitlementSigner = entitlementSigner(keyDir);
   }
 
@@ -303,6 +331,7 @@ class AuthService {
     const data = this.store.data;
     return ['users', 'sessions', 'usedRefreshTokens', 'webSessions', 'rateLimitEvents', 'auditLogs',
       'betaCodeBatches', 'betaCodes', 'betaRedemptions']
+      .concat('betaCodeIssueRequests')
       .every(key => Array.isArray(data[key]));
   }
 
@@ -448,7 +477,7 @@ class AuthService {
         access, timestamp, accessExpiresAt, refreshExpiresAt));
   }
 
-  heartbeat(accessToken, remoteIp, requestId) {
+  validateClientAction(accessToken) {
     const found = this.clientSession(accessToken);
     if (!found) return error('SESSION_REVOKED', '会话无效');
     const { user, session } = found;
@@ -459,6 +488,13 @@ class AuthService {
     if (versionError) return versionError;
     const accountError = this.validateAccount(user, session.clientEdition);
     if (accountError) return accountError;
+    return { Ok: true, user, session };
+  }
+
+  heartbeat(accessToken, remoteIp, requestId) {
+    const validated = this.validateClientAction(accessToken);
+    if (!validated.Ok) return validated;
+    const { user, session } = validated;
     this.store.mutate(data => { const current = data.sessions.find(item => item.id === session.id); if (current) current.lastSeenAtUtc = now(); });
     return { Ok: true, Message: 'ok', Account: this.clientAccountView(user, session.clientEdition) };
   }
@@ -586,67 +622,270 @@ class AuthService {
     return null;
   }
 
+  normalizeBetaCodeBatchInput(values, strictJson = false) {
+    const input = values && typeof values === 'object' && !Array.isArray(values) ? values : {};
+    const allowed = new Set(['product', 'durationDays', 'quantity', 'label', 'note', 'codeExpiresAtUtc']);
+    if (strictJson && Object.keys(input).some(key => !allowed.has(key)))
+      return error('INVALID_BETA_CODE_REQUEST', '发卡请求包含未知字段');
+    if (strictJson && (typeof input.product !== 'string' || !Number.isInteger(input.quantity)))
+      return error('INVALID_BETA_CODE_REQUEST', 'product 必须为字符串，quantity 必须为整数');
+    if (strictJson && input.label != null && typeof input.label !== 'string')
+      return error('INVALID_BETA_CODE_REQUEST', 'label 必须为字符串');
+    if (strictJson && input.note != null && typeof input.note !== 'string')
+      return error('INVALID_BETA_CODE_REQUEST', 'note 必须为字符串');
+    const product = upper(input.product);
+    const quantity = strictJson ? input.quantity : Number.parseInt(input.quantity, 10);
+    const durationDays = strictJson ? input.durationDays : Number.parseInt(input.durationDays, 10);
+    const label = text(input.label).trim();
+    const note = text(input.note).trim();
+    const codeExpiresAtUtc = input.codeExpiresAtUtc == null
+      ? null : (strictJson ? input.codeExpiresAtUtc : Number.parseInt(input.codeExpiresAtUtc, 10));
+    if (!['BETA_DURATION', 'BETA_PERMANENT'].includes(product))
+      return error('INVALID_BETA_PRODUCT', '卡密类型无效');
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_BETA_CODES_PER_BATCH)
+      return error('INVALID_BETA_CODE_QUANTITY', `单批卡密数量必须为 1-${MAX_BETA_CODES_PER_BATCH}`);
+    if (product === 'BETA_DURATION' && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650))
+      return error('INVALID_BETA_DURATION', '时长卡有效期必须为 1-3650 天');
+    if (strictJson && product === 'BETA_PERMANENT' && input.durationDays != null)
+      return error('INVALID_BETA_DURATION', '永久卡不得提供 durationDays');
+    if (label.length > 80) return error('INVALID_BETA_CODE_LABEL', '批次标签最多 80 个字符');
+    if (note.length > 200) return error('INVALID_BETA_CODE_NOTE', '批次备注最多 200 个字符');
+    if (codeExpiresAtUtc != null && (!Number.isInteger(codeExpiresAtUtc) || codeExpiresAtUtc <= now()))
+      return error('INVALID_BETA_CODE_EXPIRY', '卡密失效时间必须晚于当前时间');
+    return {
+      Ok: true, product, quantity, durationDays: product === 'BETA_DURATION' ? durationDays : null,
+      label, note, codeExpiresAtUtc
+    };
+  }
+
+  createBetaCodeBatchInTransaction(data, actorUserId, normalized, timestamp, metadata = {}) {
+    const generatedToday = data.betaCodeBatches
+      .filter(batch => batch.createdByUserId === actorUserId && batch.createdAtUtc >= timestamp - 86400)
+      .reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+    if (generatedToday + normalized.quantity > 1000)
+      return error('BETA_CODE_DAILY_LIMIT', '单个账号滚动 24 小时最多生成 1000 张卡密');
+    const existing = new Set(data.betaCodes.map(code => code.codeLookup));
+    const batch = Object.assign({
+      id: id(),
+      label: normalized.label || `${normalized.product === 'BETA_PERMANENT' ? 'Permanent' : `${normalized.durationDays}-day`} Beta`,
+      product: normalized.product,
+      durationSeconds: normalized.product === 'BETA_DURATION' ? normalized.durationDays * 86400 : null,
+      quantity: normalized.quantity,
+      status: 'ACTIVE',
+      codeExpiresAtUtc: normalized.codeExpiresAtUtc,
+      createdAtUtc: timestamp,
+      createdByUserId: actorUserId,
+      disabledAtUtc: null,
+      disabledByUserId: null,
+      note: normalized.note
+    }, metadata);
+    const plaintextCodes = [];
+    for (let index = 0; index < normalized.quantity; index += 1) {
+      let plaintext; let lookup;
+      do {
+        plaintext = randomBetaCode();
+        lookup = betaCodeLookup(this.redeemCodePepper, plaintext);
+      } while (existing.has(lookup));
+      existing.add(lookup);
+      const normalizedCode = normalizeBetaCode(plaintext);
+      data.betaCodes.push({
+        id: id(), batchId: batch.id, codeLookup: lookup, displaySuffix: normalizedCode.slice(-4),
+        status: 'UNUSED', createdAtUtc: timestamp, redeemedAtUtc: null,
+        redeemedByUserId: null, redemptionId: null
+      });
+      plaintextCodes.push(plaintext);
+    }
+    data.betaCodeBatches.push(batch);
+    return { Ok: true, Batch: batch, Codes: plaintextCodes };
+  }
+
   createBetaCodeBatch(admin, values, remoteIp, requestId) {
     if (!admin || !admin.user || admin.user.role !== 'SUPER_ADMIN') {
       this.audit(admin && admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', false, remoteIp, 'role_denied', requestId);
       return error('ADMIN_PERMISSION_DENIED', '只有超级管理员可以生成 Beta 卡密');
     }
-    const product = upper(values && values.product);
-    const quantity = Number.parseInt(values && values.quantity, 10);
-    const durationDays = Number.parseInt(values && values.durationDays, 10);
-    const label = text(values && values.label).trim().slice(0, 80);
-    const note = text(values && values.note).trim().slice(0, 200);
-    const codeExpiresAtUtc = values && values.codeExpiresAtUtc == null
-      ? null : Number.parseInt(values.codeExpiresAtUtc, 10);
-    if (!['BETA_DURATION', 'BETA_PERMANENT'].includes(product))
-      return error('INVALID_BETA_PRODUCT', '卡密类型无效');
-    if (!Number.isFinite(quantity) || quantity < 1 || quantity > MAX_BETA_CODES_PER_BATCH)
-      return error('INVALID_BETA_CODE_QUANTITY', `单批卡密数量必须为 1-${MAX_BETA_CODES_PER_BATCH}`);
-    if (product === 'BETA_DURATION' && (!Number.isFinite(durationDays) || durationDays < 1 || durationDays > 3650))
-      return error('INVALID_BETA_DURATION', '时长卡有效期必须为 1-3650 天');
-    if (codeExpiresAtUtc != null && (!Number.isFinite(codeExpiresAtUtc) || codeExpiresAtUtc <= now()))
-      return error('INVALID_BETA_CODE_EXPIRY', '卡密失效时间必须晚于当前时间');
+    const normalized = this.normalizeBetaCodeBatchInput(values);
+    if (!normalized.Ok) return normalized;
     const timestamp = now();
     let created;
     try {
-      created = this.store.transaction(data => {
-        const generatedToday = data.betaCodeBatches
-          .filter(batch => batch.createdByUserId === admin.userId && batch.createdAtUtc >= timestamp - 86400)
-          .reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
-        if (generatedToday + quantity > 1000) return error('BETA_CODE_DAILY_LIMIT', '单个管理员每天最多生成 1000 张卡密');
-        const existing = new Set(data.betaCodes.map(code => code.codeLookup));
-        const batch = {
-          id: id(), label: label || `${product === 'BETA_PERMANENT' ? 'Permanent' : `${durationDays}-day`} Beta`,
-          product, durationSeconds: product === 'BETA_DURATION' ? durationDays * 86400 : null,
-          quantity, status: 'ACTIVE', codeExpiresAtUtc, createdAtUtc: timestamp,
-          createdByUserId: admin.userId, disabledAtUtc: null, disabledByUserId: null, note
-        };
-        const plaintextCodes = [];
-        for (let index = 0; index < quantity; index += 1) {
-          let plaintext; let lookup;
-          do {
-            plaintext = randomBetaCode();
-            lookup = betaCodeLookup(this.redeemCodePepper, plaintext);
-          } while (existing.has(lookup));
-          existing.add(lookup);
-          const normalized = normalizeBetaCode(plaintext);
-          data.betaCodes.push({
-            id: id(), batchId: batch.id, codeLookup: lookup, displaySuffix: normalized.slice(-4),
-            status: 'UNUSED', createdAtUtc: timestamp, redeemedAtUtc: null,
-            redeemedByUserId: null, redemptionId: null
-          });
-          plaintextCodes.push(plaintext);
-        }
-        data.betaCodeBatches.push(batch);
-        return { Ok: true, Batch: batch, Codes: plaintextCodes };
-      });
+      created = this.store.transaction(data => this.createBetaCodeBatchInTransaction(
+        data, admin.userId, normalized, timestamp, { issueSource: 'WEB_ADMIN', reviewStatus: 'NOT_REQUIRED' }
+      ));
     } catch (cause) {
       this.audit(admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', false, remoteIp, 'store_write_failed', requestId);
       throw cause;
     }
     this.audit(admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', Boolean(created.Ok), remoteIp,
-      created.Ok ? `batch=${created.Batch.id};product=${product};quantity=${quantity}` : `error=${created.Error}`, requestId);
+      created.Ok ? `batch=${created.Batch.id};product=${normalized.product};quantity=${normalized.quantity}`
+        : `error=${created.Error}`, requestId);
     return created;
+  }
+
+  betaCodeDeliveryAad(issue) {
+    return Buffer.from(JSON.stringify({
+      version: 1, issueId: issue.id, actorUserId: issue.actorUserId,
+      batchId: issue.batchId, requestHash: issue.requestHash
+    }), 'utf8');
+  }
+
+  encryptBetaCodeDelivery(codes, issue) {
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.betaCodeDeliveryKey, nonce);
+    cipher.setAAD(this.betaCodeDeliveryAad(issue));
+    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(codes), 'utf8'), cipher.final()]);
+    return {
+      deliveryNonce: nonce.toString('base64'),
+      deliveryTag: cipher.getAuthTag().toString('base64'),
+      deliveryCiphertext: ciphertext.toString('base64')
+    };
+  }
+
+  decryptBetaCodeDelivery(issue) {
+    if (!issue.deliveryNonce || !issue.deliveryTag || !issue.deliveryCiphertext)
+      throw new Error('beta code delivery data is unavailable');
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm', this.betaCodeDeliveryKey, Buffer.from(issue.deliveryNonce, 'base64')
+    );
+    decipher.setAAD(this.betaCodeDeliveryAad(issue));
+    decipher.setAuthTag(Buffer.from(issue.deliveryTag, 'base64'));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(issue.deliveryCiphertext, 'base64')), decipher.final()
+    ]).toString('utf8');
+    const codes = JSON.parse(plaintext);
+    if (!Array.isArray(codes) || !codes.length || codes.some(code => typeof code !== 'string' || !normalizeBetaCode(code)))
+      throw new Error('beta code delivery payload is invalid');
+    return codes;
+  }
+
+  issueBetaCodesFromClient(accessToken, values, idempotencyKey, remoteIp, requestId) {
+    const authenticated = this.validateClientAction(accessToken);
+    if (!authenticated.Ok) return authenticated;
+    const key = text(idempotencyKey).trim();
+    if (!/^[\x21-\x7e]{16,128}$/.test(key))
+      return error('INVALID_IDEMPOTENCY_KEY', 'Idempotency-Key 必须为 16-128 个可见 ASCII 字符');
+    const normalized = this.normalizeBetaCodeBatchInput(values, true);
+    if (!normalized.Ok) return normalized;
+    const timestamp = now();
+    const keyHash = sha256(key);
+    const requestHash = sha256(JSON.stringify({
+      product: normalized.product, durationDays: normalized.durationDays, quantity: normalized.quantity,
+      label: normalized.label, note: normalized.note, codeExpiresAtUtc: normalized.codeExpiresAtUtc
+    }));
+    let issued;
+    try {
+      issued = this.store.transaction(data => {
+        for (const record of data.betaCodeIssueRequests) {
+          if (record.deliveryExpiresAtUtc <= timestamp && record.deliveryCiphertext) {
+            record.deliveryNonce = null; record.deliveryTag = null; record.deliveryCiphertext = null;
+          }
+        }
+        const prior = data.betaCodeIssueRequests.find(record => record.actorUserId === authenticated.user.id
+          && safeEqual(record.idempotencyKeyHash, keyHash));
+        if (prior) {
+          if (!safeEqual(prior.requestHash, requestHash))
+            return error('IDEMPOTENCY_KEY_REUSED', '该 Idempotency-Key 已用于不同的发卡请求');
+          if (prior.deliveryExpiresAtUtc <= timestamp || !prior.deliveryCiphertext)
+            return Object.assign(error('ISSUE_RESULT_EXPIRED', '该批卡密已生成，但明文交付窗口已过期'), { BatchId: prior.batchId });
+          const batch = data.betaCodeBatches.find(item => item.id === prior.batchId);
+          if (!batch) throw new Error('beta code issue references a missing batch');
+          const currentSession = data.sessions.find(item => item.id === authenticated.session.id);
+          if (currentSession) currentSession.lastSeenAtUtc = timestamp;
+          prior.deliveredAtUtc = timestamp;
+          return {
+            Ok: true, Batch: batch, Codes: this.decryptBetaCodeDelivery(prior),
+            IdempotentReplay: true, DeliveryExpiresAtUtc: prior.deliveryExpiresAtUtc
+          };
+        }
+        const rateAllowed = this.consumeRateGroupInData(data, [
+          { bucket: `beta-issue-user:${authenticated.user.id}`, limit: BETA_CODE_ISSUE_USER_RATE_LIMIT,
+            seconds: BETA_CODE_ISSUE_RATE_WINDOW_SECONDS },
+          { bucket: `beta-issue-ip:${this.hashIp(remoteIp)}`, limit: BETA_CODE_ISSUE_IP_RATE_LIMIT,
+            seconds: BETA_CODE_ISSUE_RATE_WINDOW_SECONDS }
+        ], timestamp);
+        if (!rateAllowed) return error('BETA_CODE_ISSUE_RATE_LIMITED', '发卡请求过于频繁，请稍后再试');
+        const issueId = id();
+        const created = this.createBetaCodeBatchInTransaction(data, authenticated.user.id, normalized, timestamp, {
+          issueSource: 'CLIENT_API',
+          requestedByUserId: authenticated.user.id,
+          requestedByUsernameSnapshot: authenticated.user.username,
+          requestedByRoleSnapshot: authenticated.user.role,
+          requestId,
+          reviewStatus: 'PENDING_REVIEW',
+          reviewedAtUtc: null,
+          reviewedByUserId: null,
+          reviewNote: ''
+        });
+        if (!created.Ok) return created;
+        const issue = {
+          id: issueId,
+          actorUserId: authenticated.user.id,
+          actorUsernameSnapshot: authenticated.user.username,
+          actorRoleSnapshot: authenticated.user.role,
+          clientSessionId: authenticated.session.id,
+          clientEdition: authenticated.session.clientEdition,
+          clientVersion: authenticated.session.clientVersion,
+          buildId: authenticated.session.buildId,
+          launcherVersion: authenticated.session.launcherVersion || '',
+          remoteIpHash: this.hashIp(remoteIp),
+          idempotencyKeyHash: keyHash,
+          requestHash,
+          batchId: created.Batch.id,
+          status: 'COMPLETED',
+          createdAtUtc: timestamp,
+          deliveryExpiresAtUtc: timestamp + BETA_CODE_ISSUE_DELIVERY_SECONDS,
+          deliveredAtUtc: timestamp,
+          deliveryNonce: null,
+          deliveryTag: null,
+          deliveryCiphertext: null
+        };
+        Object.assign(issue, this.encryptBetaCodeDelivery(created.Codes, issue));
+        data.betaCodeIssueRequests.push(issue);
+        const currentSession = data.sessions.find(item => item.id === authenticated.session.id);
+        if (currentSession) currentSession.lastSeenAtUtc = timestamp;
+        return {
+          Ok: true, Batch: created.Batch, Codes: created.Codes,
+          IdempotentReplay: false, DeliveryExpiresAtUtc: issue.deliveryExpiresAtUtc
+        };
+      });
+    } catch (cause) {
+      try {
+        this.audit(authenticated.user.id, null, 'CLIENT_ISSUE_BETA_CODE_BATCH', false, remoteIp,
+          `error=store_or_delivery_failed;idempotency=${keyHash.slice(0, 12)}`, requestId);
+      } catch { /* Preserve the original failure response if audit persistence also fails. */ }
+      return error('BETA_CODE_ISSUE_FAILED', '发卡失败，请携带 requestId 联系管理员，禁止更换幂等键重试');
+    }
+    const detail = issued.Ok
+      ? `batch=${issued.Batch.id};actor=${authenticated.user.id};actorRole=${authenticated.user.role};session=${authenticated.session.id};product=${normalized.product};durationDays=${normalized.durationDays};quantity=${normalized.quantity};idempotency=${keyHash.slice(0, 12)};replay=${issued.IdempotentReplay};review=${issued.Batch.reviewStatus || 'NOT_REQUIRED'}`
+      : `actor=${authenticated.user.id};error=${issued.Error};idempotency=${keyHash.slice(0, 12)}`;
+    this.audit(authenticated.user.id, null, 'CLIENT_ISSUE_BETA_CODE_BATCH', Boolean(issued.Ok), remoteIp, detail, requestId);
+    return issued;
+  }
+
+  reviewBetaCodeBatch(admin, batchId, reviewNote, remoteIp, requestId) {
+    if (!admin || !admin.user || admin.user.role !== 'SUPER_ADMIN') {
+      this.audit(admin && admin.userId, null, 'ADMIN_REVIEW_BETA_CODE_BATCH', false, remoteIp, 'role_denied', requestId);
+      return error('ADMIN_PERMISSION_DENIED', '只有超级管理员可以审查客户端发卡批次');
+    }
+    const note = text(reviewNote).trim();
+    if (note.length > 200) return error('INVALID_REVIEW_NOTE', '审查备注最多 200 个字符');
+    const timestamp = now();
+    const reviewed = this.store.transaction(data => {
+      const batch = data.betaCodeBatches.find(item => item.id === batchId);
+      if (!batch) return error('BETA_CODE_BATCH_NOT_FOUND', '卡密批次不存在');
+      if (batch.issueSource !== 'CLIENT_API')
+        return error('BETA_CODE_BATCH_NOT_REVIEWABLE', '该批次不是客户端自动发卡批次');
+      batch.reviewStatus = 'REVIEWED';
+      batch.reviewedAtUtc = timestamp;
+      batch.reviewedByUserId = admin.userId;
+      batch.reviewNote = note;
+      return { Ok: true, Batch: batch };
+    });
+    this.audit(admin.userId, reviewed.Ok && reviewed.Batch ? reviewed.Batch.requestedByUserId : null,
+      'ADMIN_REVIEW_BETA_CODE_BATCH', Boolean(reviewed.Ok), remoteIp,
+      reviewed.Ok ? `batch=${batchId};requester=${reviewed.Batch.requestedByUserId}` : `batch=${batchId};error=${reviewed.Error}`,
+      requestId);
+    return reviewed;
   }
 
   disableBetaCodeBatch(admin, batchId, remoteIp, requestId) {
@@ -672,14 +911,61 @@ class AuthService {
 
   listBetaCodeBatches() {
     const codes = this.store.data.betaCodes;
+    const issues = new Map(this.store.data.betaCodeIssueRequests.map(issue => [issue.batchId, issue]));
     return [...this.store.data.betaCodeBatches].sort((a, b) => b.createdAtUtc - a.createdAtUtc).map(batch => {
       const members = codes.filter(code => code.batchId === batch.id);
+      const issue = issues.get(batch.id);
       return Object.assign({}, batch, {
         unused: members.filter(code => code.status === 'UNUSED').length,
         redeemed: members.filter(code => code.status === 'REDEEMED').length,
-        disabled: members.filter(code => code.status === 'DISABLED').length
+        disabled: members.filter(code => code.status === 'DISABLED').length,
+        issueClientEdition: issue && issue.clientEdition,
+        issueClientVersion: issue && issue.clientVersion,
+        issueBuildId: issue && issue.buildId,
+        issueLauncherVersion: issue && issue.launcherVersion
       });
     });
+  }
+
+  calculateBetaCodeValue(admin, fromUtc, toExclusiveUtc) {
+    if (!admin || !admin.user || !isAdmin(admin.user))
+      return error('ADMIN_PERMISSION_DENIED', '没有管理员权限');
+    if (!Number.isInteger(fromUtc) || !Number.isInteger(toExclusiveUtc) || fromUtc >= toExclusiveUtc)
+      return error('INVALID_BILLING_RANGE', '计费时间范围无效');
+    const categories = new Map(BETA_CODE_VALUE_RULES.map(rule => [rule.key, {
+      key: rule.key, label: rule.label, unitValue: rule.unitValue, quantity: 0, subtotal: 0
+    }]));
+    let batchCount = 0;
+    let totalQuantity = 0;
+    let pricedQuantity = 0;
+    let unpricedQuantity = 0;
+    let totalValue = 0;
+    for (const batch of this.store.data.betaCodeBatches) {
+      if (batch.createdAtUtc < fromUtc || batch.createdAtUtc >= toExclusiveUtc) continue;
+      const quantity = Math.max(0, Number.parseInt(batch.quantity, 10) || 0);
+      const rule = betaCodeValueCategory(batch);
+      if (!categories.has(rule.key)) categories.set(rule.key, {
+        key: rule.key, label: rule.label, unitValue: null, quantity: 0, subtotal: 0
+      });
+      const category = categories.get(rule.key);
+      category.quantity += quantity;
+      batchCount += 1;
+      totalQuantity += quantity;
+      if (rule.unitValue == null) {
+        unpricedQuantity += quantity;
+      } else {
+        const subtotal = quantity * rule.unitValue;
+        category.subtotal += subtotal;
+        pricedQuantity += quantity;
+        totalValue += subtotal;
+      }
+    }
+    return {
+      Ok: true, FromUtc: fromUtc, ToExclusiveUtc: toExclusiveUtc, BatchCount: batchCount,
+      TotalQuantity: totalQuantity, PricedQuantity: pricedQuantity,
+      UnpricedQuantity: unpricedQuantity, TotalValue: totalValue,
+      Categories: [...categories.values()].filter(category => category.quantity > 0 || category.unitValue != null)
+    };
   }
 
   lookupBetaCode(admin, plaintextCode, remoteIp, requestId) {
@@ -1029,26 +1315,25 @@ class AuthService {
 
   consumeRate(bucket, limit, seconds) {
     return this.store.mutate(data => {
-      const cutoff = now() - seconds;
-      data.rateLimitEvents = data.rateLimitEvents.filter(item => item.occurredAtUtc >= now() - 8 * 86400);
-      const count = data.rateLimitEvents.filter(item => item.bucketKey === bucket && item.occurredAtUtc >= cutoff).length;
-      if (count >= limit) return false;
-      data.rateLimitEvents.push({ bucketKey: bucket, occurredAtUtc: now() });
-      return true;
+      return this.consumeRateGroupInData(data, [{ bucket, limit, seconds }], now());
     });
+  }
+
+  consumeRateGroupInData(data, groups, timestamp) {
+    data.rateLimitEvents = data.rateLimitEvents.filter(item => item.occurredAtUtc >= timestamp - 8 * 86400);
+    for (const group of groups) {
+      const cutoff = timestamp - group.seconds;
+      const count = data.rateLimitEvents.filter(item => item.bucketKey === group.bucket && item.occurredAtUtc >= cutoff).length;
+      if (count >= group.limit) return false;
+    }
+    for (const group of groups) data.rateLimitEvents.push({ bucketKey: group.bucket, occurredAtUtc: timestamp });
+    return true;
   }
 
   consumeRateGroup(groups) {
     return this.store.mutate(data => {
       const timestamp = now();
-      data.rateLimitEvents = data.rateLimitEvents.filter(item => item.occurredAtUtc >= timestamp - 8 * 86400);
-      for (const group of groups) {
-        const cutoff = timestamp - group.seconds;
-        const count = data.rateLimitEvents.filter(item => item.bucketKey === group.bucket && item.occurredAtUtc >= cutoff).length;
-        if (count >= group.limit) return false;
-      }
-      for (const group of groups) data.rateLimitEvents.push({ bucketKey: group.bucket, occurredAtUtc: timestamp });
-      return true;
+      return this.consumeRateGroupInData(data, groups, timestamp);
     });
   }
 
@@ -1541,7 +1826,29 @@ function adminPageWithBetaLink(session, listing, note, betaPublicAccess) {
     .replace('<a href="/admin/audit">', '<a href="/admin/beta-codes">Beta 卡密</a>　<a href="/admin/audit">');
 }
 
-function betaCodesPage(session, batches, redemptions, note) {
+function betaCodeBillingPanel(billing) {
+  const rows = billing.Ok ? billing.Categories.map(category => `<tr>
+    <td>${escapeHtml(category.label)}</td><td>${category.quantity}</td>
+    <td>${category.unitValue == null ? '-' : `¥${category.unitValue} / 张`}</td>
+    <td>${category.unitValue == null ? '-' : `¥${category.subtotal}`}</td>
+  </tr>`).join('') : '<tr><td colspan="4" class="muted">日期范围有效后显示统计</td></tr>';
+  const summary = billing.Ok
+    ? `<p><strong>总价值：¥${billing.TotalValue}</strong>　批次：${billing.BatchCount}　生成卡密：${billing.TotalQuantity} 张　已计价：${billing.PricedQuantity} 张　未定价：${billing.UnpricedQuantity} 张</p>`
+    : `<p class="bad">${escapeHtml(billing.Message)}</p>`;
+  const warning = billing.Ok && billing.UnpricedQuantity > 0
+    ? '<p class="bad">存在未定价时长，未计入总价值，请核对上表。</p>' : '';
+  return `<div class="panel"><h2>卡密计费</h2>
+    <form class="row" method="get" action="/admin/beta-codes">
+      <div><label>开始日期（UTC，包含）</label><input type="date" name="billingFrom" value="${escapeHtml(billing.FromDate)}" required></div>
+      <div><label>结束日期（UTC，包含）</label><input type="date" name="billingTo" value="${escapeHtml(billing.ToDate)}" required></div>
+      <div><button>计算区间总价值</button></div>
+    </form>${summary}${warning}
+    <div class="table-wrap"><table><thead><tr><th>分类</th><th>生成数量</th><th>单价</th><th>小计</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted">定价：1 天 ¥3，2 天 ¥5，7 天 ¥10，30 天 ¥25，365 天 ¥40，永久或超过 400 天 ¥50。其他时长单列为未定价，不计入总价值；统计按批次生成时间计算，包含已兑换、已禁用卡密。</p>
+  </div>`;
+}
+
+function betaCodesPage(session, batches, redemptions, billing, note) {
   const superAdmin = session.user.role === 'SUPER_ADMIN';
   const create = superAdmin ? `<div class="panel"><h2>生成 Beta 卡密批次</h2>
     <form class="row" method="post" action="/admin/beta-codes/batches/create">
@@ -1556,14 +1863,26 @@ function betaCodesPage(session, batches, redemptions, note) {
     </form><p class="muted">明文只在本次下载中出现，服务器只保存带 pepper 的 HMAC 查询值。</p></div>`
     : '<div class="panel"><p class="muted">只有超级管理员可以生成或禁用卡密批次。</p></div>';
   const lookup = `<div class="panel"><h2>查询卡密</h2><form class="search-bar" method="post" action="/admin/beta-codes/lookup"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><div><label>完整卡密</label><input name="code" autocomplete="off" maxlength="80" placeholder="ORA-BETA-..." required></div><button>查询状态</button></form></div>`;
+  const reviewLabel = batch => batch.issueSource === 'CLIENT_API'
+    ? `${batch.reviewStatus === 'REVIEWED' ? '已审' : '待审'} · ${escapeHtml(batch.requestedByUsernameSnapshot || batch.requestedByUserId || '-')}`
+    : '后台生成';
   const batchRows = batches.map(batch => `<tr><td><strong>${escapeHtml(batch.label)}</strong><br><span class="muted">${escapeHtml(batch.id.slice(0, 8))}</span></td>
     <td>${batch.product === 'BETA_PERMANENT' ? '永久卡' : `${Math.floor((batch.durationSeconds || 0) / 86400)} 天`}</td>
     <td>${batch.quantity}</td><td>${batch.unused} / ${batch.redeemed} / ${batch.disabled}</td>
-    <td>${escapeHtml(batch.status)}<br><span class="muted">${escapeHtml(formatTime(batch.codeExpiresAtUtc))}</span></td>
-    <td>${superAdmin && batch.status === 'ACTIVE' ? `<form method="post" action="/admin/beta-codes/batches/disable"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><input type="hidden" name="batchId" value="${escapeHtml(batch.id)}"><button class="danger">禁用</button></form>` : '-'}</td></tr>`).join('')
+    <td>${escapeHtml(batch.status)}<br><span class="muted">${reviewLabel(batch)}<br>${escapeHtml(formatTime(batch.codeExpiresAtUtc))}</span></td>
+    <td>${superAdmin && batch.issueSource === 'CLIENT_API' && batch.reviewStatus !== 'REVIEWED' ? `<form method="post" action="/admin/beta-codes/batches/review"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><input type="hidden" name="batchId" value="${escapeHtml(batch.id)}"><input name="reviewNote" maxlength="200" placeholder="审查备注"><button>标记已审</button></form>` : ''}
+      ${superAdmin && batch.status === 'ACTIVE' ? `<form method="post" action="/admin/beta-codes/batches/disable"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><input type="hidden" name="batchId" value="${escapeHtml(batch.id)}"><button class="danger">禁用</button></form>` : (!superAdmin ? '-' : '')}</td></tr>`).join('')
     || '<tr><td colspan="6" class="muted">暂无卡密批次</td></tr>';
+  const reviewRows = batches.filter(batch => batch.issueSource === 'CLIENT_API').map(batch => `<tr>
+    <td><strong>${escapeHtml(batch.requestedByUsernameSnapshot || '-')}</strong><br><span class="muted">${escapeHtml(batch.requestedByRoleSnapshot || '-')} · ${escapeHtml(batch.requestedByUserId || '-')}</span></td>
+    <td>${escapeHtml(formatTime(batch.createdAtUtc))}<br><span class="muted">${escapeHtml(batch.requestId || '-')}</span></td>
+    <td>${batch.product === 'BETA_PERMANENT' ? '永久卡' : `${Math.floor((batch.durationSeconds || 0) / 86400)} 天`} · ${batch.quantity} 张</td>
+    <td>${batch.unused} / ${batch.redeemed} / ${batch.disabled}</td>
+    <td>${escapeHtml(batch.reviewStatus || 'PENDING_REVIEW')}<br><span class="muted">${escapeHtml(batch.reviewNote || '')}<br>${escapeHtml(batch.issueClientEdition || '-')} · ${escapeHtml(batch.issueClientVersion || '-')} · ${escapeHtml(batch.issueBuildId || '-')} · ${escapeHtml(batch.issueLauncherVersion || '-')}</span></td>
+  </tr>`).join('') || '<tr><td colspan="5" class="muted">暂无客户端发卡记录</td></tr>';
   return layout('Beta 卡密管理', `<div class="top"><div><div class="brand">Beta 卡密管理</div><div class="muted">${escapeHtml(session.user.username)} · ${escapeHtml(session.user.role)}</div></div><a href="/admin">返回管理面板</a></div>
-    ${message(note)}${create}${lookup}<div class="panel"><h2>批次</h2><div class="table-wrap"><table><thead><tr><th>批次</th><th>产品</th><th>总数</th><th>未用 / 已兑 / 禁用</th><th>状态 / 失效</th><th>操作</th></tr></thead><tbody>${batchRows}</tbody></table></div></div>
+    ${message(note)}<div class="panel"><h2>客户端发卡审查</h2><div class="table-wrap"><table><thead><tr><th>请求账号</th><th>时间 / requestId</th><th>规格</th><th>未用 / 已兑 / 禁用</th><th>审查状态</th></tr></thead><tbody>${reviewRows}</tbody></table></div></div>
+    ${betaCodeBillingPanel(billing)}${create}${lookup}<div class="panel"><h2>批次</h2><div class="table-wrap"><table><thead><tr><th>批次</th><th>产品</th><th>总数</th><th>未用 / 已兑 / 禁用</th><th>状态 / 审查 / 失效</th><th>操作</th></tr></thead><tbody>${batchRows}</tbody></table></div></div>
     <div class="panel"><h2>最近兑换记录</h2><div class="table-wrap"><table><thead><tr><th>账号</th><th>兑换时间</th><th>产品</th><th>卡密</th><th>到期时间</th></tr></thead><tbody>${betaRedemptionRows(redemptions, true)}</tbody></table></div></div>`);
 }
 
@@ -1638,6 +1957,26 @@ function redirect(response, location) { response.writeHead(303, { Location: loca
 function redirectMessage(response, location, note) { redirect(response, `${location}?message=${encodeURIComponent(note || '')}`); }
 function setCookie(response, config, name, value, expired) { response.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value || '')}; Path=/; HttpOnly; SameSite=Strict${config.SecureCookies ? '; Secure' : ''}${expired ? '; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0' : ''}`); }
 function parseExpiry(value) { if (!value || !String(value).trim()) return null; const parsed = Date.parse(String(value).trim()); return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null; }
+function parseUtcDate(value) {
+  const normalized = text(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const milliseconds = Date.parse(`${normalized}T00:00:00Z`);
+  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString().slice(0, 10) !== normalized) return null;
+  return Math.floor(milliseconds / 1000);
+}
+function betaCodeBillingRange(fromValue, toValue) {
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultFrom = `${today.slice(0, 8)}01`;
+  const fromDate = text(fromValue).trim() || defaultFrom;
+  const toDate = text(toValue).trim() || today;
+  const fromUtc = parseUtcDate(fromDate);
+  const toUtc = parseUtcDate(toDate);
+  if (fromUtc == null || toUtc == null)
+    return { Ok: false, Message: '计费日期格式无效', FromDate: fromDate, ToDate: toDate };
+  if (fromUtc > toUtc)
+    return { Ok: false, Message: '计费开始日期不能晚于结束日期', FromDate: fromDate, ToDate: toDate };
+  return { Ok: true, FromDate: fromDate, ToDate: toDate, FromUtc: fromUtc, ToExclusiveUtc: toUtc + 86400 };
+}
 function isLoopbackAddress(value) {
   const address = normalizeRemoteIp(value);
   return address === '127.0.0.1' || address === '::1';
@@ -1743,6 +2082,11 @@ async function handleApi(auth, irc, request, response, method, route, remoteIp, 
   else if (route === '/api/v1/auth/refresh') result = auth.refresh(payload, remoteIp, requestId);
   else if (route === '/api/v1/auth/heartbeat' || route === '/api/v1/auth/status') result = auth.heartbeat(bearer(request), remoteIp, requestId);
   else if (route === '/api/v1/auth/logout') { auth.logout(bearer(request), remoteIp, requestId); result = { Ok: true, Message: '已退出登录' }; }
+  else if (route === '/api/v1/beta-codes/issue') {
+    result = auth.issueBetaCodesFromClient(
+      bearer(request), payload, text(request.headers['idempotency-key']), remoteIp, requestId
+    );
+  }
   else if (route === '/api/v1/irc/presence') {
     const authenticated = irc.authorize(bearer(request));
     if (!authenticated) throw new RequestError(401, 'SESSION_REVOKED', '登录会话无效或已过期');
@@ -1869,8 +2213,14 @@ async function handleAdmin(auth, config, request, response, method, route, url, 
     const listing = auth.listUsers(url.searchParams.get('q'), url.searchParams.get('page'));
     return writeHtml(response, adminPageWithBetaLink(session, listing, url.searchParams.get('message'), auth.betaPublicAccess()));
   }
-  if (method === 'GET' && route === '/admin/beta-codes') return writeHtml(response,
-    betaCodesPage(session, auth.listBetaCodeBatches(), auth.listBetaRedemptions(null, 200), url.searchParams.get('message')));
+  if (method === 'GET' && route === '/admin/beta-codes') {
+    const range = betaCodeBillingRange(url.searchParams.get('billingFrom'), url.searchParams.get('billingTo'));
+    const billing = range.Ok
+      ? Object.assign({}, range, auth.calculateBetaCodeValue(session, range.FromUtc, range.ToExclusiveUtc))
+      : range;
+    return writeHtml(response, betaCodesPage(session, auth.listBetaCodeBatches(),
+      auth.listBetaRedemptions(null, 200), billing, url.searchParams.get('message')));
+  }
   if (method === 'POST' && route === '/admin/beta-codes/batches/create') {
     const values = await form(request); csrf(session, text(values.csrf));
     const created = auth.createBetaCodeBatch(session, {
@@ -1888,6 +2238,11 @@ async function handleAdmin(auth, config, request, response, method, route, url, 
     const values = await form(request); csrf(session, text(values.csrf));
     const disabled = auth.disableBetaCodeBatch(session, text(values.batchId), remoteIp, requestId);
     return redirectMessage(response, '/admin/beta-codes', disabled.Ok ? '卡密批次已禁用' : disabled.Message);
+  }
+  if (method === 'POST' && route === '/admin/beta-codes/batches/review') {
+    const values = await form(request); csrf(session, text(values.csrf));
+    const reviewed = auth.reviewBetaCodeBatch(session, text(values.batchId), text(values.reviewNote), remoteIp, requestId);
+    return redirectMessage(response, '/admin/beta-codes', reviewed.Ok ? '客户端发卡批次已标记为已审' : reviewed.Message);
   }
   if (method === 'POST' && route === '/admin/beta-codes/lookup') {
     const values = await form(request); csrf(session, text(values.csrf));
@@ -1971,6 +2326,21 @@ function selfTest() {
     const supportPage = adminPage(supportSession, auth.listUsers('support_admin', 1), null, auth.betaPublicAccess());
     if (!supportPage.includes('name="role" value="USER"') || !supportPage.includes('仅超级管理员可管理'))
       throw new Error('support administrator page self-test failed');
+    const pricingCases = [
+      [{ product: 'BETA_DURATION', durationSeconds: 1 * 86400 }, 'DAY_1', 3],
+      [{ product: 'BETA_DURATION', durationSeconds: 2 * 86400 }, 'DAY_2', 5],
+      [{ product: 'BETA_DURATION', durationSeconds: 7 * 86400 }, 'DAY_7', 10],
+      [{ product: 'BETA_DURATION', durationSeconds: 30 * 86400 }, 'DAY_30', 25],
+      [{ product: 'BETA_DURATION', durationSeconds: 365 * 86400 }, 'DAY_365', 40],
+      [{ product: 'BETA_DURATION', durationSeconds: 400 * 86400 }, 'UNPRICED:400 天', null],
+      [{ product: 'BETA_DURATION', durationSeconds: 401 * 86400 }, 'PERMANENT', 50],
+      [{ product: 'BETA_PERMANENT', durationSeconds: null }, 'PERMANENT', 50]
+    ];
+    for (const [batch, key, value] of pricingCases) {
+      const category = betaCodeValueCategory(batch);
+      if (category.key !== key || category.unitValue !== value)
+        throw new Error(`beta billing pricing self-test failed for ${key}`);
+    }
     if (!auditPage(rootSession, auth.listAuditLogs()).includes('简明审计日志'))
       throw new Error('audit page self-test failed');
     if (auth.adminAction(rootSession, supportAdmin.id, 'password', { password: 'SupportTemporary!2026' },
@@ -2026,6 +2396,59 @@ function selfTest() {
     const webAccount = auth.webAccount(webRegistered.Token);
     if (!webAccount || webAccount.account.username !== 'website_user')
       throw new Error('website account session self-test failed');
+    const clientIssuer = registered;
+    if (!clientIssuer.Ok || !clientIssuer.AccessToken || clientIssuer.Account.role !== 'USER')
+      throw new Error('client issuer login self-test failed');
+    const issueValues = {
+      product: 'BETA_DURATION', durationDays: 30, quantity: 2,
+      label: 'self-client-issue', note: 'ordinary user issuance', codeExpiresAtUtc: null
+    };
+    const issueKey = 'self-client-issue-key-20260804-0001';
+    const clientIssued = auth.issueBetaCodesFromClient(clientIssuer.AccessToken, issueValues,
+      issueKey, '127.0.0.30', 'self-client-issue');
+    if (!clientIssued.Ok || clientIssued.IdempotentReplay || clientIssued.Codes.length !== 2
+      || clientIssued.Batch.reviewStatus !== 'PENDING_REVIEW'
+      || clientIssued.Batch.requestedByRoleSnapshot !== 'USER')
+      throw new Error('client beta issuance self-test failed');
+    if (JSON.stringify(auth.store.data).includes(clientIssued.Codes[0]))
+      throw new Error('client issuance plaintext persistence self-test failed');
+    const clientReplay = auth.issueBetaCodesFromClient(clientIssuer.AccessToken, issueValues,
+      issueKey, '127.0.0.30', 'self-client-issue-replay');
+    if (!clientReplay.Ok || !clientReplay.IdempotentReplay
+      || JSON.stringify(clientReplay.Codes) !== JSON.stringify(clientIssued.Codes)
+      || clientReplay.Batch.id !== clientIssued.Batch.id)
+      throw new Error('client issuance idempotent replay self-test failed');
+    const clientConflict = auth.issueBetaCodesFromClient(clientIssuer.AccessToken,
+      Object.assign({}, issueValues, { quantity: 1 }), issueKey, '127.0.0.30', 'self-client-issue-conflict');
+    if (clientConflict.Ok || clientConflict.Error !== 'IDEMPOTENCY_KEY_REUSED')
+      throw new Error('client issuance idempotency conflict self-test failed');
+    const clientIssueRecord = auth.store.data.betaCodeIssueRequests.find(item => item.batchId === clientIssued.Batch.id);
+    if (!clientIssueRecord || !clientIssueRecord.clientSessionId || !clientIssueRecord.remoteIpHash
+      || clientIssueRecord.actorRoleSnapshot !== 'USER')
+      throw new Error('client issuance review metadata self-test failed');
+    const supportReviewDenied = auth.reviewBetaCodeBatch(supportSession, clientIssued.Batch.id,
+      'support cannot approve', '127.0.0.31', 'self-client-review-denied');
+    if (supportReviewDenied.Ok || supportReviewDenied.Error !== 'ADMIN_PERMISSION_DENIED')
+      throw new Error('client issuance support review isolation self-test failed');
+    const reviewedClientBatch = auth.reviewBetaCodeBatch(rootSession, clientIssued.Batch.id,
+      'self-test approved', '127.0.0.32', 'self-client-review');
+    if (!reviewedClientBatch.Ok || reviewedClientBatch.Batch.reviewStatus !== 'REVIEWED'
+      || reviewedClientBatch.Batch.reviewedByUserId !== rootAdmin.id)
+      throw new Error('client issuance review self-test failed');
+    const clientPermanent = auth.issueBetaCodesFromClient(clientIssuer.AccessToken,
+      { product: 'BETA_PERMANENT', quantity: 1, label: 'self-client-permanent' },
+      'self-client-permanent-key-20260804', '127.0.0.30', 'self-client-permanent');
+    if (!clientPermanent.Ok || clientPermanent.Batch.product !== 'BETA_PERMANENT')
+      throw new Error('client permanent issuance self-test failed');
+    auth.store.mutate(data => {
+      const record = data.betaCodeIssueRequests.find(item => item.batchId === clientIssued.Batch.id);
+      if (record) record.deliveryExpiresAtUtc = now() - 1;
+    });
+    const expiredClientReplay = auth.issueBetaCodesFromClient(clientIssuer.AccessToken, issueValues,
+      issueKey, '127.0.0.30', 'self-client-issue-expired-replay');
+    if (expiredClientReplay.Ok || expiredClientReplay.Error !== 'ISSUE_RESULT_EXPIRED'
+      || !expiredClientReplay.BatchId)
+      throw new Error('client issuance delivery expiry self-test failed');
     const durationBatch = auth.createBetaCodeBatch(rootSession, {
       label: 'self-test-duration', product: 'BETA_DURATION', durationDays: 30, quantity: 6
     }, '127.0.0.10', 'self-beta-duration-batch');
@@ -2103,6 +2526,16 @@ function selfTest() {
     const expiredCodeRedeem = auth.redeemBetaCode({ userId: publicUser.id }, expiringBatch.Codes[0], '127.0.0.23', 'self-beta-expired-code');
     if (expiredCodeRedeem.Ok || expiredCodeRedeem.Error !== 'INVALID_REDEEM_CODE')
       throw new Error('expired beta code rejection self-test failed');
+    const billing = auth.calculateBetaCodeValue(supportSession, now() - 60, now() + 60);
+    if (!billing.Ok || billing.BatchCount !== 6 || billing.TotalQuantity !== 13
+      || billing.PricedQuantity !== 13 || billing.UnpricedQuantity !== 0 || billing.TotalValue !== 370)
+      throw new Error('beta billing aggregation self-test failed');
+    const supportBillingPage = betaCodesPage(supportSession, auth.listBetaCodeBatches(),
+      auth.listBetaRedemptions(null, 200), Object.assign({ FromDate: '2026-01-01', ToDate: '2026-01-31' }, billing), null);
+    if (!supportBillingPage.includes('卡密计费') || !supportBillingPage.includes('总价值：¥370')
+      || !supportBillingPage.includes('name="billingFrom"') || !supportBillingPage.includes('客户端发卡审查')
+      || !supportBillingPage.includes('selftest_user'))
+      throw new Error('support billing page self-test failed');
     if (auth.store.data.betaRedemptions.length !== 5 || auth.listBetaRedemptions(webAccount.session.userId, 5).length !== 3)
       throw new Error('beta redemption history self-test failed');
     if (auth.changePassword(webAccount.session, 'WebsitePassword!2026', 'WebsiteChangedPassword!2026',
