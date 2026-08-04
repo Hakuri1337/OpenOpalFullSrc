@@ -27,6 +27,11 @@ const IRC_MESSAGE_LIMIT = 5;
 const ADMIN_PAGE_SIZE = 200;
 const PBKDF2_ITERATIONS = 240000;
 const USER_CHANGE_COOLDOWN = 7 * 86400;
+const PERMANENT_BETA_EXPIRES_AT_UTC = 4102444799;
+const MAX_DURATION_BETA_SECONDS = 3650 * 86400;
+const MAX_BETA_EXPIRY_SECONDS = 20 * 365 * 86400;
+const MAX_BETA_CODES_PER_BATCH = 100;
+const BETA_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const COMMON_PASSWORDS = new Set([
   '123456789012', '123456789123', 'password1234', 'password12345',
   'qwerty123456', 'qwertyuiop123', 'admin12345678', 'letmein123456',
@@ -39,6 +44,30 @@ function randomToken(bytes = 32) { return crypto.randomBytes(bytes).toString('ba
 function sha256(value) { return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('base64'); }
 function hmac(key, value) { return crypto.createHmac('sha256', key).update(String(value || ''), 'utf8').digest('base64'); }
 function upper(value) { return String(value || '').trim().toUpperCase(); }
+function normalizeBetaCode(value) {
+  const normalized = upper(value).replace(/[\s-]+/g, '');
+  return /^ORABETA[0-9A-HJKMNP-TV-Z]{26}$/.test(normalized) ? normalized : '';
+}
+function betaCodeLookup(pepper, value) {
+  const normalized = normalizeBetaCode(value);
+  return normalized ? hmac(pepper, normalized) : '';
+}
+function randomBetaCode() {
+  const bytes = crypto.randomBytes(16);
+  let accumulator = 0; let bits = 0; let body = '';
+  for (const byte of bytes) {
+    accumulator = (accumulator << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      body += BETA_CODE_ALPHABET[(accumulator >>> bits) & 31];
+      accumulator &= (1 << bits) - 1;
+    }
+  }
+  if (bits > 0) body += BETA_CODE_ALPHABET[(accumulator << (5 - bits)) & 31];
+  const groups = body.match(/.{1,4}/g) || [];
+  return `ORA-BETA-${groups.join('-')}`;
+}
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ''), 'utf8');
   const b = Buffer.from(String(right || ''), 'utf8');
@@ -58,8 +87,9 @@ function apiStatus(code) {
   if (code === 'INVALID_CREDENTIALS' || code === 'SESSION_REVOKED') return 401;
   if (['ACCOUNT_BANNED', 'ACCOUNT_DELETED', 'LICENSE_REQUIRED', 'LICENSE_EXPIRED',
     'HWID_MISMATCH', 'PASSWORD_CHANGE_REQUIRED'].includes(code)) return 403;
-  if (code === 'RATE_LIMITED' || code === 'REGISTRATION_RATE_LIMITED') return 429;
-  if (code === 'USERNAME_TAKEN') return 409;
+  if (code === 'RATE_LIMITED' || code === 'REGISTRATION_RATE_LIMITED' || code === 'REDEEM_RATE_LIMITED') return 429;
+  if (code === 'ACCOUNT_NOT_ACTIVE' || code === 'ADMIN_PERMISSION_DENIED') return 403;
+  if (code === 'USERNAME_TAKEN' || code === 'BETA_EXPIRY_LIMIT') return 409;
   return 400;
 }
 
@@ -72,7 +102,7 @@ class AppConfig {
       AllowedHosts: ['127.0.0.1', 'localhost'], DataDirectory: path.join(folder, 'data'),
       AccessTokenMinutes: 10, RefreshTokenDays: 7, WebSessionHours: 8,
       SecureCookies: false, RequireHttps: false, RegistrationEnabled: true,
-      AllowedClientVersions: ['b6'], AllowedBuildIds: ['b6-free', 'b6-beta'],
+      AllowedClientVersions: ['b7'], AllowedBuildIds: ['b7-free', 'b7-beta'],
       AllowedLauncherVersions: ['v0.9.21'],
       TlsCertificatePath: '', TlsPrivateKeyPath: '', InternalWebsiteSecret: '',
       InternalWebHost: '127.0.0.1', InternalWebPort: 0, InternalWebTls: false,
@@ -192,8 +222,8 @@ class JsonStore {
   empty() {
     return {
       schemaVersion: 1, users: [], sessions: [], usedRefreshTokens: [],
-      webSessions: [], rateLimitEvents: [], auditLogs: [],
-      serviceSettings: { betaPublicAccessUntilUtc: 0 }
+      webSessions: [], rateLimitEvents: [], auditLogs: [], betaCodeBatches: [], betaCodes: [], betaRedemptions: [],
+      serviceSettings: { betaPublicAccessUntilUtc: 0, redemptionSchemaVersion: 1 }
     };
   }
 
@@ -207,8 +237,13 @@ class JsonStore {
     try { parsed = JSON.parse(fs.readFileSync(this.file, 'utf8')); }
     catch (cause) { throw new Error(`authentication data is unreadable: ${cause.message}`); }
     const initial = this.empty();
+    let migrated = false;
     for (const key of Object.keys(initial)) {
       if (key === 'schemaVersion' || key === 'serviceSettings') continue;
+      if (parsed[key] == null && ['betaCodeBatches', 'betaCodes', 'betaRedemptions'].includes(key)) {
+        parsed[key] = [];
+        migrated = true;
+      }
       if (!Array.isArray(parsed[key])) throw new Error(`authentication data has invalid ${key}`);
     }
     if (parsed.schemaVersion !== 1) throw new Error(`unsupported authentication data schema: ${parsed.schemaVersion}`);
@@ -221,6 +256,9 @@ class JsonStore {
     parsed.serviceSettings.betaPublicAccessUntilUtc = clamp(
       parsed.serviceSettings.betaPublicAccessUntilUtc, 0, 253402300799, 0
     );
+    if (parsed.serviceSettings.redemptionSchemaVersion == null) migrated = true;
+    parsed.serviceSettings.redemptionSchemaVersion = 1;
+    if (migrated) this.write(parsed);
     return parsed;
   }
 
@@ -239,6 +277,14 @@ class JsonStore {
     this.write();
     return result;
   }
+
+  transaction(callback) {
+    const next = JSON.parse(JSON.stringify(this.data));
+    const result = callback(next);
+    this.write(next);
+    this.data = next;
+    return result;
+  }
 }
 
 class AuthService {
@@ -249,12 +295,14 @@ class AuthService {
     this.hwidPepper = secret(keyDir, 'hwid-pepper');
     this.ipPepper = secret(keyDir, 'ip-pepper');
     this.passwordPepper = secret(keyDir, 'password-pepper');
+    this.redeemCodePepper = secret(keyDir, 'redeem-code-pepper');
     this.entitlementSigner = entitlementSigner(keyDir);
   }
 
   ready() {
     const data = this.store.data;
-    return ['users', 'sessions', 'usedRefreshTokens', 'webSessions', 'rateLimitEvents', 'auditLogs']
+    return ['users', 'sessions', 'usedRefreshTokens', 'webSessions', 'rateLimitEvents', 'auditLogs',
+      'betaCodeBatches', 'betaCodes', 'betaRedemptions']
       .every(key => Array.isArray(data[key]));
   }
 
@@ -495,7 +543,9 @@ class AuthService {
       const fresh = data.webSessions.find(item => item.id === session.id);
       if (fresh) fresh.lastSeenAtUtc = now();
     });
-    return { session, account: accountView(session.user) };
+    return { session, account: Object.assign(accountView(session.user), {
+      betaRedemptions: this.listBetaRedemptions(session.user.id, 5)
+    }) };
   }
 
   logoutWeb(token, remoteIp, requestId) {
@@ -534,6 +584,209 @@ class AuthService {
     });
     this.audit(user.id, user.id, 'USER_RESET_HWID', true, remoteIp, null, requestId);
     return null;
+  }
+
+  createBetaCodeBatch(admin, values, remoteIp, requestId) {
+    if (!admin || !admin.user || admin.user.role !== 'SUPER_ADMIN') {
+      this.audit(admin && admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', false, remoteIp, 'role_denied', requestId);
+      return error('ADMIN_PERMISSION_DENIED', '只有超级管理员可以生成 Beta 卡密');
+    }
+    const product = upper(values && values.product);
+    const quantity = Number.parseInt(values && values.quantity, 10);
+    const durationDays = Number.parseInt(values && values.durationDays, 10);
+    const label = text(values && values.label).trim().slice(0, 80);
+    const note = text(values && values.note).trim().slice(0, 200);
+    const codeExpiresAtUtc = values && values.codeExpiresAtUtc == null
+      ? null : Number.parseInt(values.codeExpiresAtUtc, 10);
+    if (!['BETA_DURATION', 'BETA_PERMANENT'].includes(product))
+      return error('INVALID_BETA_PRODUCT', '卡密类型无效');
+    if (!Number.isFinite(quantity) || quantity < 1 || quantity > MAX_BETA_CODES_PER_BATCH)
+      return error('INVALID_BETA_CODE_QUANTITY', `单批卡密数量必须为 1-${MAX_BETA_CODES_PER_BATCH}`);
+    if (product === 'BETA_DURATION' && (!Number.isFinite(durationDays) || durationDays < 1 || durationDays > 3650))
+      return error('INVALID_BETA_DURATION', '时长卡有效期必须为 1-3650 天');
+    if (codeExpiresAtUtc != null && (!Number.isFinite(codeExpiresAtUtc) || codeExpiresAtUtc <= now()))
+      return error('INVALID_BETA_CODE_EXPIRY', '卡密失效时间必须晚于当前时间');
+    const timestamp = now();
+    let created;
+    try {
+      created = this.store.transaction(data => {
+        const generatedToday = data.betaCodeBatches
+          .filter(batch => batch.createdByUserId === admin.userId && batch.createdAtUtc >= timestamp - 86400)
+          .reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+        if (generatedToday + quantity > 1000) return error('BETA_CODE_DAILY_LIMIT', '单个管理员每天最多生成 1000 张卡密');
+        const existing = new Set(data.betaCodes.map(code => code.codeLookup));
+        const batch = {
+          id: id(), label: label || `${product === 'BETA_PERMANENT' ? 'Permanent' : `${durationDays}-day`} Beta`,
+          product, durationSeconds: product === 'BETA_DURATION' ? durationDays * 86400 : null,
+          quantity, status: 'ACTIVE', codeExpiresAtUtc, createdAtUtc: timestamp,
+          createdByUserId: admin.userId, disabledAtUtc: null, disabledByUserId: null, note
+        };
+        const plaintextCodes = [];
+        for (let index = 0; index < quantity; index += 1) {
+          let plaintext; let lookup;
+          do {
+            plaintext = randomBetaCode();
+            lookup = betaCodeLookup(this.redeemCodePepper, plaintext);
+          } while (existing.has(lookup));
+          existing.add(lookup);
+          const normalized = normalizeBetaCode(plaintext);
+          data.betaCodes.push({
+            id: id(), batchId: batch.id, codeLookup: lookup, displaySuffix: normalized.slice(-4),
+            status: 'UNUSED', createdAtUtc: timestamp, redeemedAtUtc: null,
+            redeemedByUserId: null, redemptionId: null
+          });
+          plaintextCodes.push(plaintext);
+        }
+        data.betaCodeBatches.push(batch);
+        return { Ok: true, Batch: batch, Codes: plaintextCodes };
+      });
+    } catch (cause) {
+      this.audit(admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', false, remoteIp, 'store_write_failed', requestId);
+      throw cause;
+    }
+    this.audit(admin.userId, null, 'ADMIN_CREATE_BETA_CODE_BATCH', Boolean(created.Ok), remoteIp,
+      created.Ok ? `batch=${created.Batch.id};product=${product};quantity=${quantity}` : `error=${created.Error}`, requestId);
+    return created;
+  }
+
+  disableBetaCodeBatch(admin, batchId, remoteIp, requestId) {
+    if (!admin || !admin.user || admin.user.role !== 'SUPER_ADMIN') {
+      this.audit(admin && admin.userId, null, 'ADMIN_DISABLE_BETA_CODE_BATCH', false, remoteIp, 'role_denied', requestId);
+      return error('ADMIN_PERMISSION_DENIED', '只有超级管理员可以禁用 Beta 卡密批次');
+    }
+    const timestamp = now();
+    const disabled = this.store.transaction(data => {
+      const batch = data.betaCodeBatches.find(item => item.id === batchId);
+      if (!batch) return false;
+      if (batch.status === 'DISABLED') return true;
+      batch.status = 'DISABLED'; batch.disabledAtUtc = timestamp; batch.disabledByUserId = admin.userId;
+      for (const code of data.betaCodes) {
+        if (code.batchId === batch.id && code.status === 'UNUSED') code.status = 'DISABLED';
+      }
+      return true;
+    });
+    this.audit(admin.userId, null, 'ADMIN_DISABLE_BETA_CODE_BATCH', disabled, remoteIp,
+      disabled ? `batch=${batchId}` : 'batch_not_found', requestId);
+    return disabled ? { Ok: true } : error('BETA_CODE_BATCH_NOT_FOUND', '卡密批次不存在');
+  }
+
+  listBetaCodeBatches() {
+    const codes = this.store.data.betaCodes;
+    return [...this.store.data.betaCodeBatches].sort((a, b) => b.createdAtUtc - a.createdAtUtc).map(batch => {
+      const members = codes.filter(code => code.batchId === batch.id);
+      return Object.assign({}, batch, {
+        unused: members.filter(code => code.status === 'UNUSED').length,
+        redeemed: members.filter(code => code.status === 'REDEEMED').length,
+        disabled: members.filter(code => code.status === 'DISABLED').length
+      });
+    });
+  }
+
+  lookupBetaCode(admin, plaintextCode, remoteIp, requestId) {
+    if (!admin || !admin.user || !isAdmin(admin.user))
+      return error('ADMIN_PERMISSION_DENIED', '没有管理员权限');
+    const normalized = normalizeBetaCode(plaintextCode);
+    const lookup = normalized && betaCodeLookup(this.redeemCodePepper, normalized);
+    const code = lookup && this.store.data.betaCodes.find(item => safeEqual(item.codeLookup, lookup));
+    if (!code) {
+      this.audit(admin.userId, null, 'ADMIN_LOOKUP_BETA_CODE', false, remoteIp, 'not_found', requestId);
+      return error('INVALID_REDEEM_CODE', '卡密不存在');
+    }
+    const batch = this.store.data.betaCodeBatches.find(item => item.id === code.batchId);
+    const redemption = code.redemptionId && this.store.data.betaRedemptions.find(item => item.id === code.redemptionId);
+    const redeemedUser = redemption && findUserById(this.store.data, redemption.userId);
+    this.audit(admin.userId, redeemedUser && redeemedUser.id, 'ADMIN_LOOKUP_BETA_CODE', true, remoteIp,
+      `batch=${code.batchId};suffix=${code.displaySuffix};status=${code.status}`, requestId);
+    return {
+      Ok: true,
+      Message: `卡密 ****${code.displaySuffix}：${code.status}；批次 ${batch ? batch.label : code.batchId}`
+        + (redeemedUser ? `；兑换账号 ${redeemedUser.username}；兑换时间 ${formatTime(code.redeemedAtUtc)}` : '')
+    };
+  }
+
+  listBetaRedemptions(userId, limit = 200) {
+    const users = new Map(this.store.data.users.map(user => [user.id, user.username]));
+    const batches = new Map(this.store.data.betaCodeBatches.map(batch => [batch.id, batch]));
+    return this.store.data.betaRedemptions
+      .filter(item => !userId || item.userId === userId)
+      .slice(-Math.max(1, Math.min(1000, limit))).reverse()
+      .map(item => redemptionView(item, batches.get(item.batchId), users.get(item.userId)));
+  }
+
+  redeemBetaCode(webSession, plaintextCode, remoteIp, requestId) {
+    const user = webSession && findUserById(this.store.data, webSession.userId);
+    if (!user || user.status !== 'ACTIVE')
+      return error('ACCOUNT_NOT_ACTIVE', '账号不可用');
+    const normalized = normalizeBetaCode(plaintextCode);
+    const lookup = normalized && betaCodeLookup(this.redeemCodePepper, normalized);
+    const rateAllowed = this.consumeRateGroup([
+      { bucket: `redeem-user-15m:${user.id}`, limit: 5, seconds: 900 },
+      { bucket: `redeem-user-day:${user.id}`, limit: 20, seconds: 86400 },
+      { bucket: `redeem-ip-15m:${this.hashIp(remoteIp)}`, limit: 15, seconds: 900 }
+    ]);
+    if (!rateAllowed) {
+      this.audit(user.id, user.id, 'USER_REDEEM_BETA_CODE_FAILED', false, remoteIp, 'rate_limited', requestId);
+      return error('REDEEM_RATE_LIMITED', '兑换尝试过于频繁，请稍后再试');
+    }
+    const timestamp = now();
+    let result;
+    try {
+      result = this.store.transaction(data => {
+        const freshUser = findUserById(data, user.id);
+        if (!freshUser || freshUser.status !== 'ACTIVE') return error('ACCOUNT_NOT_ACTIVE', '账号不可用');
+        const code = lookup && data.betaCodes.find(item => safeEqual(item.codeLookup, lookup));
+        if (!code) return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+        if (code.status === 'REDEEMED') {
+          if (code.redeemedByUserId !== freshUser.id) return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+          const prior = data.betaRedemptions.find(item => item.id === code.redemptionId);
+          if (!prior) return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+          const priorBatch = data.betaCodeBatches.find(item => item.id === code.batchId);
+          return { Ok: true, Account: accountView(freshUser), Redemption: redemptionView(prior, priorBatch), AlreadyApplied: true };
+        }
+        const batch = data.betaCodeBatches.find(item => item.id === code.batchId);
+        if (!batch || batch.status !== 'ACTIVE' || code.status !== 'UNUSED'
+          || (batch.codeExpiresAtUtc && batch.codeExpiresAtUtc <= timestamp))
+          return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+        const previousTier = freshUser.tier;
+        const previousExpiry = freshUser.betaExpiresAtUtc || null;
+        let newExpiry;
+        if (batch.product === 'BETA_PERMANENT') {
+          if (previousTier === 'BETA' && previousExpiry >= PERMANENT_BETA_EXPIRES_AT_UTC)
+            return error('BETA_EXPIRY_LIMIT', '当前账号已是永久 Beta');
+          newExpiry = PERMANENT_BETA_EXPIRES_AT_UTC;
+        } else if (batch.product === 'BETA_DURATION') {
+          const duration = Number.parseInt(batch.durationSeconds, 10);
+          if (!Number.isFinite(duration) || duration < 86400 || duration > MAX_DURATION_BETA_SECONDS)
+            return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+          const base = previousTier === 'BETA' && previousExpiry > timestamp ? previousExpiry : timestamp;
+          newExpiry = base + duration;
+          if (!Number.isSafeInteger(newExpiry) || newExpiry > timestamp + MAX_BETA_EXPIRY_SECONDS)
+            return error('BETA_EXPIRY_LIMIT', 'Beta 到期时间超过可叠加上限');
+        } else {
+          return error('INVALID_REDEEM_CODE', '卡密无效或已使用');
+        }
+        const redemption = {
+          id: id(), codeId: code.id, batchId: batch.id, userId: freshUser.id,
+          product: batch.product, durationSeconds: batch.durationSeconds,
+          codeSuffix: code.displaySuffix,
+          previousTier, previousBetaExpiresAtUtc: previousExpiry,
+          newTier: 'BETA', newBetaExpiresAtUtc: newExpiry, redeemedAtUtc: timestamp,
+          remoteIpHash: this.hashIp(remoteIp), requestId
+        };
+        code.status = 'REDEEMED'; code.redeemedAtUtc = timestamp;
+        code.redeemedByUserId = freshUser.id; code.redemptionId = redemption.id;
+        freshUser.tier = 'BETA'; freshUser.betaExpiresAtUtc = newExpiry;
+        data.betaRedemptions.push(redemption);
+        return { Ok: true, Account: accountView(freshUser), Redemption: redemptionView(redemption, batch), AlreadyApplied: false };
+      });
+    } catch (cause) {
+      this.audit(user.id, user.id, 'USER_REDEEM_BETA_CODE_FAILED', false, remoteIp, 'store_write_failed', requestId);
+      throw cause;
+    }
+    const suffix = normalized ? normalized.slice(-4) : '';
+    this.audit(user.id, user.id, result.Ok ? 'USER_REDEEM_BETA_CODE' : 'USER_REDEEM_BETA_CODE_FAILED', result.Ok,
+      remoteIp, result.Ok ? `suffix=${suffix};already=${Boolean(result.AlreadyApplied)}` : `suffix=${suffix};error=${result.Error}`, requestId);
+    return result;
   }
 
   listUsers(search, requestedPage) {
@@ -781,6 +1034,20 @@ class AuthService {
       const count = data.rateLimitEvents.filter(item => item.bucketKey === bucket && item.occurredAtUtc >= cutoff).length;
       if (count >= limit) return false;
       data.rateLimitEvents.push({ bucketKey: bucket, occurredAtUtc: now() });
+      return true;
+    });
+  }
+
+  consumeRateGroup(groups) {
+    return this.store.mutate(data => {
+      const timestamp = now();
+      data.rateLimitEvents = data.rateLimitEvents.filter(item => item.occurredAtUtc >= timestamp - 8 * 86400);
+      for (const group of groups) {
+        const cutoff = timestamp - group.seconds;
+        const count = data.rateLimitEvents.filter(item => item.bucketKey === group.bucket && item.occurredAtUtc >= cutoff).length;
+        if (count >= group.limit) return false;
+      }
+      for (const group of groups) data.rateLimitEvents.push({ bucketKey: group.bucket, occurredAtUtc: timestamp });
       return true;
     });
   }
@@ -1135,11 +1402,28 @@ function newUser(username, passwordHash, overrides) {
 }
 function accountView(user, overrides) {
   const effective = overrides || {};
-  return { id: user.id, username: user.username, role: user.role, tier: effective.tier || user.tier, status: user.status,
-    betaExpiresAt: Object.prototype.hasOwnProperty.call(effective, 'betaExpiresAt') ? effective.betaExpiresAt : user.betaExpiresAtUtc,
+  const tier = effective.tier || user.tier;
+  const betaExpiresAt = Object.prototype.hasOwnProperty.call(effective, 'betaExpiresAt') ? effective.betaExpiresAt : user.betaExpiresAtUtc;
+  return { id: user.id, username: user.username, role: user.role, tier, status: user.status,
+    betaExpiresAt, betaActive: tier === 'BETA' && Boolean(betaExpiresAt && betaExpiresAt > now()),
+    betaPermanent: tier === 'BETA' && betaExpiresAt === PERMANENT_BETA_EXPIRES_AT_UTC,
     betaPublicAccess: Boolean(effective.betaPublicAccess), hwidBound: Boolean(user.hwidHash), hwidQuality: user.hwidQuality || '',
     passwordChangedAt: user.passwordChangedAtUtc, hwidChangedAt: user.hwidChangedAtUtc,
     forcePasswordChange: Boolean(user.forcePasswordChange) };
+}
+function redemptionView(redemption, batch, username) {
+  return {
+    id: redemption.id,
+    username: username || undefined,
+    batchId: redemption.batchId,
+    batchLabel: batch ? batch.label : '',
+    product: redemption.product || (batch && batch.product) || 'BETA_DURATION',
+    durationSeconds: redemption.durationSeconds == null ? null : redemption.durationSeconds,
+    previousBetaExpiresAt: redemption.previousBetaExpiresAtUtc,
+    newBetaExpiresAt: redemption.newBetaExpiresAtUtc,
+    redeemedAt: redemption.redeemedAtUtc,
+    codeSuffix: text(redemption.codeSuffix).slice(-4)
+  };
 }
 function successSession(account, access, refresh, accessExpiresAt, refreshExpiresAt, entitlementProof) {
   return { Ok: true, Message: '登录成功', AccessToken: access, RefreshToken: refresh,
@@ -1227,6 +1511,62 @@ function auditPage(session, logs) {
   return layout('审计日志', `<div class="top"><div><div class="brand">简明审计日志</div><div class="muted">最近 ${logs.length} 条；不会显示密码、令牌、HWID 或原始 IP</div></div><a href="/admin">返回管理面板</a></div><div class="panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>目标</th><th>动作</th><th>结果</th><th>简要信息</th><th>请求</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
 }
 
+function betaRedemptionRows(redemptions, includeUser) {
+  return redemptions.map(item => `<tr>
+    ${includeUser ? `<td>${escapeHtml(item.username || '-')}</td>` : ''}
+    <td>${escapeHtml(formatTime(item.redeemedAt))}</td>
+    <td>${item.product === 'BETA_PERMANENT' ? '永久 Beta' : `${Math.floor((item.durationSeconds || 0) / 86400)} 天`}</td>
+    <td>${escapeHtml(item.codeSuffix ? `****${item.codeSuffix}` : '-')}</td>
+    <td>${escapeHtml(formatTime(item.newBetaExpiresAt))}</td>
+  </tr>`).join('') || `<tr><td colspan="${includeUser ? 5 : 4}" class="muted">暂无兑换记录</td></tr>`;
+}
+
+function userPageWithRedemption(user, csrf, note, betaPublicAccess, redemptions) {
+  const base = userPage(user, csrf, note, betaPublicAccess);
+  const active = user.tier === 'BETA' && user.betaExpiresAtUtc > now();
+  const expiry = user.betaExpiresAtUtc === PERMANENT_BETA_EXPIRES_AT_UTC ? '永久（2099-12-31）' : formatTime(user.betaExpiresAtUtc);
+  const panel = `<div class="panel"><h2>兑换 Beta 卡密</h2>
+    <p>当前授权：<span class="badge">${active ? `Beta，${escapeHtml(expiry)}` : '未生效'}</span></p>
+    <form method="post" action="/user/beta/redeem"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+      <label>卡密</label><input name="code" autocomplete="off" maxlength="80" placeholder="ORA-BETA-..." required>
+      <div style="margin-top:16px"><button>兑换并升级账号</button></div>
+    </form><p class="muted">兑换成功后，请重新登录 Beta 客户端以取得新的授权证明。</p>
+    <div class="table-wrap"><table><thead><tr><th>兑换时间</th><th>产品</th><th>卡密</th><th>到期时间</th></tr></thead>
+      <tbody>${betaRedemptionRows(redemptions || [], false)}</tbody></table></div></div>`;
+  return base.replace('</main>', `${panel}</main>`);
+}
+
+function adminPageWithBetaLink(session, listing, note, betaPublicAccess) {
+  return adminPage(session, listing, note, betaPublicAccess)
+    .replace('<a href="/admin/audit">', '<a href="/admin/beta-codes">Beta 卡密</a>　<a href="/admin/audit">');
+}
+
+function betaCodesPage(session, batches, redemptions, note) {
+  const superAdmin = session.user.role === 'SUPER_ADMIN';
+  const create = superAdmin ? `<div class="panel"><h2>生成 Beta 卡密批次</h2>
+    <form class="row" method="post" action="/admin/beta-codes/batches/create">
+      <input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}">
+      <div><label>批次名称</label><input name="label" maxlength="80" required></div>
+      <div><label>卡密类型</label><select name="product"><option value="BETA_DURATION">时长卡</option><option value="BETA_PERMANENT">永久卡（2099-12-31）</option></select></div>
+      <div><label>时长（天，仅时长卡）</label><input name="durationDays" type="number" min="1" max="3650" value="30"></div>
+      <div><label>数量</label><input name="quantity" type="number" min="1" max="100" value="1" required></div>
+      <div><label>卡密失效时间（UTC，可留空）</label><input name="codeExpiresAt" placeholder="2026-12-31T23:59:59Z"></div>
+      <div><label>备注</label><input name="note" maxlength="200"></div>
+      <div><button>生成并下载明文卡密</button></div>
+    </form><p class="muted">明文只在本次下载中出现，服务器只保存带 pepper 的 HMAC 查询值。</p></div>`
+    : '<div class="panel"><p class="muted">只有超级管理员可以生成或禁用卡密批次。</p></div>';
+  const lookup = `<div class="panel"><h2>查询卡密</h2><form class="search-bar" method="post" action="/admin/beta-codes/lookup"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><div><label>完整卡密</label><input name="code" autocomplete="off" maxlength="80" placeholder="ORA-BETA-..." required></div><button>查询状态</button></form></div>`;
+  const batchRows = batches.map(batch => `<tr><td><strong>${escapeHtml(batch.label)}</strong><br><span class="muted">${escapeHtml(batch.id.slice(0, 8))}</span></td>
+    <td>${batch.product === 'BETA_PERMANENT' ? '永久卡' : `${Math.floor((batch.durationSeconds || 0) / 86400)} 天`}</td>
+    <td>${batch.quantity}</td><td>${batch.unused} / ${batch.redeemed} / ${batch.disabled}</td>
+    <td>${escapeHtml(batch.status)}<br><span class="muted">${escapeHtml(formatTime(batch.codeExpiresAtUtc))}</span></td>
+    <td>${superAdmin && batch.status === 'ACTIVE' ? `<form method="post" action="/admin/beta-codes/batches/disable"><input type="hidden" name="csrf" value="${escapeHtml(session.csrfToken)}"><input type="hidden" name="batchId" value="${escapeHtml(batch.id)}"><button class="danger">禁用</button></form>` : '-'}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">暂无卡密批次</td></tr>';
+  return layout('Beta 卡密管理', `<div class="top"><div><div class="brand">Beta 卡密管理</div><div class="muted">${escapeHtml(session.user.username)} · ${escapeHtml(session.user.role)}</div></div><a href="/admin">返回管理面板</a></div>
+    ${message(note)}${create}${lookup}<div class="panel"><h2>批次</h2><div class="table-wrap"><table><thead><tr><th>批次</th><th>产品</th><th>总数</th><th>未用 / 已兑 / 禁用</th><th>状态 / 失效</th><th>操作</th></tr></thead><tbody>${batchRows}</tbody></table></div></div>
+    <div class="panel"><h2>最近兑换记录</h2><div class="table-wrap"><table><thead><tr><th>账号</th><th>兑换时间</th><th>产品</th><th>卡密</th><th>到期时间</th></tr></thead><tbody>${betaRedemptionRows(redemptions, true)}</tbody></table></div></div>`);
+}
+
 class RequestError extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
 function body(request) {
   return new Promise((resolve, reject) => {
@@ -1286,6 +1626,14 @@ function securityHeaders(response, requestId, secure) {
 function writeJson(response, status, payload) { const output = JSON.stringify(payload); response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(output) }); response.end(output); }
 function writeHtml(response, output) { response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(output) }); response.end(output); }
 function writeText(response, status, output) { response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(output) }); response.end(output); }
+function writeAttachment(response, filename, output) {
+  response.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename.replace(/[^A-Za-z0-9._-]/g, '_')}"`,
+    'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(output)
+  });
+  response.end(output);
+}
 function redirect(response, location) { response.writeHead(303, { Location: location }); response.end(); }
 function redirectMessage(response, location, note) { redirect(response, `${location}?message=${encodeURIComponent(note || '')}`); }
 function setCookie(response, config, name, value, expired) { response.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value || '')}; Path=/; HttpOnly; SameSite=Strict${config.SecureCookies ? '; Secure' : ''}${expired ? '; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0' : ''}`); }
@@ -1449,6 +1797,20 @@ async function handleInternalWebApi(auth, config, request, response, method, rou
     if (method !== 'GET') throw new RequestError(405, 'METHOD_NOT_ALLOWED', '请求方法不受支持');
     return write(200, { ok: true, account: current.account, sessionExpiresAt: current.session.expiresAtUtc });
   }
+  if (route === '/internal/web/v1/account/beta/redeem') {
+    if (method !== 'POST') throw new RequestError(405, 'METHOD_NOT_ALLOWED', '请求方法不受支持');
+    const redeemed = auth.redeemBetaCode(current.session, text(payload.code), clientIp, requestId);
+    if (!redeemed.Ok) return write(apiStatus(redeemed.Error), {
+      ok: false, error: redeemed.Error, message: redeemed.Message
+    });
+    const refreshed = auth.webAccount(sessionToken);
+    return write(200, {
+      ok: true,
+      message: redeemed.AlreadyApplied ? '该卡密此前已兑换，账号授权未重复增加' : 'Beta 授权兑换成功，请重新登录 Beta 客户端',
+      account: refreshed ? refreshed.account : redeemed.Account,
+      redemption: Object.assign({}, redeemed.Redemption, { alreadyApplied: Boolean(redeemed.AlreadyApplied) })
+    });
+  }
   if (route === '/internal/web/v1/account/password') {
     if (method !== 'POST') throw new RequestError(405, 'METHOD_NOT_ALLOWED', '请求方法不受支持');
     const problem = auth.changePassword(current.session, text(payload.currentPassword), text(payload.newPassword), clientIp, requestId);
@@ -1485,6 +1847,16 @@ function csrf(session, value) { if (!session || !safeEqual(session.csrfToken, va
 async function handleUser(auth, config, request, response, method, route, url, remoteIp, requestId) {
   const cookie = cookies(request); const session = auth.getWebSession(cookie.oraculus_user_session, false);
   if (!session) return redirect(response, '/user/login');
+  if (method === 'GET' && route === '/user') return writeHtml(response, userPageWithRedemption(
+    auth.getUser(session.userId), session.csrfToken, url.searchParams.get('message'), auth.betaPublicAccess(),
+    auth.listBetaRedemptions(session.userId, 5)));
+  if (method === 'POST' && route === '/user/beta/redeem') {
+    const values = await form(request); csrf(session, text(values.csrf));
+    const redeemed = auth.redeemBetaCode(session, text(values.code), remoteIp, requestId);
+    return redirectMessage(response, '/user', redeemed.Ok
+      ? (redeemed.AlreadyApplied ? '该卡密此前已兑换，授权未重复增加' : 'Beta 授权兑换成功，请重新登录 Beta 客户端')
+      : redeemed.Message);
+  }
   if (method === 'GET' && route === '/user') return writeHtml(response, userPage(auth.getUser(session.userId), session.csrfToken, url.searchParams.get('message'), auth.betaPublicAccess()));
   if (method === 'POST' && route === '/user/logout') { const values = await form(request); csrf(session, text(values.csrf)); auth.logoutWeb(cookie.oraculus_user_session, remoteIp, requestId); setCookie(response, config, 'oraculus_user_session', '', true); return redirect(response, '/user/login'); }
   if (method === 'POST' && (route === '/user/password' || route === '/user/hwid/reset')) { const values = await form(request); csrf(session, text(values.csrf)); const problem = route === '/user/password' ? auth.changePassword(session, text(values.currentPassword), text(values.newPassword), remoteIp, requestId) : auth.resetHwid(session, text(values.currentPassword), remoteIp, requestId); if (problem) return redirectMessage(response, '/user', problem); setCookie(response, config, 'oraculus_user_session', '', true); return redirectMessage(response, '/user/login', '操作成功，请重新登录'); }
@@ -1493,6 +1865,35 @@ async function handleUser(auth, config, request, response, method, route, url, r
 async function handleAdmin(auth, config, request, response, method, route, url, remoteIp, requestId) {
   const cookie = cookies(request); const session = auth.getWebSession(cookie.oraculus_admin_session, true);
   if (!session) return redirect(response, '/admin/login');
+  if (method === 'GET' && route === '/admin') {
+    const listing = auth.listUsers(url.searchParams.get('q'), url.searchParams.get('page'));
+    return writeHtml(response, adminPageWithBetaLink(session, listing, url.searchParams.get('message'), auth.betaPublicAccess()));
+  }
+  if (method === 'GET' && route === '/admin/beta-codes') return writeHtml(response,
+    betaCodesPage(session, auth.listBetaCodeBatches(), auth.listBetaRedemptions(null, 200), url.searchParams.get('message')));
+  if (method === 'POST' && route === '/admin/beta-codes/batches/create') {
+    const values = await form(request); csrf(session, text(values.csrf));
+    const created = auth.createBetaCodeBatch(session, {
+      label: values.label, product: values.product, durationDays: values.durationDays,
+      quantity: values.quantity, codeExpiresAtUtc: parseExpiry(values.codeExpiresAt), note: values.note
+    }, remoteIp, requestId);
+    if (!created.Ok) return redirectMessage(response, '/admin/beta-codes', created.Message);
+    const metadata = [
+      '# Oraculus Beta codes', `# Batch: ${created.Batch.id}`, `# Label: ${created.Batch.label}`,
+      `# Product: ${created.Batch.product}`, `# Generated: ${new Date(created.Batch.createdAtUtc * 1000).toISOString()}`, ''
+    ];
+    return writeAttachment(response, `oraculus-beta-${created.Batch.id.slice(0, 8)}.txt`, `${metadata.concat(created.Codes).join('\n')}\n`);
+  }
+  if (method === 'POST' && route === '/admin/beta-codes/batches/disable') {
+    const values = await form(request); csrf(session, text(values.csrf));
+    const disabled = auth.disableBetaCodeBatch(session, text(values.batchId), remoteIp, requestId);
+    return redirectMessage(response, '/admin/beta-codes', disabled.Ok ? '卡密批次已禁用' : disabled.Message);
+  }
+  if (method === 'POST' && route === '/admin/beta-codes/lookup') {
+    const values = await form(request); csrf(session, text(values.csrf));
+    const found = auth.lookupBetaCode(session, text(values.code), remoteIp, requestId);
+    return redirectMessage(response, '/admin/beta-codes', found.Message);
+  }
   if (method === 'GET' && route === '/admin') {
     const listing = auth.listUsers(url.searchParams.get('q'), url.searchParams.get('page'));
     return writeHtml(response, adminPage(session, listing, url.searchParams.get('message'), auth.betaPublicAccess()));
@@ -1588,16 +1989,16 @@ function selfTest() {
       '127.0.0.1', 'self-support-admin-login').token) throw new Error('support administrator login self-test failed');
     if (!auth.listAuditLogs().some(entry => entry.action === 'ADMIN_CREATE_SUPPORT' && entry.success))
       throw new Error('audit log self-test failed');
-    const blockedLauncher = auth.register({ username: 'blocked_launcher', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.20' }, '127.0.0.1', 'self-launcher-blocked');
+    const blockedLauncher = auth.register({ username: 'blocked_launcher', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.20' }, '127.0.0.1', 'self-launcher-blocked');
     if (blockedLauncher.Ok || blockedLauncher.Error !== 'LAUNCHER_VERSION_BLOCKED')
       throw new Error('launcher version rejection self-test failed');
-    const registered = auth.register({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-register');
+    const registered = auth.register({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-register');
     if (!registered.Ok || !registered.AccessToken || !registered.RefreshToken) throw new Error('registration self-test failed');
     const registeredClaims = verifiedEntitlementClaims(registered.EntitlementProof, auth.entitlementSigner.publicKey);
     if (registeredClaims.version !== 1 || registeredClaims.keyId !== auth.entitlementSigner.keyId
       || registeredClaims.subject !== registered.Account.id || registeredClaims.username !== registered.Account.username
-      || registeredClaims.edition !== 'FREE' || registeredClaims.clientVersion !== 'b6'
-      || registeredClaims.buildId !== 'b6-free' || registeredClaims.deviceFingerprintHash !== sha256(fingerprint)
+      || registeredClaims.edition !== 'FREE' || registeredClaims.clientVersion !== 'b7'
+      || registeredClaims.buildId !== 'b7-free' || registeredClaims.deviceFingerprintHash !== sha256(fingerprint)
       || registeredClaims.accessTokenHash !== sha256(registered.AccessToken)
       || registeredClaims.accessExpiresAt !== registered.AccessExpiresAt
       || registeredClaims.refreshExpiresAt !== registered.RefreshExpiresAt)
@@ -1610,7 +2011,7 @@ function selfTest() {
     }
     catch { tamperedProofRejected = true; }
     if (!tamperedProofRejected) throw new Error('tampered entitlement proof self-test failed');
-    const clientOnly = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free' }, '127.0.0.1', 'self-client-only-login');
+    const clientOnly = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free' }, '127.0.0.1', 'self-client-only-login');
     if (!clientOnly.Ok || !auth.heartbeat(clientOnly.AccessToken, '127.0.0.1', 'self-client-only-heartbeat').Ok)
       throw new Error('client-only version gate self-test failed');
     const launcherPriority = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'unsupported-client', buildId: 'unsupported-build', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-launcher-priority-login');
@@ -1625,6 +2026,85 @@ function selfTest() {
     const webAccount = auth.webAccount(webRegistered.Token);
     if (!webAccount || webAccount.account.username !== 'website_user')
       throw new Error('website account session self-test failed');
+    const durationBatch = auth.createBetaCodeBatch(rootSession, {
+      label: 'self-test-duration', product: 'BETA_DURATION', durationDays: 30, quantity: 6
+    }, '127.0.0.10', 'self-beta-duration-batch');
+    if (!durationBatch.Ok || durationBatch.Codes.length !== 6
+      || new Set(durationBatch.Codes).size !== 6
+      || durationBatch.Codes.some(code => !normalizeBetaCode(code)))
+      throw new Error('beta duration batch generation self-test failed');
+    if (!auth.lookupBetaCode(supportSession, durationBatch.Codes[0], '127.0.0.10', 'self-beta-lookup').Ok)
+      throw new Error('beta code lookup self-test failed');
+    if (JSON.stringify(auth.store.data).includes(durationBatch.Codes[0]))
+      throw new Error('plaintext beta code persistence self-test failed');
+    const deniedBatch = auth.createBetaCodeBatch(supportSession, {
+      label: 'denied', product: 'BETA_DURATION', durationDays: 30, quantity: 1
+    }, '127.0.0.11', 'self-beta-denied-batch');
+    if (deniedBatch.Ok || deniedBatch.Error !== 'ADMIN_PERMISSION_DENIED')
+      throw new Error('beta batch administrator permission self-test failed');
+    const firstRedeemAt = now();
+    const firstRedeem = auth.redeemBetaCode(webAccount.session, durationBatch.Codes[0], '127.0.0.12', 'self-beta-free-redeem');
+    if (!firstRedeem.Ok || firstRedeem.AlreadyApplied || firstRedeem.Account.tier !== 'BETA'
+      || firstRedeem.Account.betaExpiresAt < firstRedeemAt + 30 * 86400
+      || !firstRedeem.Account.betaActive)
+      throw new Error('free-to-beta redemption self-test failed');
+    const firstExpiry = firstRedeem.Account.betaExpiresAt;
+    const retryRedeem = auth.redeemBetaCode(webAccount.session, durationBatch.Codes[0], '127.0.0.12', 'self-beta-retry');
+    if (!retryRedeem.Ok || !retryRedeem.AlreadyApplied || retryRedeem.Account.betaExpiresAt !== firstExpiry)
+      throw new Error('idempotent beta redemption self-test failed');
+    let expiredUser; let publicUser;
+    auth.store.mutate(data => {
+      expiredUser = newUser('expired_beta_user', originalAdminHash, { tier: 'BETA', betaExpiresAtUtc: now() - 60 });
+      publicUser = newUser('public_beta_user', originalAdminHash, { tier: 'FREE' });
+      data.users.push(expiredUser, publicUser);
+    });
+    const otherReuse = auth.redeemBetaCode({ userId: expiredUser.id }, durationBatch.Codes[0], '127.0.0.13', 'self-beta-other-reuse');
+    if (otherReuse.Ok || otherReuse.Error !== 'INVALID_REDEEM_CODE')
+      throw new Error('cross-account beta code reuse self-test failed');
+    const stacked = auth.redeemBetaCode(webAccount.session, durationBatch.Codes[1], '127.0.0.12', 'self-beta-stack');
+    if (!stacked.Ok || stacked.Account.betaExpiresAt !== firstExpiry + 30 * 86400)
+      throw new Error('active beta duration stacking self-test failed');
+    const expiredRedeemAt = now();
+    const expiredRedeem = auth.redeemBetaCode({ userId: expiredUser.id }, durationBatch.Codes[2], '127.0.0.14', 'self-beta-expired');
+    if (!expiredRedeem.Ok || expiredRedeem.Account.betaExpiresAt < expiredRedeemAt + 30 * 86400)
+      throw new Error('expired beta restart self-test failed');
+    if (auth.setBetaPublicAccess(rootSession, true, now() + 3600, '127.0.0.15', 'self-beta-public-enable'))
+      throw new Error('public beta setup for redemption self-test failed');
+    const publicRedeem = auth.redeemBetaCode({ userId: publicUser.id }, durationBatch.Codes[3], '127.0.0.16', 'self-beta-public-redeem');
+    if (!publicRedeem.Ok || publicRedeem.Account.tier !== 'BETA' || !publicRedeem.Account.betaActive)
+      throw new Error('public beta persistent redemption self-test failed');
+    if (auth.setBetaPublicAccess(rootSession, false, null, '127.0.0.15', 'self-beta-public-disable'))
+      throw new Error('public beta cleanup self-test failed');
+    const permanentBatch = auth.createBetaCodeBatch(rootSession, {
+      label: 'self-test-permanent', product: 'BETA_PERMANENT', quantity: 2
+    }, '127.0.0.17', 'self-beta-permanent-batch');
+    if (!permanentBatch.Ok) throw new Error('permanent beta batch generation self-test failed');
+    const permanentRedeem = auth.redeemBetaCode(webAccount.session, permanentBatch.Codes[0], '127.0.0.18', 'self-beta-permanent-redeem');
+    if (!permanentRedeem.Ok || permanentRedeem.Account.betaExpiresAt !== PERMANENT_BETA_EXPIRES_AT_UTC
+      || !permanentRedeem.Account.betaPermanent)
+      throw new Error('permanent beta redemption self-test failed');
+    const durationAfterPermanent = auth.redeemBetaCode(webAccount.session, durationBatch.Codes[4], '127.0.0.19', 'self-beta-after-permanent');
+    if (durationAfterPermanent.Ok || durationAfterPermanent.Error !== 'BETA_EXPIRY_LIMIT')
+      throw new Error('duration-after-permanent boundary self-test failed');
+    const disabledBatch = auth.createBetaCodeBatch(rootSession, {
+      label: 'self-test-disabled', product: 'BETA_DURATION', durationDays: 7, quantity: 1
+    }, '127.0.0.20', 'self-beta-disabled-batch');
+    if (!disabledBatch.Ok || !auth.disableBetaCodeBatch(rootSession, disabledBatch.Batch.id,
+      '127.0.0.20', 'self-beta-disable').Ok)
+      throw new Error('beta batch disable self-test failed');
+    const disabledRedeem = auth.redeemBetaCode({ userId: expiredUser.id }, disabledBatch.Codes[0], '127.0.0.21', 'self-beta-disabled-redeem');
+    if (disabledRedeem.Ok || disabledRedeem.Error !== 'INVALID_REDEEM_CODE')
+      throw new Error('disabled beta code rejection self-test failed');
+    const expiringBatch = auth.createBetaCodeBatch(rootSession, {
+      label: 'self-test-expired-code', product: 'BETA_DURATION', durationDays: 7, quantity: 1,
+      codeExpiresAtUtc: now() + 60
+    }, '127.0.0.22', 'self-beta-expiring-batch');
+    auth.store.mutate(data => { data.betaCodeBatches.find(batch => batch.id === expiringBatch.Batch.id).codeExpiresAtUtc = now() - 1; });
+    const expiredCodeRedeem = auth.redeemBetaCode({ userId: publicUser.id }, expiringBatch.Codes[0], '127.0.0.23', 'self-beta-expired-code');
+    if (expiredCodeRedeem.Ok || expiredCodeRedeem.Error !== 'INVALID_REDEEM_CODE')
+      throw new Error('expired beta code rejection self-test failed');
+    if (auth.store.data.betaRedemptions.length !== 5 || auth.listBetaRedemptions(webAccount.session.userId, 5).length !== 3)
+      throw new Error('beta redemption history self-test failed');
     if (auth.changePassword(webAccount.session, 'WebsitePassword!2026', 'WebsiteChangedPassword!2026',
       '127.0.0.2', 'self-web-password')) throw new Error('website password self-test failed');
     if (auth.getWebSession(webRegistered.Token, false)) throw new Error('website password revocation self-test failed');
@@ -1654,16 +2134,16 @@ function selfTest() {
       throw new Error('IRC message self-test failed');
     irc.close();
     if (!auth.heartbeat(registered.AccessToken, '127.0.0.1', 'self-heartbeat').Ok) throw new Error('heartbeat self-test failed');
-    const refreshed = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-refresh');
+    const refreshed = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-refresh');
     if (!refreshed.Ok || refreshed.RefreshToken === registered.RefreshToken) throw new Error('refresh self-test failed');
     const refreshedClaims = verifiedEntitlementClaims(refreshed.EntitlementProof, auth.entitlementSigner.publicKey);
     if (refreshedClaims.accessTokenHash !== sha256(refreshed.AccessToken)
       || refreshedClaims.deviceFingerprintHash !== sha256(fingerprint)
       || refreshedClaims.accessExpiresAt !== refreshed.AccessExpiresAt)
       throw new Error('refresh entitlement claims self-test failed');
-    const replay = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-replay');
+    const replay = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-replay');
     if (replay.Ok || auth.heartbeat(refreshed.AccessToken, '127.0.0.1', 'self-heartbeat-2').Ok) throw new Error('refresh replay self-test failed');
-    const beta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b6', buildId: 'b6-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-beta');
+    const beta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b7', buildId: 'b7-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-beta');
     if (beta.Ok || beta.Error !== 'LICENSE_REQUIRED') throw new Error('beta entitlement self-test failed');
     const publicBetaExpiry = now() + 3600;
     if (!auth.setBetaPublicAccess(supportSession, true, publicBetaExpiry, '127.0.0.1', 'self-public-beta-support-denied'))
@@ -1673,10 +2153,10 @@ function selfTest() {
     const activePublicBeta = auth.betaPublicAccess();
     if (!activePublicBeta.enabled || activePublicBeta.expiresAtUtc !== publicBetaExpiry)
       throw new Error('public beta persistence self-test failed');
-    const publicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b6', buildId: 'b6-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-login');
+    const publicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b7', buildId: 'b7-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-login');
     if (!publicBeta.Ok || publicBeta.Account.tier !== 'BETA' || publicBeta.Account.betaExpiresAt !== publicBetaExpiry || !publicBeta.Account.betaPublicAccess)
       throw new Error('public beta client entitlement self-test failed');
-    const freeDuringPublicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b6', buildId: 'b6-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-free-login');
+    const freeDuringPublicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-free-login');
     if (!freeDuringPublicBeta.Ok || freeDuringPublicBeta.Account.tier !== 'FREE' || freeDuringPublicBeta.Account.betaPublicAccess)
       throw new Error('public beta free-edition isolation self-test failed');
     if (!auth.heartbeat(publicBeta.AccessToken, '127.0.0.1', 'self-public-beta-heartbeat').Ok)

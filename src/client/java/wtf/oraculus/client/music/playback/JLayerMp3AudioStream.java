@@ -5,6 +5,7 @@ import javazoom.jl.decoder.BitstreamException;
 import javazoom.jl.decoder.Decoder;
 import javazoom.jl.decoder.DecoderException;
 import javazoom.jl.decoder.Header;
+import javazoom.jl.decoder.JavaLayerException;
 import javazoom.jl.decoder.SampleBuffer;
 import net.minecraft.client.sound.AudioStream;
 
@@ -51,7 +52,7 @@ public final class JLayerMp3AudioStream implements AudioStream {
                 current = decodeFrame();
             }
             if (current == null) endOfStream = true;
-        } catch (final BitstreamException | DecoderException exception) {
+        } catch (final JavaLayerException exception) {
             close();
             throw new IOException("Unable to initialize MP3 decoder", exception);
         }
@@ -89,7 +90,7 @@ public final class JLayerMp3AudioStream implements AudioStream {
                 }
                 pending = toPcm(frame.samples, 0, frame.sampleCount);
             }
-        } catch (final BitstreamException | DecoderException exception) {
+        } catch (final JavaLayerException exception) {
             throw new IOException("Unable to decode MP3 frame", exception);
         }
         if (output.position() == 0) return null;

@@ -19,8 +19,8 @@
 
 | edition | clientVersion | buildId | launcherVersion（可选） |
 | --- | --- | --- | --- |
-| `FREE` | `b6` | `b6-free` | `v0.9.21` |
-| `BETA` | `b6` | `b6-beta` | `v0.9.21` |
+| `FREE` | `b7` | `b7-free` | `v0.9.21` |
+| `BETA` | `b7` | `b7-beta` | `v0.9.21` |
 
 版本门禁按以下优先级执行：
 
@@ -122,8 +122,8 @@ publicKeyBase64: MCowBQYDK2VwAyEAy/fEZHAN9u1e/iPCZMjwJ8Ra3TPS7449CESmOKgrueE=
   "username": "example_user",
   "edition": "BETA",
   "tier": "BETA",
-  "clientVersion": "b6",
-  "buildId": "b6-beta",
+  "clientVersion": "b7",
+  "buildId": "b7-beta",
   "deviceFingerprintHash": "标准 Base64 编码的 SHA-256",
   "accessTokenHash": "标准 Base64 编码的 SHA-256",
   "issuedAt": 1785250000,
@@ -196,8 +196,8 @@ Base64，不是 Base64URL。`betaExpiresAt` 在 Free 会话中为 `null`；限�
   "hwidVersion": "v1",
   "hwidQuality": "STRONG",
   "edition": "FREE",
-  "clientVersion": "b6",
-  "buildId": "b6-free",
+  "clientVersion": "b7",
+  "buildId": "b7-free",
   "launcherVersion": "v0.9.21"
 }
 ```
@@ -229,8 +229,8 @@ Beta 会话，账号持久化等级仍为 Free。注册限制为同一 IP 每小
   "refreshToken": "登录或上次刷新返回的令牌",
   "deviceFingerprint": "v1:stable-device-material...",
   "edition": "FREE",
-  "clientVersion": "b6",
-  "buildId": "b6-free",
+  "clientVersion": "b7",
+  "buildId": "b7-free",
   "launcherVersion": "v0.9.21"
 }
 ```

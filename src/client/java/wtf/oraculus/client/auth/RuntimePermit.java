@@ -126,7 +126,7 @@ public final class RuntimePermit {
     }
 
     private static String seal(final String domain, final String value) {
-        return digest("0r4c" + domain + '\0' + value + "u1us-b6");
+        return digest("0r4c" + domain + '\0' + value + "u1us-b7");
     }
 
     private static String digest(final String value) {

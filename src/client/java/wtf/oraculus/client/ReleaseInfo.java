@@ -4,7 +4,7 @@ import wtf.oraculus.client.edition.EditionBuildInfo;
 
 public final class ReleaseInfo {
 
-    public static final String VERSION = "b6";
+    public static final String VERSION = "b7";
     public static final String NAME = "Oraculus";
 
     public static String getEditionLabel() {
