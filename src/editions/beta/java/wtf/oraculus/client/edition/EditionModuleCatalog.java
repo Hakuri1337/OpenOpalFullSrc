@@ -11,6 +11,7 @@ import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
 import wtf.oraculus.client.feature.module.impl.combat.tpaura.TpAuraModule;
+import wtf.oraculus.client.feature.module.impl.combat.antikb.AntiKBModule;
 import wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityModule;
 import wtf.oraculus.client.feature.module.impl.movement.*;
 import wtf.oraculus.client.feature.module.impl.movement.clipper.ClipperModule;
@@ -33,6 +34,7 @@ import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
 import wtf.oraculus.client.feature.module.impl.world.legittelly.LegitTellyModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
+import wtf.oraculus.client.feature.module.impl.world.ssngscaffold.SsngScaffoldModule;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.oraculus.client.music.MusicPlayerModule;
 
@@ -49,7 +51,7 @@ public final class EditionModuleCatalog {
                 new KillAuraModule(), new TpAuraModule(), new TeamsModule(), new BacktrackModule(), new BlockModule(),
                 new ReachModule(), new PiercingModule(), new AutoClickerModule(), new AttackDelayModule(),
                 new SuperKnockBackModule(), new CriticalsModule(), new FakeLagModule(),
-                new VelocityModule(),
+                new VelocityModule(), new AntiKBModule(),
                 new AutoHeadModule(), new FastPearlModule(), new AutoThrowModule(), new CrystalAuraModule(),
 
                 new ClickGUIModule(), new SigmaStyleModule(), new FullBrightModule(), new AnimationsModule(), new SilenceItemRotationModule(),
@@ -58,7 +60,7 @@ public final class EditionModuleCatalog {
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
                 new PostProcessingModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(), new PotionModule(),
 
-                new ScaffoldModule(), new LegitTellyModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
+                new ScaffoldModule(), new SsngScaffoldModule(), new LegitTellyModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
                 new ChestAuraModule(), new AntiStaffModule(),
 
                 new FlightModule(), new SpeedModule(), new JumpCooldownModule(), new SprintModule(),
@@ -68,6 +70,7 @@ public final class EditionModuleCatalog {
                 new StuckModule(),
 
                 new FastUseModule(), new AutoRodModule(), new MiddlePearlModule(), new MusicPlayerModule(), new NoFallModule(),
+                new BalancedTimerModule(),
                 new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(),
                 new DisablerModule(), new FastPlaceModule(), new AntiVoidModule(), new AutoToolModule(),
                 new AntiTNTModule(), new AutoChestModule(), new AutoHypixelModule(), new BlinkModule(),

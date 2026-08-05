@@ -24,6 +24,9 @@ public class BytecodeVM
             createMode: ONE_FOR_ALL
             # location: SAME_PACKAGE_AS_TARGET, NEW_PACKAGE, ONE_PACKAGE
             location: ONE_PACKAGE
+            # Internal JVM package used when location is ONE_PACKAGE. Release
+            # pipelines should replace this with a fresh value for every build.
+            runtimePackage: bytecodevm/runtime/internal
             # renameMode renames generated VM artifacts only.
             renameMode: DISABLE
             # interpretMode: SAVE_ALL_INSTRUCTION, SAVE_ONLY_REQUIRED_INSTRUCTION

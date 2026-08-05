@@ -28,6 +28,7 @@ import wtf.oraculus.event.impl.game.packet.InstantaneousReceivePacketEvent;
 import wtf.oraculus.event.impl.game.packet.InstantaneousSendPacketEvent;
 import wtf.oraculus.event.impl.game.packet.ReceivePacketEvent;
 import wtf.oraculus.event.impl.game.packet.SendPacketEvent;
+import wtf.oraculus.utility.network.PacketUtility;
 
 import java.util.concurrent.RejectedExecutionException;
 
@@ -62,6 +63,7 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
     private void init(NetworkSide side, CallbackInfo ci) {
         InboundNetworkBlockage.get().reset();
         OutboundNetworkBlockage.get().reset();
+        wtf.oraculus.client.feature.module.impl.combat.antikb.packet.impl.InboundNetworkBlockage.get().reset();
     }
 
     @Inject(
@@ -91,6 +93,9 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
         if (IrcAttackPolicy.shouldBlock(packet)) {
             IrcAttackPolicy.notifyBlocked();
             ci.cancel();
+            return;
+        }
+        if (PacketUtility.shouldBypass(packet)) {
             return;
         }
         final SendPacketEvent event = new SendPacketEvent(packet);
@@ -145,7 +150,9 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
             }
             InstantaneousReceivePacketEvent event = new InstantaneousReceivePacketEvent(packet);
             EventDispatcher.dispatch(event);
-            if (event.isCancelled() || InboundNetworkBlockage.get().isBlocked(packet)) {
+            if (event.isCancelled()
+                    || InboundNetworkBlockage.get().isBlocked(packet)
+                    || wtf.oraculus.client.feature.module.impl.combat.antikb.packet.impl.InboundNetworkBlockage.get().isBlocked(packet)) {
                 ci.cancel();
             }
         }

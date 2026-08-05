@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.RenderPipelines;
 import org.slf4j.Logger;
+import wtf.oraculus.client.edition.EditionBuildInfo;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.LiquidGlassV2Settings;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.utility.render.GLUtility;
@@ -77,6 +78,9 @@ public final class LiquidGlassV2Renderer {
             final LiquidGlassV2Settings settings,
             final float opacity
     ) {
+        if (EditionBuildInfo.isFree()) {
+            return false;
+        }
         final Framebuffer source = ShaderFramebuffer.getLiquidGlassSourceFramebuffer();
         if (initializationFailed || settings == null || source == null
                 || source.getColorAttachment() == null || width <= 0 || height <= 0 || opacity <= 0) {

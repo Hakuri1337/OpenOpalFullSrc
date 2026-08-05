@@ -128,7 +128,7 @@ class AppConfig {
       AllowedHosts: ['127.0.0.1', 'localhost'], DataDirectory: path.join(folder, 'data'),
       AccessTokenMinutes: 10, RefreshTokenDays: 7, WebSessionHours: 8,
       SecureCookies: false, RequireHttps: false, RegistrationEnabled: true,
-      AllowedClientVersions: ['b7'], AllowedBuildIds: ['b7-free', 'b7-beta'],
+      AllowedClientVersions: ['b8'], AllowedBuildIds: ['b8-free', 'b8-beta'],
       AllowedLauncherVersions: ['v0.9.21'],
       TlsCertificatePath: '', TlsPrivateKeyPath: '', InternalWebsiteSecret: '',
       InternalWebHost: '127.0.0.1', InternalWebPort: 0, InternalWebTls: false,
@@ -426,6 +426,40 @@ class AuthService {
     return this.issueSession(user, hwidHash, fingerprint, edition, clientVersion, buildId, launcherVersion, remoteIp, requestId);
   }
 
+  launcherLogin(request, accessToken, remoteIp, requestId) {
+    const username = text(request.username).trim();
+    const fingerprint = text(request.deviceFingerprint);
+    const hwidVersion = text(request.hwidVersion);
+    const edition = upper(request.edition);
+    const clientVersion = text(request.clientVersion);
+    const buildId = text(request.buildId);
+    const versionError = AppConfig.versionGate(this.config, edition, clientVersion, buildId, '');
+    if (versionError) return versionError;
+    if (!validUsername(username) || !validFingerprint(fingerprint, hwidVersion))
+      return error('SESSION_REVOKED', '启动器登录信息无效或已过期');
+    if (!this.consumeRate(`launcher-login:${this.hashIp(remoteIp)}:${normalizeUsername(username)}`, 10, 300))
+      return error('RATE_LIMITED', '登录尝试过于频繁，请稍后再试');
+    const validated = this.validateClientAction(accessToken);
+    if (!validated.Ok) return validated;
+    const { user, session } = validated;
+    if (normalizeUsername(user.username) !== normalizeUsername(username)) {
+      this.audit(user.id, user.id, 'CLIENT_LAUNCHER_LOGIN', false, remoteIp, 'username_mismatch', requestId);
+      return error('SESSION_REVOKED', '启动器登录信息无效或已过期');
+    }
+    const accountError = this.validateAccount(user, edition);
+    if (accountError) return accountError;
+    const hwidHash = this.hashHwid(fingerprint);
+    if (!safeEqual(user.hwidHash, hwidHash) || !safeEqual(session.hwidHash, hwidHash)) {
+      this.audit(user.id, user.id, 'CLIENT_LAUNCHER_LOGIN', false, remoteIp, 'hwid_mismatch', requestId);
+      return error('HWID_MISMATCH', '当前设备与启动器会话不一致');
+    }
+    const result = this.issueSession(
+      user, hwidHash, fingerprint, edition, clientVersion, buildId, '', remoteIp, requestId
+    );
+    this.audit(user.id, user.id, 'CLIENT_LAUNCHER_LOGIN', true, remoteIp, `edition=${edition}`, requestId);
+    return result;
+  }
+
   refresh(request, remoteIp, requestId) {
     const refreshToken = text(request.refreshToken);
     const fingerprint = text(request.deviceFingerprint);
@@ -497,6 +531,34 @@ class AuthService {
     const { user, session } = validated;
     this.store.mutate(data => { const current = data.sessions.find(item => item.id === session.id); if (current) current.lastSeenAtUtc = now(); });
     return { Ok: true, Message: 'ok', Account: this.clientAccountView(user, session.clientEdition) };
+  }
+
+  legality(accessToken) {
+    const session = this.clientSessionRecord(accessToken);
+    if (!session) return error('SESSION_REVOKED', '登录会话无效或已过期');
+    const user = findUserById(this.store.data, session.userId);
+    if (!user) {
+      return {
+        Ok: true, Exists: false, Active: false, BetaEligible: false,
+        Username: '', Tier: '', ServerTimeUtc: now()
+      };
+    }
+    const exists = user.status !== 'DELETED';
+    const versionValid = !AppConfig.versionGate(
+      this.config, session.clientEdition, session.clientVersion, session.buildId, session.launcherVersion
+    );
+    const deviceValid = Boolean(user.hwidHash && session.hwidHash && safeEqual(user.hwidHash, session.hwidHash));
+    const active = exists && user.status === 'ACTIVE' && !user.forcePasswordChange && versionValid && deviceValid;
+    const account = this.clientAccountView(user, session.clientEdition);
+    return {
+      Ok: true,
+      Exists: exists,
+      Active: active,
+      BetaEligible: active && this.hasActiveBetaEntitlement(user),
+      Username: account.username,
+      Tier: account.tier,
+      ServerTimeUtc: now()
+    };
   }
 
   logout(accessToken, remoteIp, requestId) {
@@ -1269,11 +1331,16 @@ class AuthService {
   }
 
   clientSession(accessToken) {
-    if (!accessToken) return null;
-    const session = this.store.data.sessions.find(item => !item.revokedAtUtc && item.accessExpiresAtUtc > now() && safeEqual(item.accessTokenHash, sha256(accessToken)));
+    const session = this.clientSessionRecord(accessToken);
     if (!session) return null;
     const user = findUserById(this.store.data, session.userId);
     return user ? { user, session } : null;
+  }
+
+  clientSessionRecord(accessToken) {
+    if (!accessToken) return null;
+    return this.store.data.sessions.find(item => !item.revokedAtUtc && item.accessExpiresAtUtc > now()
+      && safeEqual(item.accessTokenHash, sha256(accessToken))) || null;
   }
 
   validateAccount(user, edition) {
@@ -2079,8 +2146,11 @@ async function handleApi(auth, irc, request, response, method, route, remoteIp, 
   let result;
   if (route === '/api/v1/auth/register') result = auth.register(payload, remoteIp, requestId);
   else if (route === '/api/v1/auth/login') result = auth.login(payload, remoteIp, requestId);
+  else if (route === '/api/v1/auth/launcher-login')
+    result = auth.launcherLogin(payload, bearer(request), remoteIp, requestId);
   else if (route === '/api/v1/auth/refresh') result = auth.refresh(payload, remoteIp, requestId);
   else if (route === '/api/v1/auth/heartbeat' || route === '/api/v1/auth/status') result = auth.heartbeat(bearer(request), remoteIp, requestId);
+  else if (route === '/api/v1/auth/legality') result = auth.legality(bearer(request));
   else if (route === '/api/v1/auth/logout') { auth.logout(bearer(request), remoteIp, requestId); result = { Ok: true, Message: '已退出登录' }; }
   else if (route === '/api/v1/beta-codes/issue') {
     result = auth.issueBetaCodesFromClient(
@@ -2359,16 +2429,32 @@ function selfTest() {
       '127.0.0.1', 'self-support-admin-login').token) throw new Error('support administrator login self-test failed');
     if (!auth.listAuditLogs().some(entry => entry.action === 'ADMIN_CREATE_SUPPORT' && entry.success))
       throw new Error('audit log self-test failed');
-    const blockedLauncher = auth.register({ username: 'blocked_launcher', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.20' }, '127.0.0.1', 'self-launcher-blocked');
+    const blockedLauncher = auth.register({ username: 'blocked_launcher', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free', launcherVersion: 'v0.9.20' }, '127.0.0.1', 'self-launcher-blocked');
     if (blockedLauncher.Ok || blockedLauncher.Error !== 'LAUNCHER_VERSION_BLOCKED')
       throw new Error('launcher version rejection self-test failed');
-    const registered = auth.register({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-register');
+    const registered = auth.register({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-register');
     if (!registered.Ok || !registered.AccessToken || !registered.RefreshToken) throw new Error('registration self-test failed');
+    const launcherLogin = auth.launcherLogin({ username: 'selftest_user', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free' }, registered.AccessToken, '127.0.0.1', 'self-launcher-login');
+    if (!launcherLogin.Ok || !launcherLogin.AccessToken || !launcherLogin.RefreshToken
+      || launcherLogin.AccessToken === registered.AccessToken || launcherLogin.Account.username !== 'selftest_user')
+      throw new Error('launcher access token login self-test failed');
+    const mismatchedLauncherLogin = auth.launcherLogin({ username: 'different_user', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free' }, registered.AccessToken, '127.0.0.1', 'self-launcher-login-mismatch');
+    if (mismatchedLauncherLogin.Ok || mismatchedLauncherLogin.Error !== 'SESSION_REVOKED')
+      throw new Error('launcher access token username binding self-test failed');
+    const legalFreeAccount = auth.legality(registered.AccessToken);
+    if (!legalFreeAccount.Ok || !legalFreeAccount.Exists || !legalFreeAccount.Active
+      || legalFreeAccount.BetaEligible || legalFreeAccount.Username !== 'selftest_user')
+      throw new Error('account legality self-test failed');
+    auth.store.mutate(data => { findUserByName(data, 'selftest_user').status = 'DELETED'; });
+    const deletedAccount = auth.legality(registered.AccessToken);
+    if (!deletedAccount.Ok || deletedAccount.Exists || deletedAccount.Active || deletedAccount.BetaEligible)
+      throw new Error('deleted account legality self-test failed');
+    auth.store.mutate(data => { findUserByName(data, 'selftest_user').status = 'ACTIVE'; });
     const registeredClaims = verifiedEntitlementClaims(registered.EntitlementProof, auth.entitlementSigner.publicKey);
     if (registeredClaims.version !== 1 || registeredClaims.keyId !== auth.entitlementSigner.keyId
       || registeredClaims.subject !== registered.Account.id || registeredClaims.username !== registered.Account.username
-      || registeredClaims.edition !== 'FREE' || registeredClaims.clientVersion !== 'b7'
-      || registeredClaims.buildId !== 'b7-free' || registeredClaims.deviceFingerprintHash !== sha256(fingerprint)
+      || registeredClaims.edition !== 'FREE' || registeredClaims.clientVersion !== 'b8'
+      || registeredClaims.buildId !== 'b8-free' || registeredClaims.deviceFingerprintHash !== sha256(fingerprint)
       || registeredClaims.accessTokenHash !== sha256(registered.AccessToken)
       || registeredClaims.accessExpiresAt !== registered.AccessExpiresAt
       || registeredClaims.refreshExpiresAt !== registered.RefreshExpiresAt)
@@ -2381,7 +2467,7 @@ function selfTest() {
     }
     catch { tamperedProofRejected = true; }
     if (!tamperedProofRejected) throw new Error('tampered entitlement proof self-test failed');
-    const clientOnly = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free' }, '127.0.0.1', 'self-client-only-login');
+    const clientOnly = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free' }, '127.0.0.1', 'self-client-only-login');
     if (!clientOnly.Ok || !auth.heartbeat(clientOnly.AccessToken, '127.0.0.1', 'self-client-only-heartbeat').Ok)
       throw new Error('client-only version gate self-test failed');
     const launcherPriority = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'unsupported-client', buildId: 'unsupported-build', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-launcher-priority-login');
@@ -2567,16 +2653,16 @@ function selfTest() {
       throw new Error('IRC message self-test failed');
     irc.close();
     if (!auth.heartbeat(registered.AccessToken, '127.0.0.1', 'self-heartbeat').Ok) throw new Error('heartbeat self-test failed');
-    const refreshed = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-refresh');
+    const refreshed = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-refresh');
     if (!refreshed.Ok || refreshed.RefreshToken === registered.RefreshToken) throw new Error('refresh self-test failed');
     const refreshedClaims = verifiedEntitlementClaims(refreshed.EntitlementProof, auth.entitlementSigner.publicKey);
     if (refreshedClaims.accessTokenHash !== sha256(refreshed.AccessToken)
       || refreshedClaims.deviceFingerprintHash !== sha256(fingerprint)
       || refreshedClaims.accessExpiresAt !== refreshed.AccessExpiresAt)
       throw new Error('refresh entitlement claims self-test failed');
-    const replay = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-replay');
+    const replay = auth.refresh({ refreshToken: registered.RefreshToken, deviceFingerprint: fingerprint, edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-replay');
     if (replay.Ok || auth.heartbeat(refreshed.AccessToken, '127.0.0.1', 'self-heartbeat-2').Ok) throw new Error('refresh replay self-test failed');
-    const beta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b7', buildId: 'b7-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-beta');
+    const beta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b8', buildId: 'b8-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-beta');
     if (beta.Ok || beta.Error !== 'LICENSE_REQUIRED') throw new Error('beta entitlement self-test failed');
     const publicBetaExpiry = now() + 3600;
     if (!auth.setBetaPublicAccess(supportSession, true, publicBetaExpiry, '127.0.0.1', 'self-public-beta-support-denied'))
@@ -2586,14 +2672,17 @@ function selfTest() {
     const activePublicBeta = auth.betaPublicAccess();
     if (!activePublicBeta.enabled || activePublicBeta.expiresAtUtc !== publicBetaExpiry)
       throw new Error('public beta persistence self-test failed');
-    const publicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b7', buildId: 'b7-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-login');
+    const publicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'BETA', clientVersion: 'b8', buildId: 'b8-beta', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-login');
     if (!publicBeta.Ok || publicBeta.Account.tier !== 'BETA' || publicBeta.Account.betaExpiresAt !== publicBetaExpiry || !publicBeta.Account.betaPublicAccess)
       throw new Error('public beta client entitlement self-test failed');
-    const freeDuringPublicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b7', buildId: 'b7-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-free-login');
+    const freeDuringPublicBeta = auth.login({ username: 'selftest_user', password: 'SelfTestPassword!2026', deviceFingerprint: fingerprint, hwidVersion: 'v1', hwidQuality: 'STRONG', edition: 'FREE', clientVersion: 'b8', buildId: 'b8-free', launcherVersion: 'v0.9.21' }, '127.0.0.1', 'self-public-beta-free-login');
     if (!freeDuringPublicBeta.Ok || freeDuringPublicBeta.Account.tier !== 'FREE' || freeDuringPublicBeta.Account.betaPublicAccess)
       throw new Error('public beta free-edition isolation self-test failed');
     if (!auth.heartbeat(publicBeta.AccessToken, '127.0.0.1', 'self-public-beta-heartbeat').Ok)
       throw new Error('public beta heartbeat self-test failed');
+    const legalPublicBeta = auth.legality(publicBeta.AccessToken);
+    if (!legalPublicBeta.Ok || !legalPublicBeta.Exists || !legalPublicBeta.Active || !legalPublicBeta.BetaEligible)
+      throw new Error('public beta legality self-test failed');
     if (auth.setBetaPublicAccess(rootSession, false, null, '127.0.0.1', 'self-public-beta-disable'))
       throw new Error('public beta disable self-test failed');
     if (auth.heartbeat(publicBeta.AccessToken, '127.0.0.1', 'self-public-beta-heartbeat-disabled').Ok)

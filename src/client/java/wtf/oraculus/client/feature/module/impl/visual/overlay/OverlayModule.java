@@ -8,6 +8,7 @@ import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.visual.ClickGUIModule;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.client.ClientElements;
+import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.balancedtimer.BalancedTimerElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.lyrics.LyricsElement;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.impl.modulelist.ToggledModulesElement;
@@ -95,6 +96,7 @@ OverlayModule extends Module {
         this.targetInfo = this.register(new TargetInfoElement(this));
         this.toggledModules = this.register(new ToggledModulesElement(this));
         this.register(new ClientElements(this));
+        this.register(new BalancedTimerElement());
         this.lyrics = this.register(new LyricsElement(this));
         this.addProperties(new GroupProperty(
                 "Dynamic island", dynamicIslandLiquidGlassV2.after(dynamicIslandLeftAligned)

@@ -115,6 +115,8 @@ if (activeEdition == "free") {
                     "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule.java",
                     "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule.java",
                     "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/antikb/**",
+                    "wtf/oraculus/mixin/ClientConnectionMixin.java",
                     "wtf/oraculus/client/feature/module/impl/combat/velocity/VelocityModule.java",
                     "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/AttackReduceVelocity.java",
                     "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity.java",
@@ -245,12 +247,13 @@ def zkmChangeLog = layout.buildDirectory.file("zkm/${activeEdition}/Oraculus-${e
 def zkmParseLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-parse.log")
 def zkmRunLog = layout.buildDirectory.file("zkm/${activeEdition}/zkm-run.log")
 def zkmRemappedJar = layout.buildDirectory.file("bytecodevm/${activeEdition}/input/${obfuscatedReleaseJarName}-Zkm.jar")
+def bytecodeVmPreparedJar = layout.buildDirectory.file("bytecodevm/${activeEdition}/input/${obfuscatedReleaseJarName}-Prepared.jar")
 def bytecodeVmConfig = layout.buildDirectory.file("bytecodevm/${activeEdition}/oraculus.yml")
 def bytecodeVmInspectionReport = layout.buildDirectory.file("bytecodevm/${activeEdition}/inspection.json")
 def bytecodeVmProtectionReport = layout.buildDirectory.file("bytecodevm/${activeEdition}/protection.json")
 def expectedBytecodeVmStructures = [
-        GRAPH            : 7,
-        REGISTER_BASED   : 5,
+        GRAPH            : 12,
+        REGISTER_BASED   : 6,
         THREADED_DIRECT  : 4
 ]
 def expectedBytecodeVmMethodCount = expectedBytecodeVmStructures.values().sum()
@@ -322,8 +325,33 @@ if (zkmAvailable) {
         }
     }
 
-    remapObfuscatedJar = tasks.register("remap${editionDisplayName}ObfuscatedJar", RemapJarTask) {
+    def verifyZkmInputBytecode = tasks.register("verify${editionDisplayName}ZkmInputBytecode") {
         dependsOn(obfuscateNamedJar)
+        inputs.file(zkmOutputJar)
+
+        doLast {
+            final def archive = new java.util.zip.ZipFile(zkmOutputJar.get().asFile)
+            try {
+                archive.entries().each { entry ->
+                    if (!entry.directory && entry.name.endsWith(".class")) {
+                        try {
+                            archive.getInputStream(entry).withCloseable { input ->
+                                final def node = new ClassNode()
+                                new ClassReader(input).accept(node, 0)
+                            }
+                        } catch (Throwable failure) {
+                            throw new GradleException("ZKM produced unreadable bytecode in ${entry.name}", failure)
+                        }
+                    }
+                }
+            } finally {
+                archive.close()
+            }
+        }
+    }
+
+    remapObfuscatedJar = tasks.register("remap${editionDisplayName}ObfuscatedJar", RemapJarTask) {
+        dependsOn(verifyZkmInputBytecode)
         inputFile.set(zkmOutputJar)
         archiveFileName.set("${obfuscatedReleaseJarName}-Zkm.jar")
         destinationDirectory.set(layout.buildDirectory.dir("bytecodevm/${activeEdition}/input"))
@@ -339,18 +367,104 @@ if (zkmAvailable) {
         customMappings.from(remapNoObfJar.map { it.customMappings })
     }
 
-    def generateBytecodeVmConfig = tasks.register("generate${editionDisplayName}BytecodeVmConfig") {
+    def prepareBytecodeVmInput = tasks.register("prepare${editionDisplayName}BytecodeVmInput") {
         dependsOn(remapObfuscatedJar)
-        inputs.file(bytecodeVmTemplate)
         inputs.file(zkmRemappedJar)
-        inputs.property("edition", activeEdition)
-        outputs.file(bytecodeVmConfig)
+        outputs.file(bytecodeVmPreparedJar)
 
         doLast {
+            final File source = zkmRemappedJar.get().asFile
+            final File target = bytecodeVmPreparedJar.get().asFile
+            final String digestMarker = "ORACULUS_DECOY_DIGEST_V1_REPLACE_DURING_RELEASE"
+             final List<String> decoyEntries = [
+                     "wu_bo_han_is_fucking_hakuri/LegacyLoginEntry.class",
+                     'wu_bo_han_is_fucking_hakuri/LegacyLoginEntry$LegacySession.class',
+                     "wu_bo_han_is_fucking_hakuri/SessionBootstrap.class"
+             ]
+            final def archive = new java.util.zip.ZipFile(source)
+            try {
+                final def digest = java.security.MessageDigest.getInstance("SHA-256")
+                decoyEntries.each { entryName ->
+                    final def entry = archive.getEntry(entryName)
+                    if (entry == null || entry.directory) {
+                        throw new GradleException("Missing fixed decoy class ${entryName} in ${source.name}")
+                    }
+                    digest.update(entryName.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    digest.update((byte) 0)
+                    archive.getInputStream(entry).withCloseable { input ->
+                        final byte[] buffer = new byte[8192]
+                        int read
+                        while ((read = input.read(buffer)) >= 0) {
+                            if (read > 0) digest.update(buffer, 0, read)
+                        }
+                    }
+                }
+                final String expectedDigest = java.util.HexFormat.of().formatHex(digest.digest())
+                target.parentFile.mkdirs()
+                int patchedMarkers = 0
+                final Set<String> patchedLocations = [] as Set
+                new java.util.zip.ZipOutputStream(new java.io.BufferedOutputStream(new FileOutputStream(target))).withCloseable { output ->
+                    archive.entries().each { entry ->
+                        final byte[] original = entry.directory
+                                ? new byte[0]
+                                : archive.getInputStream(entry).withCloseable { it.readAllBytes() }
+                        byte[] payload = original
+                        if (!entry.directory && entry.name.endsWith(".class")) {
+                            final def node = new ClassNode()
+                            new ClassReader(original).accept(node, 0)
+                            boolean changed = false
+                            node.methods.each { method ->
+                                method.instructions.each { instruction ->
+                                    if (instruction instanceof org.objectweb.asm.tree.LdcInsnNode
+                                            && instruction.cst == digestMarker) {
+                                        instruction.cst = expectedDigest
+                                        patchedMarkers++
+                                        patchedLocations.add(node.name + "." + method.name + method.desc)
+                                        changed = true
+                                    }
+                                }
+                            }
+                            if (changed) {
+                                final def writer = new org.objectweb.asm.ClassWriter(0)
+                                node.accept(writer)
+                                payload = writer.toByteArray()
+                            }
+                        }
+                        final def outputEntry = new java.util.zip.ZipEntry(entry.name)
+                        if (entry.time >= 0L) outputEntry.time = entry.time
+                        output.putNextEntry(outputEntry)
+                        if (payload.length > 0) output.write(payload)
+                        output.closeEntry()
+                    }
+                }
+                if (patchedMarkers < 1 || patchedLocations.size() != 1) {
+                    target.delete()
+                    throw new GradleException("Expected decoy digest markers in one protected method after ZKM, " +
+                            "found ${patchedMarkers} across ${patchedLocations}")
+                }
+            } finally {
+                archive.close()
+            }
+        }
+    }
+
+    def generateBytecodeVmConfig = tasks.register("generate${editionDisplayName}BytecodeVmConfig") {
+        dependsOn(prepareBytecodeVmInput)
+        inputs.file(bytecodeVmTemplate)
+        inputs.file(bytecodeVmPreparedJar)
+        inputs.property("edition", activeEdition)
+        outputs.file(bytecodeVmConfig)
+        outputs.upToDateWhen { false }
+
+        doLast {
+            final byte[] randomSuffix = new byte[12]
+            new java.security.SecureRandom().nextBytes(randomSuffix)
+            final String runtimePackage = "com/runtime/internal/r" + java.util.HexFormat.of().formatHex(randomSuffix)
             final File config = bytecodeVmConfig.get().asFile
             config.parentFile.mkdirs()
             config.setText(bytecodeVmTemplate.getText("UTF-8")
-                    .replace("@INPUT_JAR@", zkmPath(zkmRemappedJar.get().asFile))
+                    .replace("@INPUT_JAR@", zkmPath(bytecodeVmPreparedJar.get().asFile))
+                    .replace("@RUNTIME_PACKAGE@", runtimePackage)
                     .replace("@OUTPUT_JAR@", zkmPath(obfuscatedEditionJar.get().asFile)), "UTF-8")
         }
     }
@@ -358,7 +472,7 @@ if (zkmAvailable) {
     def inspectBytecodeVmPlan = tasks.register("inspect${editionDisplayName}BytecodeVmPlan", Exec) {
         dependsOn(generateBytecodeVmConfig)
         inputs.file(bytecodeVmConfig)
-        inputs.file(zkmRemappedJar)
+        inputs.file(bytecodeVmPreparedJar)
         outputs.file(bytecodeVmInspectionReport)
         executable(zkmJavaExecutable.absolutePath)
         args "-jar", bytecodeVmToolJar.absolutePath, "inspect",
@@ -398,7 +512,7 @@ if (zkmAvailable) {
     protectObfuscatedJar = tasks.register("protect${editionDisplayName}ObfuscatedJar", Exec) {
         dependsOn(verifyBytecodeVmPlan)
         inputs.file(bytecodeVmConfig)
-        inputs.file(zkmRemappedJar)
+        inputs.file(bytecodeVmPreparedJar)
         inputs.file(bytecodeVmToolJar)
         outputs.file(obfuscatedEditionJar)
         outputs.file(bytecodeVmProtectionReport)
@@ -410,11 +524,127 @@ if (zkmAvailable) {
                 "--quiet"
     }
 
+    // BytecodeVM serializes every input ClassNode, including annotation-unselected
+    // classes. Restore integrity-checked decoys and NanoVG/SVG island boundaries
+    // from the ZKM-prepared input. The latter contain no protected authorization
+    // logic and must remain byte-stable across the final VM pass.
+    def restoreDecoyIntegrityEntries = tasks.register("restore${editionDisplayName}DecoyIntegrityEntries") {
+        dependsOn(protectObfuscatedJar)
+        inputs.file(bytecodeVmPreparedJar)
+        inputs.file(obfuscatedEditionJar)
+        inputs.file(zkmChangeLog)
+        outputs.file(obfuscatedEditionJar)
+        outputs.upToDateWhen { false }
+
+        doLast {
+            final List<String> fixedStableEntries = [
+                    "wu_bo_han_is_fucking_hakuri/LegacyLoginEntry.class",
+                    'wu_bo_han_is_fucking_hakuri/LegacyLoginEntry$LegacySession.class',
+                    "wu_bo_han_is_fucking_hakuri/SessionBootstrap.class"
+            ]
+            final List<String> renamedStableClasses = [
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.CustomIslandTrigger",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.DynamicIslandElement",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.SearchSvgIcon",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.preset.DefaultIsland",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications.NotificationsElement",
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications.NotificationSettings",
+                    'wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications.NotificationSettings$DisplayMode',
+                    "wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications.NotificationToggleSvgIcon"
+            ]
+            final Map<String, String> renamedClassEntries = [:]
+            zkmChangeLog.get().asFile.eachLine("UTF-8") { line ->
+                renamedStableClasses.each { originalClass ->
+                    final def matcher = line =~ (java.util.regex.Pattern.quote(originalClass) + "\\s+=>\\s+([^\\s]+)")
+                    if (matcher.find()) {
+                        renamedClassEntries.put(originalClass, matcher.group(1).replace('.', '/') + ".class")
+                    }
+                }
+            }
+            final List<String> unresolvedStableClasses = renamedStableClasses.findAll {
+                !renamedClassEntries.containsKey(it)
+            }
+            if (!unresolvedStableClasses.isEmpty()) {
+                throw new GradleException("ZKM change log is missing byte-stable UI mappings: ${unresolvedStableClasses}")
+            }
+            final List<String> stableEntries = fixedStableEntries + renamedStableClasses.collect {
+                renamedClassEntries.get(it)
+            }
+            if (stableEntries.toSet().size() != stableEntries.size()) {
+                throw new GradleException("ZKM mapped multiple byte-stable classes to the same archive entry: ${stableEntries}")
+            }
+            final File source = bytecodeVmPreparedJar.get().asFile
+            final File artifact = obfuscatedEditionJar.get().asFile
+            final File temporary = new File(artifact.parentFile, ".${artifact.name}.decoy-restore.tmp")
+            if (temporary.exists()) {
+                throw new GradleException("Decoy restore temporary file already exists: ${temporary}")
+            }
+
+            final java.util.zip.ZipFile prepared = new java.util.zip.ZipFile(source)
+            final Map<String, byte[]> originalEntries = [:]
+            try {
+                stableEntries.each { entryName ->
+                    final def entry = prepared.getEntry(entryName)
+                    if (entry == null || entry.directory) {
+                        throw new GradleException("Missing prepared byte-stable class ${entryName} in ${source.name}")
+                    }
+                    originalEntries.put(entryName, prepared.getInputStream(entry).withCloseable { it.readAllBytes() })
+                }
+            } finally {
+                prepared.close()
+            }
+
+            final java.util.zip.ZipFile protectedArchive = new java.util.zip.ZipFile(artifact)
+            try {
+                final Set<String> restored = [] as Set
+                new java.util.zip.ZipOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(temporary))).withCloseable { output ->
+                    protectedArchive.entries().each { entry ->
+                        final java.util.zip.ZipEntry replacement = new java.util.zip.ZipEntry(entry.name)
+                        if (entry.time >= 0L) {
+                            replacement.time = entry.time
+                        }
+                        output.putNextEntry(replacement)
+                        if (!entry.directory) {
+                            final byte[] bytes = originalEntries.get(entry.name)
+                            if (bytes != null) {
+                                output.write(bytes)
+                                restored.add(entry.name)
+                            } else {
+                                protectedArchive.getInputStream(entry).withCloseable { it.transferTo(output) }
+                            }
+                        }
+                        output.closeEntry()
+                    }
+                }
+                if (restored != stableEntries as Set) {
+                    throw new GradleException("Could not restore every byte-stable class in ${artifact.name}: ${restored}")
+                }
+            } finally {
+                protectedArchive.close()
+            }
+
+            try {
+                java.nio.file.Files.move(
+                        temporary.toPath(),
+                        artifact.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                java.nio.file.Files.move(
+                        temporary.toPath(),
+                        artifact.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+    }
+
     // Loom writes the pre-obfuscation client-only class inventory to the final
     // manifest. That inventory is build metadata, not runtime data, and leaks
     // the original package/class graph after ZKM and BytecodeVM have renamed it.
     sanitizeObfuscatedManifest = tasks.register("sanitize${editionDisplayName}ObfuscatedManifest") {
-        dependsOn(protectObfuscatedJar)
+        dependsOn(restoreDecoyIntegrityEntries)
         inputs.file(obfuscatedEditionJar)
         outputs.file(obfuscatedEditionJar)
         outputs.upToDateWhen { false }
@@ -521,6 +751,7 @@ def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}Re
                 "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
                 "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule",
                 "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule",
+                "wtf/oraculus/client/feature/module/impl/combat/antikb",
                 "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity",
                 "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/IntaveVelocity",
                 "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule",
@@ -585,6 +816,25 @@ if (zkmAvailable) {
             }
             final Map bytecodeVmReport = (Map) new JsonSlurper().parse(bytecodeVmProtectionReport.get().asFile)
             final List<Map> protectedMethods = (List<Map>) bytecodeVmReport.methods
+            final Map effectiveVmConfig = (Map) bytecodeVmReport.effectiveConfig
+            final String runtimePackage = (String) effectiveVmConfig.runtimePackage
+            final List<String> requiredStrongOptions = [
+                    "protectCodePool", "dynamicConstantDecrypt", "virtualizeInstructionAddresses",
+                    "encryptOperands", "perMethodOpcodeMap", "shuffleConstants", "bindConstantsToOperands",
+                    "splitCodeStreams", "shuffleInstructionBlocks", "obfuscateDispatch",
+                    "dynamicCodePoolBuild", "dynamicStateKey", "virtualControlFlowGraph",
+                    "virtualizeInvocationBridges", "vmIntegrityCheck", "superInstruction"
+            ]
+            final List<String> disabledStrongOptions = requiredStrongOptions.findAll {
+                !Boolean.TRUE.equals(effectiveVmConfig.get(it))
+            }
+            if (!disabledStrongOptions.isEmpty()) {
+                throw new GradleException("BytecodeVM maximum-strength options are disabled: ${disabledStrongOptions}")
+            }
+            if (runtimePackage == null || !runtimePackage.matches("com/runtime/internal/r[0-9a-f]{24}")
+                    || runtimePackage == "wu_bo_han_is_fucking_hakuri") {
+                throw new GradleException("BytecodeVM runtime package is not a fresh internal package: ${runtimePackage}")
+            }
             if (protectedMethods.size() != expectedBytecodeVmMethodCount
                     || protectedMethods.any { it.selection != "SDK_ANNOTATION" }) {
                 throw new GradleException("BytecodeVM protection report does not match the " +
@@ -735,8 +985,18 @@ if (zkmAvailable) {
                 if (archive.getEntry("wtf/oraculus/client/feature/module/repository/ModuleRepository.class") != null) {
                     throw new GradleException("${artifact.name} still contains an unobfuscated ModuleRepository class")
                 }
-                if (!archive.entries().any { it.name.startsWith("wu_bo_han_is_fucking_hakuri/") && it.name.endsWith(".class") }) {
-                    throw new GradleException("${artifact.name} is missing the renamed BytecodeVM runtime package")
+                final String runtimePrefix = runtimePackage + "/"
+                if (!archive.entries().any { it.name.startsWith(runtimePrefix) && it.name.endsWith(".class") }) {
+                    throw new GradleException("${artifact.name} is missing randomized BytecodeVM runtime package ${runtimePackage}")
+                }
+                 [
+                         "wu_bo_han_is_fucking_hakuri/LegacyLoginEntry.class",
+                         'wu_bo_han_is_fucking_hakuri/LegacyLoginEntry$LegacySession.class',
+                         "wu_bo_han_is_fucking_hakuri/SessionBootstrap.class"
+                 ].each { decoyEntry ->
+                    if (archive.getEntry(decoyEntry) == null) {
+                        throw new GradleException("${artifact.name} is missing fixed decoy class ${decoyEntry}")
+                    }
                 }
                 if (archive.entries().any { it.name.startsWith("BytecodeVM/") }) {
                     throw new GradleException("${artifact.name} still exposes the legacy BytecodeVM package")
@@ -745,7 +1005,7 @@ if (zkmAvailable) {
                 final List<String> leakedLocalVariableTables = []
                 archive.entries().each { entry ->
                     if (!entry.directory && entry.name.endsWith(".class")
-                            && !entry.name.startsWith("wu_bo_han_is_fucking_hakuri/")) {
+                            && !entry.name.startsWith(runtimePrefix)) {
                         archive.getInputStream(entry).withCloseable { input ->
                             final def debugNode = new ClassNode()
                             new ClassReader(input).accept(debugNode, ClassReader.SKIP_FRAMES)

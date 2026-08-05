@@ -45,6 +45,25 @@ public final class AuthApiClient {
         return send("auth/login", body, null);
     }
 
+    @Virtualize(
+            integrityCheck = Toggle.ENABLED,
+            vm = @VMOptions(
+                    structure = VMStructure.GRAPH,
+                    encrypt = Toggle.ENABLED,
+                    shuffle = Toggle.ENABLED,
+                    obfuscate = Toggle.ENABLED
+            )
+    )
+    public CompletableFuture<ApiResult> launcherLogin(
+            final String username,
+            final String accessToken,
+            final DeviceFingerprintProvider.Fingerprint fingerprint
+    ) {
+        final JsonObject body = commonDeviceRequest(fingerprint);
+        body.addProperty("username", username);
+        return send("auth/launcher-login", body, accessToken);
+    }
+
     public CompletableFuture<ApiResult> register(final String username, final String password,
                                                   final DeviceFingerprintProvider.Fingerprint fingerprint) {
         final JsonObject body = commonDeviceRequest(fingerprint);
@@ -64,6 +83,12 @@ public final class AuthApiClient {
         return send("auth/heartbeat", new JsonObject(), accessToken);
     }
 
+    public CompletableFuture<LegalityResult> legality(final String accessToken) {
+        final HttpRequest request = request("auth/legality", new JsonObject(), accessToken);
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
+                .thenApplyAsync(this::parseLegality, executor);
+    }
+
     public CompletableFuture<ApiResult> logout(final String accessToken) {
         return send("auth/logout", new JsonObject(), accessToken);
     }
@@ -71,7 +96,7 @@ public final class AuthApiClient {
     @Virtualize(vm = @VMOptions(
             structure = VMStructure.THREADED_DIRECT,
             encrypt = Toggle.ENABLED,
-            shuffle = Toggle.DISABLED,
+            shuffle = Toggle.ENABLED,
             obfuscate = Toggle.ENABLED
     ))
     private JsonObject commonDeviceRequest(final DeviceFingerprintProvider.Fingerprint fingerprint) {
@@ -87,6 +112,11 @@ public final class AuthApiClient {
 
     private CompletableFuture<ApiResult> send(final String relativePath, final JsonObject body,
                                                final String accessToken) {
+        return client.sendAsync(request(relativePath, body, accessToken), HttpResponse.BodyHandlers.ofInputStream())
+                .thenApplyAsync(this::parse, executor);
+    }
+
+    private HttpRequest request(final String relativePath, final JsonObject body, final String accessToken) {
         final HttpRequest.Builder builder = HttpRequest.newBuilder(BASE_URI.resolve(relativePath))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
@@ -95,9 +125,33 @@ public final class AuthApiClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8));
         if (accessToken != null && !accessToken.isBlank())
             builder.header("Authorization", "Bearer " + accessToken);
+        return builder.build();
+    }
 
-        return client.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
-                .thenApplyAsync(this::parse, executor);
+    private LegalityResult parseLegality(final HttpResponse<InputStream> response) {
+        try (InputStream input = response.body()) {
+            final byte[] bytes = input.readNBytes(MAX_RESPONSE_BYTES + 1);
+            if (bytes.length > MAX_RESPONSE_BYTES)
+                throw new IOException("Authentication response exceeds the size limit");
+            final JsonElement parsed = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
+            if (!parsed.isJsonObject()) throw new IOException("Authentication response is not a JSON object");
+            final JsonObject json = parsed.getAsJsonObject();
+            return new LegalityResult(
+                    bool(json, "Ok"),
+                    bool(json, "Exists"),
+                    bool(json, "Active"),
+                    bool(json, "BetaEligible"),
+                    string(json, "Username"),
+                    string(json, "Tier"),
+                    number(json, "ServerTimeUtc"),
+                    string(json, "Error"),
+                    string(json, "Message"),
+                    string(json, "requestId"),
+                    response.statusCode()
+            );
+        } catch (Exception exception) {
+            throw new IllegalStateException("Authentication server returned an invalid legality response", exception);
+        }
     }
 
     private ApiResult parse(final HttpResponse<InputStream> response) {
@@ -177,6 +231,21 @@ public final class AuthApiClient {
             Long betaExpiresAt,
             String hwidQuality,
             String entitlementProof,
+            int statusCode
+    ) {
+    }
+
+    public record LegalityResult(
+            boolean ok,
+            boolean exists,
+            boolean active,
+            boolean betaEligible,
+            String username,
+            String tier,
+            long serverTimeUtc,
+            String error,
+            String message,
+            String requestId,
             int statusCode
     ) {
     }

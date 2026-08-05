@@ -26,8 +26,8 @@ loading, and MainPage Visuals.
 
 Oraculus is built as two mutually exclusive distributions:
 
-- `Oraculus-Beta-b7.jar` contains the complete module and mode set.
-- `Oraculus-Free-b7.jar` omits FakeLag, SuperKnockBack, TargetStrafe,
+- `Oraculus-Beta-b8.jar` contains the complete module and mode set.
+- `Oraculus-Free-b8.jar` omits FakeLag, SuperKnockBack, TargetStrafe,
   FastPearl, AntiStaff, AutoRod, Heypixel/Hypixel Disabler modes, and
   Watchdog/NoC0F NoSlow modes at compile time.
 
@@ -47,8 +47,8 @@ Install JDK 21, then run:
 One build produces both release jars:
 
 ```text
-build/libs/Oraculus-Beta-b7.jar
-build/libs/Oraculus-Free-b7.jar
+build/libs/Oraculus-Beta-b8.jar
+build/libs/Oraculus-Free-b8.jar
 ```
 
 On Linux or macOS, use:

@@ -186,7 +186,7 @@ public class Obfuscator
             logger.info("{}", LogColors.scan("Moved " + LogColors.strong(fixedConstants) + " static final constant(s) into <clinit>"));
         }
 
-        String globalLocation = "wu_bo_han_is_fucking_hakuri";
+        String globalLocation = config.runtimePackage;
 
         Map<GeneratorProfile, List<VMSetGenerator>> allInOneVms = new LinkedHashMap<>();
         List<VMSetGenerator> perClasses = new ArrayList<>();
@@ -296,8 +296,8 @@ public class Obfuscator
                         List<VMSetGenerator> generators = allInOneVms.computeIfAbsent(
                                 profile,
                                 ignored -> newVMSetGenerators(
-                                        profileName("wu_bo_han_is_fucking_hakuri", "wu_bo_han_is_fucking_hakuri"),
-                                        "wu_bo_han_is_fucking_hakuri",
+                                        profileName("Runtime", globalLocation),
+                                        globalLocation,
                                         profile.apply(config)));
                         GeneratorGroupKey key = new GeneratorGroupKey("", profile);
                         int ordinal = generatorOrdinals.merge(key, 1, Integer::sum) - 1;

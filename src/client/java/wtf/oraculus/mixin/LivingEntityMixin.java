@@ -21,6 +21,7 @@ import wtf.oraculus.client.feature.module.impl.movement.MovementFixModule;
 import wtf.oraculus.client.feature.module.impl.movement.SprintModule;
 import wtf.oraculus.client.feature.module.impl.visual.AnimationsModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationBridge;
+import wtf.oraculus.client.feature.module.impl.world.ssngscaffold.SsngRotationUtils;
 import wtf.oraculus.duck.ClientPlayerEntityAccess;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.player.movement.JumpEvent;
@@ -87,6 +88,9 @@ public abstract class LivingEntityMixin extends Entity {
     )
     private float redirectYaw(LivingEntity instance) {
         if (instance instanceof ClientPlayerEntity player) {
+            if (SsngRotationUtils.hasRotation()) {
+                return SsngRotationUtils.getMovementYawOr(instance.getYaw());
+            }
             if (ScaffoldRotationBridge.ownsRotation()) {
                 return ScaffoldRotationBridge.logicalYawOr(instance.getYaw());
             }

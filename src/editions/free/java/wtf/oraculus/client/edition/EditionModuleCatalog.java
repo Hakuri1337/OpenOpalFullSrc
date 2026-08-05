@@ -32,6 +32,7 @@ import wtf.oraculus.client.feature.module.impl.world.ChestAuraModule;
 import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.client.feature.module.impl.world.TimerModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.ScaffoldModule;
+import wtf.oraculus.client.feature.module.impl.world.ssngscaffold.SsngScaffoldModule;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.oraculus.client.music.MusicPlayerModule;
 
@@ -57,7 +58,7 @@ public final class EditionModuleCatalog {
                 new TitleChangerModule(), new NoHurtCameraModule(), new NoFOVModule(), new NoRenderModule(),
                 new PostProcessingModule(), new LowFireModule(), new ViewClipModule(), new BedPlatesModule(), new PotionModule(),
 
-                new ScaffoldModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
+                new ScaffoldModule(), new SsngScaffoldModule(), new TimerModule(), new BreakerModule(), new FastBreakModule(),
                 new ChestAuraModule(),
 
                 new FlightModule(), new SpeedModule(), new JumpCooldownModule(), new SprintModule(),
@@ -65,7 +66,7 @@ public final class EditionModuleCatalog {
                 new PhaseModule(), new LongJumpModule(), new FastStopModule(), new StrafeModule(), new PhysicsModule(),
                 new SpiderModule(), new ClipperModule(), new SafeWalkModule(), new StuckModule(),
 
-                new FastUseModule(), new MusicPlayerModule(), new NoFallModule(),
+                new FastUseModule(), new MusicPlayerModule(), new NoFallModule(), new BalancedTimerModule(),
                 new ChestStealerModule(), new InventoryManagerModule(), new AutoArmorModule(), new DisablerModule(),
                 new FastPlaceModule(), new AntiVoidModule(), new AutoToolModule(), new AntiTNTModule(),
                 new AutoChestModule(), new AutoHypixelModule(), new BlinkModule(), new PingSpoofModule(),

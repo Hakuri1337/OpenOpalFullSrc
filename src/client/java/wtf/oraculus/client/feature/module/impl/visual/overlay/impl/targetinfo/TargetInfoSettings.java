@@ -1,6 +1,7 @@
 package wtf.oraculus.client.feature.module.impl.visual.overlay.impl.targetinfo;
 
 import wtf.oraculus.client.feature.helper.impl.render.ScaleProperty;
+import wtf.oraculus.client.edition.EditionBuildInfo;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.LiquidGlassV2Settings;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
 import wtf.oraculus.client.feature.module.property.Property;
@@ -31,7 +32,7 @@ public final class TargetInfoSettings {
 
     TargetInfoSettings(final OverlayModule module) {
         this.enabled = new BooleanProperty("Enabled", true);
-        this.displayMode = new ModeProperty<>("Mode", DisplayMode.PANEL);
+        this.displayMode = new ModeProperty<>("Mode", DisplayMode.PANEL, this.getAvailableDisplayModes());
         this.screenPosition = new ScreenPositionProperty("Screen Position", 0.43F, 0.65F);
         this.scale = ScaleProperty.newNVGElement();
         this.backgroundOpacity = new NumberProperty("Background opacity", 0.72, 0, 1, 0.01);
@@ -203,6 +204,17 @@ public final class TargetInfoSettings {
             offset += array.length;
         }
         return result;
+    }
+
+    private DisplayMode[] getAvailableDisplayModes() {
+        if (!EditionBuildInfo.isFree()) {
+            return DisplayMode.values();
+        }
+        return new DisplayMode[]{
+                DisplayMode.PANEL,
+                DisplayMode.RVN,
+                DisplayMode.DYNAMIC_ISLAND
+        };
     }
 
     public enum DisplayMode {

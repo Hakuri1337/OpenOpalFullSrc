@@ -6,8 +6,15 @@ classpath
 open openNestedArchives=false "@INPUT_JAR@";
 
 exclude wtf.oraculus.^OraculusFabric + and
+        wu_bo_han_is_fucking_hakuri.^*^ and
         wtf.oraculus.mixin.. and
         wtf.oraculus.mixin..* + and
+        // Dynamic-island rendering crosses NanoVG scissor, SVG parsing and
+        // invokedynamic callback boundaries. These UI-only classes are kept
+        // byte-stable after ZKM/BytecodeVM; authentication code remains fully
+        // eligible for the stronger transforms below.
+        wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland..* + and
+        wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications..* + and
         // ZKM 25 can assign different names to a project-owned interface
         // method and its implementation. Preserve only those dispatch
         // contracts; implementing classes, fields and unrelated methods are
@@ -100,6 +107,8 @@ exclude wtf.oraculus.^OraculusFabric + and
         wtf.oraculus..* extends wtf.oraculus.client.command.Command protected onCommand(*) and
         wtf.oraculus.client.feature.helper.impl.player.packet.blockage.DirectionalNetworkBlockage protected flushPacket(*) and
         wtf.oraculus..* extends wtf.oraculus.client.feature.helper.impl.player.packet.blockage.DirectionalNetworkBlockage protected flushPacket(*) and
+        wtf.oraculus.client.feature.module.impl.combat.antikb.packet.DirectionalNetworkBlockage protected flushPacket(*) and
+        wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.antikb.packet.DirectionalNetworkBlockage protected flushPacket(*) and
         wtf.oraculus.client.feature.helper.impl.target.impl.Target public isMatchingFlags(*) and
         wtf.oraculus..* extends wtf.oraculus.client.feature.helper.impl.target.impl.Target public isMatchingFlags(*) and
         wtf.oraculus.client.feature.helper.impl.target.impl.Target public tick(*) and
@@ -137,6 +146,8 @@ exclude wtf.oraculus.^OraculusFabric + and
           wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public getHitSelectSkips(*) and
           wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public consumeHitSelectSkip(*) and
           wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.velocity.VelocityMode public onVelocityResetAttackPerformed(*) and
+          wtf.oraculus.client.feature.module.impl.combat.antikb.AntiKBMode public getSuffix(*) and
+          wtf.oraculus..* extends wtf.oraculus.client.feature.module.impl.combat.antikb.AntiKBMode public getSuffix(*) and
         // Config loading and ClickGUI operate through Property references.
         // Preserve only the overridable data/component contract.
         wtf.oraculus.client.feature.module.property.Property public getValue(*) and
@@ -162,9 +173,18 @@ exclude wtf.oraculus.^OraculusFabric + and
         wtf.oraculus.client.music.model..* +;
 
 stringEncryptionExclude wtf.oraculus.mixin..* and
+                        wtf.oraculus.client.auth.DecoyIntegrityGuard and
+                        wu_bo_han_is_fucking_hakuri..* and
                         wtf.oraculus.^OraculusFabric and
                         wtf.oraculus.scripting..* and
                         wtf.oraculus.client.renderer..* and
+                        // Dynamic-island content crosses NanoVG resource and
+                        // scissor boundaries. Preserve its render constants
+                        // while retaining class/member name obfuscation.
+                        wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland..* and
+                        wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications..* and
+                        wtf.oraculus..* implements wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger and
+                        wtf.oraculus.client.music.island..* and
                         wtf.oraculus.client.screen..* and
                         wtf.oraculus.client.music.screen..* and
                         wtf.oraculus.client.auth.OraculusLoginScreen and
@@ -176,18 +196,29 @@ stringEncryptionExclude wtf.oraculus.mixin..* and
 // encryption may manufacture helper methods and static initializers, so keep
 // those structural transforms outside the Mixin/Fabric framework boundary.
 integerEncryptionExclude wtf.oraculus.mixin..* and
+                         wu_bo_han_is_fucking_hakuri..* and
                          wtf.oraculus.^OraculusFabric and
                          wtf.oraculus.client.renderer..* and
+                         wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland..* and
+                         wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications..* and
+                         wtf.oraculus..* implements wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger and
+                         wtf.oraculus.client.music.island..* and
                          wtf.oraculus.client.screen..*;
 
 longEncryptionExclude wtf.oraculus.mixin..* and
+                      wu_bo_han_is_fucking_hakuri..* and
                       wtf.oraculus.^OraculusFabric and
                       wtf.oraculus.client.renderer..* and
+                      wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland..* and
+                      wtf.oraculus.client.feature.module.impl.visual.overlay.impl.notifications..* and
+                      wtf.oraculus..* implements wtf.oraculus.client.feature.module.impl.visual.overlay.impl.dynamicisland.IslandTrigger and
+                      wtf.oraculus.client.music.island..* and
                       wtf.oraculus.client.screen..*;
 
 // Flow obfuscation is opt-in. Keep framework, rendering and Tick paths out of
 // the transform, then enable it only at authentication gate boundaries.
-obfuscateFlowExclude wtf.oraculus..* +;
+obfuscateFlowExclude wtf.oraculus..* + and
+                     wu_bo_han_is_fucking_hakuri..* +;
 
 obfuscateFlowUnexclude wtf.oraculus.client.auth.ModuleBootPolicy requireRuntimeStart(*) and
                        wtf.oraculus.client.auth.ModuleBootPolicy requireModuleCatalog(*) and

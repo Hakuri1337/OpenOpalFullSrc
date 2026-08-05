@@ -138,7 +138,7 @@ public final class OraculusMenuRenderer {
     }
 
     public static void renderFooter(final DrawContext context, final int width, final int height) {
-        context.drawTextWithShadow(mc.textRenderer, "ORACULUS  /  stable-b7", 8, height - 22, 0xBFFFFFFF);
+        context.drawTextWithShadow(mc.textRenderer, "ORACULUS  /  stable-b8", 8, height - 22, 0xBFFFFFFF);
     }
 
     public static boolean canRenderBranding() {

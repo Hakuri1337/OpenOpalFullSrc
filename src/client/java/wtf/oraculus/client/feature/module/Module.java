@@ -3,6 +3,7 @@ package wtf.oraculus.client.feature.module;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import wtf.oraculus.client.OraculusClient;
+import wtf.oraculus.client.auth.AuthBootstrap;
 import wtf.oraculus.client.auth.RuntimeAccessGate;
 import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.client.binding.IBindable;
@@ -78,6 +79,10 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
         this.enabled = enabled;
         if (enabled) {
             this.onEnable();
+            final var authService = AuthBootstrap.getService();
+            if (authService != null) {
+                authService.onModuleEnabled(this.name);
+            }
             // Auto-show deprecated modules in ClickGUI when enabled
             if (this instanceof DeprecatedModule) {
                 this.visible = true;

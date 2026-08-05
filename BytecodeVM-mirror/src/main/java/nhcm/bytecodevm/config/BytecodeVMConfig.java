@@ -22,7 +22,7 @@ import java.util.Map;
 public class BytecodeVMConfig
 {
     private static final java.util.Set<String> CONFIG_KEYS = java.util.Set.of(
-            "input", "output", "createMode", "location", "renameMode", "interpretMode",
+            "input", "output", "createMode", "location", "runtimePackage", "renameMode", "interpretMode",
             "vmStructure", "protectCodePool", "dynamicConstantDecrypt", "virtualizeInstructionAddresses", "encryptOperands",
             "perMethodOpcodeMap", "shuffleConstants", "bindConstantsToOperands", "splitCodeStreams",
             "shuffleInstructionBlocks", "obfuscateDispatch", "dynamicCodePoolBuild", "dynamicStateKey",
@@ -42,6 +42,7 @@ public class BytecodeVMConfig
     public final Path outputFile;
     public final VMCreateMode createMode;
     public final VMLocation location;
+    public final String runtimePackage;
     public final RenameMode renameMode;
     public final InterpretMode interpretMode;
     public final VMStructure vmStructure;
@@ -143,12 +144,14 @@ public class BytecodeVMConfig
                 5,
                 2,
                 32);
+        String runtimePackage = validateRuntimePackage(requiredString(yaml, "runtimePackage"));
         BytecodeVMConfig parsed = BytecodeVMConfig
                 .builder()
                 .inputFile(Path.of(input))
                 .outputFile(Path.of(output))
                 .createMode(VMCreateMode.valueOf(requiredString(yaml, "createMode")))
                 .location(VMLocation.valueOf(requiredString(yaml, "location")))
+                .runtimePackage(runtimePackage)
                 .interpretMode(InterpretMode.valueOf(requiredString(yaml, "interpretMode")))
                 .vmStructure(optionalVMStructure(yaml, "vmStructure", VMStructure.MEDIUM))
                 .renameMode(RenameMode.valueOf(requiredString(yaml, "renameMode")))
@@ -224,6 +227,7 @@ public class BytecodeVMConfig
         values.put("output", outputFile.toString());
         values.put("createMode", createMode.name());
         values.put("location", location.name());
+        values.put("runtimePackage", runtimePackage);
         values.put("renameMode", renameMode.name());
         values.put("interpretMode", interpretMode.name());
         values.put("vmStructure", vmStructure.name());
@@ -291,6 +295,7 @@ public class BytecodeVMConfig
                 .outputFile(outputFile)
                 .createMode(createMode)
                 .location(location)
+                .runtimePackage(runtimePackage)
                 .interpretMode(interpretMode)
                 .vmStructure(vmStructure)
                 .renameMode(renameMode)
@@ -337,6 +342,7 @@ public class BytecodeVMConfig
                 .outputFile(outputFile)
                 .createMode(VMCreateMode.PER_METHOD)
                 .location(location)
+                .runtimePackage(runtimePackage)
                 .interpretMode(InterpretMode.SAVE_ALL_INSTRUCTION)
                 .vmStructure(VMStructure.HIGH)
                 .renameMode(renameMode)
@@ -544,6 +550,31 @@ public class BytecodeVMConfig
             throw typeError(key, "a string");
         }
         return result;
+    }
+
+    private static String validateRuntimePackage(String value)
+    {
+        String normalized = value.replace('.', '/');
+        if (normalized.startsWith("/") || normalized.endsWith("/") ||
+            normalized.contains("//") || normalized.length() > 200)
+        {
+            throw new IllegalArgumentException("Config value runtimePackage must be a valid JVM package name");
+        }
+        for (String segment : normalized.split("/"))
+        {
+            if (segment.isEmpty() || !Character.isJavaIdentifierStart(segment.charAt(0)))
+            {
+                throw new IllegalArgumentException("Config value runtimePackage must be a valid JVM package name");
+            }
+            for (int index = 1; index < segment.length(); index++)
+            {
+                if (!Character.isJavaIdentifierPart(segment.charAt(index)))
+                {
+                    throw new IllegalArgumentException("Config value runtimePackage must be a valid JVM package name");
+                }
+            }
+        }
+        return normalized;
     }
 
     private static int integer(Object value, String key)

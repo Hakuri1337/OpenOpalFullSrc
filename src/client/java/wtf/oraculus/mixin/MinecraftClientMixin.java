@@ -46,9 +46,12 @@ import wtf.oraculus.event.impl.game.PreGameTickEvent;
 import wtf.oraculus.event.impl.game.ScheduledExecutablesEvent;
 import wtf.oraculus.event.impl.game.input.MouseHandleInputEvent;
 import wtf.oraculus.event.impl.game.input.PostHandleInputEvent;
+import wtf.oraculus.event.impl.game.player.rotation.SsngRotationAppliedEvent;
+import wtf.oraculus.event.impl.game.player.rotation.SsngRotationCalculationEvent;
 import wtf.oraculus.event.impl.game.player.interaction.AttackDelayEvent;
 import wtf.oraculus.event.impl.game.player.interaction.ItemUseEvent;
 import wtf.oraculus.event.impl.game.player.interaction.block.BlockPlacedEvent;
+import wtf.oraculus.event.impl.game.player.interaction.block.SsngVanillaPlaceEvent;
 import wtf.oraculus.event.impl.game.server.ServerDisconnectEvent;
 import wtf.oraculus.event.impl.render.ResolutionChangeEvent;
 
@@ -278,6 +281,33 @@ public abstract class MinecraftClientMixin {
     )
     private void tickHead(final CallbackInfo info) {
         EventDispatcher.dispatch(new PreGameTickEvent());
+    }
+
+    @Inject(
+            method = "doItemUse",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerInteractionManager;interactBlock(Lnet/minecraft/client/network/ClientPlayerEntity;Lnet/minecraft/util/Hand;Lnet/minecraft/util/hit/BlockHitResult;)Lnet/minecraft/util/ActionResult;"),
+            cancellable = true
+    )
+    private void hookSsngVanillaPlace(final CallbackInfo ci) {
+        final SsngVanillaPlaceEvent event = new SsngVanillaPlaceEvent();
+        EventDispatcher.dispatch(event);
+        if (event.isCancelled()) ci.cancel();
+    }
+
+    @Inject(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/GameRenderer;updateCrosshairTarget(F)V", shift = At.Shift.BEFORE)
+    )
+    private void hookSsngRotationCalculation(final CallbackInfo info) {
+        EventDispatcher.dispatch(new SsngRotationCalculationEvent());
+    }
+
+    @Inject(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/MinecraftClient;handleInputEvents()V", shift = At.Shift.BEFORE)
+    )
+    private void hookSsngRotationApplied(final CallbackInfo info) {
+        EventDispatcher.dispatch(new SsngRotationAppliedEvent());
     }
 
     @Inject(

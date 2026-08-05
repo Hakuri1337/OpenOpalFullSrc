@@ -1,302 +1,253 @@
 package wtf.oraculus.client.feature.module.impl.movement;
 
+import com.ibm.icu.impl.Pair;
+import net.minecraft.client.option.Perspective;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import wtf.oraculus.client.OraculusClient;
-import wtf.oraculus.client.feature.helper.impl.LocalDataWatch;
-import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.ModuleCategory;
 import wtf.oraculus.client.feature.module.impl.combat.killaura.KillAuraModule;
-import wtf.oraculus.client.feature.module.impl.combat.killaura.target.CurrentTarget;
-import wtf.oraculus.client.feature.module.impl.movement.flight.FlightModule;
+import wtf.oraculus.client.feature.module.impl.movement.speed.SpeedModule;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
+import wtf.oraculus.client.feature.module.property.impl.bool.MultipleBooleanProperty;
+import wtf.oraculus.client.feature.module.property.impl.mode.ModeProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
-import wtf.oraculus.event.impl.game.PreGameTickEvent;
-import wtf.oraculus.event.impl.game.input.MoveInputEvent;
+import wtf.oraculus.event.impl.game.player.movement.PostMoveEvent;
+import wtf.oraculus.event.impl.render.RenderWorldEvent;
 import wtf.oraculus.event.subscriber.Subscribe;
-import wtf.oraculus.utility.player.MoveUtility;
+import wtf.oraculus.utility.misc.math.MathUtility;
 import wtf.oraculus.utility.player.PlayerUtility;
 import wtf.oraculus.utility.player.RotationUtility;
+import wtf.oraculus.utility.render.ColorUtility;
 
 import static wtf.oraculus.client.Constants.mc;
 
 public final class TargetStrafeModule extends Module {
 
-    private static final double RANGE_TOLERANCE = 0.18D;
-    private static final double EDGE_LOOKAHEAD = 0.38D;
-    private static final float INPUT_STABILITY_MARGIN = 8.0F;
-    private static final int TELEPORT_GRACE_TICKS = 4;
+    private final ModeProperty<Mode> mode = new ModeProperty<>("Strafe mode", Mode.CIRCLE);
 
-    private final BooleanProperty smartStrafe = new BooleanProperty("Jump Key Only", true);
-    private final NumberProperty range = new NumberProperty("Range", 0.5D, 0.1D, 2.0D, 0.1D);
-    private final NumberProperty switchDelay = new NumberProperty("Switch Delay", "ms", 1000.0D, 100.0D, 5000.0D, 100.0D);
+    private final MultipleBooleanProperty requirements = new MultipleBooleanProperty("Requirements",
+            new BooleanProperty("Jump key", true),
+            new BooleanProperty("Speed module", true)
+    );
 
-    private int strafeDirectionSign = 1;
-    private LivingEntity strafeTarget;
-    private long lastSwitchTime;
-    private long lastCollisionSwitchTime;
-    private InputChoice lastInput = InputChoice.NONE;
+    private final NumberProperty range = new NumberProperty("Range", 3F, 0.1F, 6F, 0.1F);
+    private final BooleanProperty showRing = new BooleanProperty("Show ring", true);
+
+    private final BooleanProperty auto3rdPerson = new BooleanProperty("Auto 3rd person", false);
+
+    private static final float RING_SEGMENT_THICKNESS = 0.03F;
+    private static final int RING_SEGMENT_COUNT = 12;
+
+    private final RingSegment[] ringSegments = new RingSegment[RING_SEGMENT_COUNT];
+    private final RingSegment[] innerOutlineRingSegments = new RingSegment[RING_SEGMENT_COUNT];
+    private final RingSegment[] outerOutlineRingSegments = new RingSegment[RING_SEGMENT_COUNT];
+    private float prevInnerRadius = -1;
+
+    private boolean left, overFall, colliding, active, returnState;
+    private float yaw;
 
     public TargetStrafeModule() {
-        super("TargetStrafe", "Circles the current KillAura target.", ModuleCategory.MOVEMENT);
-        this.addProperties(this.smartStrafe, this.range, this.switchDelay);
+        super("Target Strafe", "Makes you go in circles around targets.", ModuleCategory.MOVEMENT);
+        addProperties(mode, requirements, range, showRing, auto3rdPerson);
     }
 
     @Subscribe
-    public void onPreGameTick(final PreGameTickEvent event) {
-        if (mc.player == null || mc.world == null) {
-            this.strafeTarget = null;
-            this.lastInput = InputChoice.NONE;
-            return;
-        }
+    public void onPostMove(final PostMoveEvent event) {
+        if (!shouldRun()) {
+            active = false;
 
-        this.updateTarget();
-        if (this.strafeTarget == null || !this.isMovementStateSafe()) {
-            this.lastInput = InputChoice.NONE;
-            return;
-        }
-
-        final boolean flightActive = this.isFlightActive();
-        final Box box = mc.player.getBoundingBox();
-        final boolean aboveVoid = !flightActive
-                && PlayerUtility.isBoxEmpty(box.offset(0.0D, -1.0D, 0.0D))
-                && PlayerUtility.isBoxEmpty(box.offset(0.0D, -2.0D, 0.0D))
-                && PlayerUtility.isBoxEmpty(box.offset(0.0D, -3.0D, 0.0D));
-        if ((aboveVoid || mc.player.horizontalCollision) && System.currentTimeMillis() - this.lastCollisionSwitchTime >= 500L) {
-            this.strafeDirectionSign *= -1;
-            this.lastCollisionSwitchTime = System.currentTimeMillis();
-        }
-    }
-
-    @Subscribe(priority = 1)
-    public void onMoveInput(final MoveInputEvent event) {
-        if (mc.player == null || this.strafeTarget == null || !this.strafeTarget.isAlive() || !this.isMovementStateSafe()) {
-            this.lastInput = InputChoice.NONE;
-            return;
-        }
-
-        final boolean flightActive = this.isFlightActive();
-        if (this.smartStrafe.getValue() && !flightActive && !mc.options.jumpKey.isPressed()) {
-            this.lastInput = InputChoice.NONE;
-            return;
-        }
-
-        if (event.isSneak() || (!flightActive && Math.abs(mc.player.getY() - this.strafeTarget.getY()) > 2.5D)) {
-            this.lastInput = InputChoice.NONE;
-            return;
-        }
-
-        final double distance = this.getHorizontalDistance(this.strafeTarget);
-        final float targetYaw = RotationUtility.getRotationFromPosition(this.strafeTarget.getEyePos()).x;
-        float desiredYaw = this.getDesiredMoveYaw(targetYaw, distance);
-
-        if (mc.player.isOnGround() && !this.hasGroundAhead(desiredYaw)) {
-            this.switchDirection();
-            desiredYaw = this.getDesiredMoveYaw(targetYaw, distance);
-            if (!this.hasGroundAhead(desiredYaw)) {
-                this.lastInput = InputChoice.NONE;
-                return;
+            if (auto3rdPerson.getValue() && !mc.options.getPerspective().isFirstPerson() && returnState) {
+                mc.options.setPerspective(Perspective.FIRST_PERSON);
+                returnState = false;
             }
-        }
 
-        final float referenceYaw = this.getMovementReferenceYaw();
-        InputChoice input = this.findClosestInput(desiredYaw, referenceYaw);
-        input = this.keepStableInput(input, desiredYaw, referenceYaw, !flightActive);
-
-        event.setForward(input.forward);
-        event.setSideways(input.sideways);
-        this.lastInput = input;
-    }
-
-    private void updateTarget() {
-        final KillAuraModule killAura = OraculusClient.getInstance().getModuleRepository().getModule(KillAuraModule.class);
-        if (killAura == null || !killAura.isEnabled()) {
-            this.strafeTarget = null;
             return;
         }
 
-        final CurrentTarget currentTarget = killAura.getTargeting().getTarget();
-        if (currentTarget == null || currentTarget.getEntity() == null || !currentTarget.getEntity().isAlive()) {
-            this.strafeTarget = null;
-            return;
-        }
+        active = true;
 
-        final LivingEntity currentEntity = currentTarget.getEntity();
-        if (this.strafeTarget == currentEntity) {
-            return;
-        }
+        final LivingEntity target = this.getKillAuraTarget();
 
-        final long now = System.currentTimeMillis();
-        if (now - this.lastSwitchTime < this.switchDelay.getValue().longValue()) {
-            this.strafeTarget = null;
-            return;
-        }
-
-        this.strafeTarget = currentEntity;
-        this.lastSwitchTime = now;
-    }
-
-    public boolean isActivelyStrafing() {
-        return this.isEnabled()
-                && this.strafeTarget != null
-                && this.strafeTarget.isAlive()
-                && this.isMovementStateSafe()
-                && (!this.smartStrafe.getValue() || mc.options.jumpKey.isPressed());
-    }
-
-    private boolean isMovementStateSafe() {
-        final LocalDataWatch dataWatch = LocalDataWatch.get();
-        return mc.currentScreen == null
-                && mc.getOverlay() == null
-                && !mc.player.isTouchingWater()
-                && !mc.player.isInLava()
-                && !mc.player.isClimbing()
-                && !mc.player.hasVehicle()
-                && !mc.player.isUsingItem()
-                && (dataWatch == null || dataWatch.ticksSinceTeleport > TELEPORT_GRACE_TICKS);
-    }
-
-    private float getDesiredMoveYaw(final float targetYaw, final double distance) {
-        final float orbitYaw = targetYaw + 90.0F * this.strafeDirectionSign;
-        final double desiredRange = this.range.getValue();
-
-        if (distance > desiredRange + RANGE_TOLERANCE) {
-            return MathHelper.lerpAngleDegrees(0.45F, orbitYaw, targetYaw);
-        }
-
-        if (distance < Math.max(0.05D, desiredRange - RANGE_TOLERANCE)) {
-            return MathHelper.lerpAngleDegrees(0.55F, orbitYaw, targetYaw + 180.0F);
-        }
-
-        return orbitYaw;
-    }
-
-    private InputChoice findClosestInput(final float desiredYaw, final float referenceYaw) {
-        InputChoice best = InputChoice.NONE;
-        float bestScore = Float.MAX_VALUE;
-
-        for (int forward = -1; forward <= 1; forward++) {
-            for (int sideways = -1; sideways <= 1; sideways++) {
-                if (forward == 0 && sideways == 0) {
-                    continue;
-                }
-
-                final float inputYaw = getInputYaw(referenceYaw, forward, sideways);
-                float score = MathHelper.angleBetween(desiredYaw, inputYaw);
-                if (forward < 0) {
-                    score += 3.0F;
-                }
-
-                if (score < bestScore) {
-                    bestScore = score;
-                    best = new InputChoice(forward, sideways);
-                }
+        if (mc.player.horizontalCollision) {
+            if (!colliding) {
+                left = !left;
             }
+            colliding = true;
+        } else {
+            colliding = false;
         }
 
-        return best;
-    }
-
-    private InputChoice keepStableInput(final InputChoice next, final float desiredYaw, final float referenceYaw,
-                                        final boolean requireGroundAhead) {
-        if (this.lastInput == InputChoice.NONE || this.lastInput.equals(next)) {
-            return next;
+        final Box nextTickBox = mc.player.getBoundingBox().offset(mc.player.getVelocity());
+        if (PlayerUtility.isAirUntil(target.getY() - 3, nextTickBox) || PlayerUtility.isOverVoid(nextTickBox)) {
+            if (!overFall) {
+                left = !left;
+            }
+            overFall = true;
+        } else {
+            overFall = false;
         }
 
-        final float previousYaw = getInputYaw(referenceYaw, this.lastInput.forward, this.lastInput.sideways);
-        final float nextYaw = getInputYaw(referenceYaw, next.forward, next.sideways);
-        final float previousDifference = MathHelper.angleBetween(desiredYaw, previousYaw);
-        final float nextDifference = MathHelper.angleBetween(desiredYaw, nextYaw);
-
-        if (previousDifference <= nextDifference + INPUT_STABILITY_MARGIN
-                && (!requireGroundAhead || this.hasGroundAhead(previousYaw))) {
-            return this.lastInput;
+        if (auto3rdPerson.getValue() && mc.options.getPerspective().isFirstPerson()) {
+            mc.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+            returnState = true;
         }
 
-        return next;
+        final double range = this.range.getValue() + (Math.random() / 50);
+
+        final float targetYaw = switch (mode.getValue()) {
+            case CIRCLE -> RotationUtility.getRotationFromPosition(target.getEntityPos()).x + 160 * (left ? -1 : 1);
+            case BEHIND -> target.getYaw() - 180;
+        };
+
+        final Vec3d positionToMove = new Vec3d(
+                -MathHelper.sin((float) Math.toRadians(targetYaw)) * range + target.getX(),
+                target.getY(),
+                MathHelper.cos((float) Math.toRadians(targetYaw)) * range + target.getZ()
+        );
+
+        this.yaw = RotationUtility.getRotationFromPosition(positionToMove).x;
     }
 
-    private float getMovementReferenceYaw() {
-        final MovementFixModule movementFix = OraculusClient.getInstance().getModuleRepository().getModule(MovementFixModule.class);
-        if (movementFix != null && movementFix.isFixMovement()) {
-            return RotationHelper.getClientHandler().getYawOr(mc.player.getYaw());
-        }
-        return mc.player.getYaw();
+    private LivingEntity getKillAuraTarget() {
+        return OraculusClient.getInstance().getModuleRepository().getModule(KillAuraModule.class).getTargeting().getTarget().getEntity();
     }
 
-    private boolean isFlightActive() {
-        final FlightModule flight = OraculusClient.getInstance().getModuleRepository().getModule(FlightModule.class);
-        return flight != null && flight.isEnabled();
-    }
-
-    private boolean hasGroundAhead(final float yaw) {
-        final double[] offset = MoveUtility.yawPos((float) Math.toRadians(yaw), EDGE_LOOKAHEAD);
-        final Box checkBox = mc.player.getBoundingBox().expand(-0.05D, 0.0D, -0.05D).offset(offset[0], -0.55D, offset[1]);
-        return !PlayerUtility.isBoxEmpty(checkBox);
-    }
-
-    private double getHorizontalDistance(final LivingEntity target) {
-        final double distance = Math.hypot(mc.player.getX() - target.getX(), mc.player.getZ() - target.getZ());
-        return Math.max(0.0D, distance - mc.player.getWidth() * 0.5D - target.getWidth() * 0.5D);
-    }
-
-    private static float getInputYaw(final float referenceYaw, final int forward, final int sideways) {
-        return (float) Math.toDegrees(MoveUtility.getDirection(referenceYaw, forward, sideways));
-    }
-
-    private void switchDirection() {
-        if (System.currentTimeMillis() - this.lastCollisionSwitchTime < 250L) {
+    @Subscribe
+    public void onRenderWorld(final RenderWorldEvent event) {
+        if (!active || !showRing.getValue() || !shouldRun()) {
             return;
         }
 
-        this.strafeDirectionSign *= -1;
-        this.lastCollisionSwitchTime = System.currentTimeMillis();
-    }
+        final LivingEntity target = this.getKillAuraTarget();
+        final Vec3d position = MathUtility.interpolate(target, event.tickDelta());
 
-    @Override
-    protected void onEnable() {
-        this.strafeDirectionSign = 1;
-        this.strafeTarget = null;
-        this.lastSwitchTime = 0L;
-        this.lastCollisionSwitchTime = 0L;
-        this.lastInput = InputChoice.NONE;
-        super.onEnable();
+        final int blackColor = 0xFF000000;
+        final MatrixStack stack = event.matrixStack();
+        final Pair<Integer, Integer> colors = ColorUtility.getClientTheme();
+
+        stack.push();
+        stack.translate(position.x, position.y, position.z);
+
+        this.calculateRingSegments();
+
+//        this.renderRingSegments(stack, ringSegments, colors.first, colors.second);
+//        this.renderRingSegments(stack, innerOutlineRingSegments, blackColor, blackColor);
+//        this.renderRingSegments(stack, outerOutlineRingSegments, blackColor, blackColor);
+
+        stack.pop();
     }
 
     @Override
     protected void onDisable() {
-        this.strafeTarget = null;
-        this.lastInput = InputChoice.NONE;
+        active = false;
         super.onDisable();
     }
 
-    private static final class InputChoice {
-        private static final InputChoice NONE = new InputChoice(0, 0);
+    public boolean isActive() {
+        return active;
+    }
 
-        private final int forward;
-        private final int sideways;
+    public float getYaw() {
+        return yaw;
+    }
 
-        private InputChoice(final int forward, final int sideways) {
-            this.forward = forward;
-            this.sideways = sideways;
+    private boolean shouldRun() {
+        if (requirements.getProperty("Jump key").getValue() && !PlayerUtility.isKeyPressed(mc.options.jumpKey)) {
+            return false;
         }
 
-        @Override
-        public boolean equals(final Object object) {
-            if (this == object) {
-                return true;
-            }
-            if (!(object instanceof InputChoice choice)) {
-                return false;
-            }
-            return this.forward == choice.forward && this.sideways == choice.sideways;
+        final KillAuraModule killAuraModule = OraculusClient.getInstance().getModuleRepository().getModule(KillAuraModule.class);
+        if (!killAuraModule.isEnabled() || !killAuraModule.getTargeting().isTargetSelected()) {
+            return false;
         }
 
-        @Override
-        public int hashCode() {
-            return 31 * this.forward + this.sideways;
+        final SpeedModule speedModule = OraculusClient.getInstance().getModuleRepository().getModule(SpeedModule.class);
+        return !requirements.getProperty("Speed module").getValue() || speedModule.isEnabled();
+    }
+
+//    private void renderRingSegments(final MatrixStack stack, final RingSegment[] segments, final int firstColor, final int secondColor) {
+//        WorldRenderer.useBuffer(
+//                VertexFormat.DrawMode.QUADS,
+//                VertexFormats.POSITION_COLOR,
+//                ShaderProgramKeys.POSITION_COLOR,
+//                buffer -> {
+//                    final Matrix4f matrix = stack.peek().getPositionMatrix();
+//
+//                    for (int i = 0; i < RING_SEGMENT_COUNT; i++) {
+//                        final int prev = (i + RING_SEGMENT_COUNT - 1) % RING_SEGMENT_COUNT;
+//
+//                        final RingSegment prevSegment = segments[prev];
+//                        final RingSegment currSegment = segments[i];
+//
+//                        buffer.vertex(matrix, prevSegment.innerX, 0, prevSegment.innerZ).color(secondColor).normal(stack.peek(), 0, 0, 0);
+//                        buffer.vertex(matrix, prevSegment.outerX, 0, prevSegment.outerZ).color(firstColor).normal(stack.peek(), 0, 0, 0);
+//                        buffer.vertex(matrix, currSegment.outerX, 0, currSegment.outerZ).color(firstColor).normal(stack.peek(), 0, 0, 0);
+//                        buffer.vertex(matrix, currSegment.innerX, 0, currSegment.innerZ).color(secondColor).normal(stack.peek(), 0, 0, 0);
+//                    }
+//                }
+//        );
+//    }
+
+    private void calculateRingSegments() {
+        final float innerRadius = (this.range.getValue().floatValue() + 1) - (RING_SEGMENT_THICKNESS / 2);
+        if (prevInnerRadius != -1 && prevInnerRadius == innerRadius) {
+            return;
+        }
+
+        prevInnerRadius = innerRadius;
+        final float outlineThickness = RING_SEGMENT_THICKNESS / 2F;
+
+        for (int i = 0; i < RING_SEGMENT_COUNT; i++) {
+            final float angle = MathHelper.TAU * ((float) i / RING_SEGMENT_COUNT);
+
+            final float sin = MathHelper.sin(angle);
+            final float cos = MathHelper.cos(angle);
+
+            final float mainInnerX = innerRadius * sin;
+            final float mainInnerZ = innerRadius * cos;
+            final float mainOuterX = (innerRadius + RING_SEGMENT_THICKNESS) * sin;
+            final float mainOuterZ = (innerRadius + RING_SEGMENT_THICKNESS) * cos;
+            ringSegments[i] = new RingSegment(mainInnerX, mainInnerZ, mainOuterX, mainOuterZ);
+
+            final float outlineInnerInnerRadius = innerRadius - outlineThickness;
+            final float innerOutlineInnerX = outlineInnerInnerRadius * sin;
+            final float innerOutlineInnerZ = outlineInnerInnerRadius * cos;
+            final float innerOutlineOuterX = innerRadius * sin;
+            final float innerOutlineOuterZ = innerRadius * cos;
+            innerOutlineRingSegments[i] = new RingSegment(innerOutlineInnerX, innerOutlineInnerZ, innerOutlineOuterX, innerOutlineOuterZ);
+
+            final float outlineOuterInnerRadius = innerRadius + RING_SEGMENT_THICKNESS;
+            final float outlineOuterOuterRadius = innerRadius + RING_SEGMENT_THICKNESS + outlineThickness;
+            final float outerOutlineInnerX = outlineOuterInnerRadius * sin;
+            final float outerOutlineInnerZ = outlineOuterInnerRadius * cos;
+            final float outerOutlineOuterX = outlineOuterOuterRadius * sin;
+            final float outerOutlineOuterZ = outlineOuterOuterRadius * cos;
+            outerOutlineRingSegments[i] = new RingSegment(outerOutlineInnerX, outerOutlineInnerZ, outerOutlineOuterX, outerOutlineOuterZ);
         }
     }
+
+    private record RingSegment(float innerX, float innerZ, float outerX, float outerZ) {
+    }
+
+    private enum Mode {
+        CIRCLE("Circle"),
+        BEHIND("Behind");
+
+        private final String name;
+
+        Mode(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
 }

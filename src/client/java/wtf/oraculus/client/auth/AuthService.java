@@ -10,6 +10,7 @@ import wtf.oraculus.client.edition.EditionBuildInfo;
 import java.net.ConnectException;
 import java.net.http.HttpTimeoutException;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,9 +30,11 @@ public final class AuthService implements AutoCloseable {
     });
     private final AuthApiClient api = new AuthApiClient(executor);
     private final AuthSessionStore store = new AuthSessionStore();
+    private final LauncherAccountStore launcherAccountStore = new LauncherAccountStore();
     private final DeviceFingerprintProvider fingerprintProvider = new DeviceFingerprintProvider();
     private final AtomicReference<AuthSnapshot> snapshot = new AtomicReference<>(AuthSnapshot.initial());
     private final AtomicBoolean requestInFlight = new AtomicBoolean();
+    private final AtomicBoolean legalityRequestInFlight = new AtomicBoolean();
 
     private volatile DeviceFingerprintProvider.Fingerprint fingerprint;
     private volatile String accessToken = "";
@@ -42,16 +45,31 @@ public final class AuthService implements AutoCloseable {
     private volatile long networkGraceStartedAt;
     private volatile boolean rememberLogin;
     private volatile RuntimePermit runtimePermit;
+    private volatile boolean protectedModuleObserved;
+    private volatile long nextLegalityProbeAt;
+    private volatile boolean launcherAccountMissing = true;
+    private Integer fpsBeforeAccountRestriction;
 
     AuthService(final OraculusClient oraculus) {
         this.oraculus = oraculus;
     }
 
     public void initialize() {
+        DecoyIntegrityGuard.verify();
         publish(AuthState.CHECKING_SAVED_SESSION, "正在检查已保存的登录会话", "", "", "", null, "");
         executor.execute(() -> {
             try {
                 fingerprint = fingerprintProvider.collect();
+                final LauncherAccountStore.LoadResult launcherAccount = launcherAccountStore.load();
+                launcherAccountMissing = launcherAccount.status() == LauncherAccountStore.Status.ABSENT;
+                if (launcherAccount.status() == LauncherAccountStore.Status.READY) {
+                    loginWithLauncherToken(launcherAccount.account());
+                    return;
+                }
+                if (launcherAccount.status() == LauncherAccountStore.Status.INVALID) {
+                    requireLogin("启动器登录信息无效，请使用账号密码登录");
+                    return;
+                }
                 final Optional<AuthSessionStore.SavedSession> saved = store.loadSession();
                 if (saved.isPresent()) {
                     rememberLogin = true;
@@ -82,6 +100,28 @@ public final class AuthService implements AutoCloseable {
                 && accessExpiresAt > now() ? accessToken : "";
     }
 
+    public void onModuleEnabled(final String moduleName) {
+        if (!AccountLegalityPolicy.requiresProbe(moduleName)) {
+            return;
+        }
+        protectedModuleObserved = true;
+        requestModuleLegality();
+    }
+
+    public CompletableFuture<Boolean> mayConnectToRemoteServer() {
+        final String token = accessToken;
+        if (token.isBlank() || accessExpiresAt <= now()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        return api.legality(token).handleAsync((result, throwable) -> {
+            if (throwable != null) {
+                return true;
+            }
+            applyLegalityResult(result);
+            return AccountLegalityPolicy.betaConnectionDecision(result) != AccountLegalityPolicy.DENY;
+        }, executor);
+    }
+
     public String savedUsername() {
         return store.loadUsername();
     }
@@ -104,6 +144,43 @@ public final class AuthService implements AutoCloseable {
         ensureFingerprint();
         api.login(username, password, fingerprint).whenComplete((result, throwable) ->
                 executor.execute(() -> completeCredentialRequest(result, throwable, username)));
+    }
+
+    private void loginWithLauncherToken(final LauncherAccountStore.LauncherAccount account) {
+        if (!requestInFlight.compareAndSet(false, true)) {
+            requireLogin("启动器自动登录失败，请使用账号密码登录");
+            return;
+        }
+        rememberLogin = false;
+        store.saveUsername(account.username());
+        publish(AuthState.AUTHENTICATING, "正在验证启动器登录", "", account.username(), "", null,
+                fingerprint == null ? "" : fingerprint.quality());
+        ensureFingerprint();
+        api.launcherLogin(account.username(), account.accessToken(), fingerprint)
+                .whenComplete((result, throwable) -> executor.execute(() ->
+                        completeLauncherRequest(result, throwable, account.username())));
+    }
+
+    private void completeLauncherRequest(final AuthApiClient.ApiResult result, final Throwable throwable,
+                                         final String username) {
+        requestInFlight.set(false);
+        if (throwable != null || result == null) {
+            requireLogin("启动器自动登录失败，请使用账号密码登录");
+            return;
+        }
+        final AuthDecisionEvaluator.SessionDecision decision =
+                AuthDecisionEvaluator.evaluateSession(result, fingerprint, now());
+        if (decision != AuthDecisionEvaluator.SessionDecision.ACCEPT) {
+            final String rejectedToken = result.accessToken();
+            if (rejectedToken != null && !rejectedToken.isBlank()) {
+                api.logout(rejectedToken).exceptionally(ignored -> null);
+            }
+            publish(AuthState.LOGIN_REQUIRED, "启动器自动登录失败，请使用账号密码登录",
+                    result.requestId(), username, "", null,
+                    fingerprint == null ? "" : fingerprint.quality());
+            return;
+        }
+        acceptSession(result);
     }
 
     public void register(final String username, final String password, final boolean remember) {
@@ -160,6 +237,10 @@ public final class AuthService implements AutoCloseable {
     }
 
     private void acceptSession(final AuthApiClient.ApiResult result) {
+        if (launcherAccountMissing && !"BETA".equals(result.tier())) {
+            rejectNonBetaLoginWithoutLauncherAccount(result);
+            return;
+        }
         final RuntimePermit acceptedPermit = RuntimePermit.issue(result, fingerprint, now());
         accessToken = result.accessToken();
         refreshToken = result.refreshToken();
@@ -169,6 +250,7 @@ public final class AuthService implements AutoCloseable {
         RuntimeAccessGate.install(acceptedPermit, now());
         nextHeartbeatAt = now() + HEARTBEAT_INTERVAL_SECONDS;
         networkGraceStartedAt = 0L;
+        restoreFpsLimit();
         store.save(result.username(), refreshToken, refreshExpiresAt, rememberLogin);
         publish(AuthState.AUTHENTICATED, result.message(), result.requestId(), result.username(),
                 result.tier(), result.betaExpiresAt(), result.hwidQuality());
@@ -188,6 +270,18 @@ public final class AuthService implements AutoCloseable {
                         result.username(), result.tier(), result.betaExpiresAt(), result.hwidQuality());
             }
         });
+    }
+
+    private void rejectNonBetaLoginWithoutLauncherAccount(final AuthApiClient.ApiResult result) {
+        final String token = result.accessToken();
+        clearCredentials();
+        publish(AuthState.LOGIN_REQUIRED,
+                "未检测到启动器登录信息，非 Beta 账号不能登录",
+                result.requestId(), result.username(), result.tier(), result.betaExpiresAt(), result.hwidQuality());
+        stopRuntimeAndShowLogin();
+        if (token != null && !token.isBlank()) {
+            api.logout(token).exceptionally(ignored -> null);
+        }
     }
 
     private void refresh(final boolean initial, final String username) {
@@ -254,6 +348,9 @@ public final class AuthService implements AutoCloseable {
             final AuthState state = snapshot.get().state();
             if (state != AuthState.READY && state != AuthState.NETWORK_GRACE) return;
             final long now = now();
+            if (protectedModuleObserved && now >= nextLegalityProbeAt) {
+                requestModuleLegality();
+            }
             if (state == AuthState.NETWORK_GRACE && networkGraceStartedAt > 0
                     && now - networkGraceStartedAt >= NETWORK_GRACE_SECONDS) {
                 revoke("认证服务器连接超时，请重新登录", "");
@@ -268,6 +365,53 @@ public final class AuthService implements AutoCloseable {
             }
         } catch (Throwable exception) {
             LOGGER.warn("Oraculus authentication maintenance failed", exception);
+        }
+    }
+
+    private void requestModuleLegality() {
+        final String token = accessToken;
+        if (token.isBlank() || accessExpiresAt <= now()
+                || !legalityRequestInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        nextLegalityProbeAt = now() + 60L;
+        api.legality(token).whenComplete((result, throwable) -> executor.execute(() -> {
+            legalityRequestInFlight.set(false);
+            if (throwable == null) {
+                applyLegalityResult(result);
+            }
+        }));
+    }
+
+    private void applyLegalityResult(final AuthApiClient.LegalityResult result) {
+        if (AccountLegalityPolicy.shouldLimitFps(result)) {
+            MinecraftClient.getInstance().execute(this::applyFpsLimit);
+        } else if (result != null && result.ok() && result.exists()) {
+            restoreFpsLimit();
+        }
+    }
+
+    private void applyFpsLimit() {
+        final var option = MinecraftClient.getInstance().options.getMaxFps();
+        synchronized (this) {
+            if (fpsBeforeAccountRestriction == null) {
+                fpsBeforeAccountRestriction = option.getValue();
+            }
+        }
+        if (option.getValue() >= 30) {
+            option.setValue(29);
+        }
+    }
+
+    private void restoreFpsLimit() {
+        final Integer previous;
+        synchronized (this) {
+            previous = fpsBeforeAccountRestriction;
+            fpsBeforeAccountRestriction = null;
+        }
+        if (previous != null) {
+            MinecraftClient.getInstance().execute(() ->
+                    MinecraftClient.getInstance().options.getMaxFps().setValue(previous));
         }
     }
 
@@ -381,6 +525,7 @@ public final class AuthService implements AutoCloseable {
 
     @Override
     public void close() {
+        restoreFpsLimit();
         executor.shutdownNow();
     }
 }

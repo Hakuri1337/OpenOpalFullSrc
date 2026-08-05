@@ -19,8 +19,8 @@
 
 | edition | clientVersion | buildId | launcherVersion（可选） |
 | --- | --- | --- | --- |
-| `FREE` | `b7` | `b7-free` | `v0.9.21` |
-| `BETA` | `b7` | `b7-beta` | `v0.9.21` |
+| `FREE` | `b8` | `b8-free` | `v0.9.21` |
+| `BETA` | `b8` | `b8-beta` | `v0.9.21` |
 
 版本门禁按以下优先级执行：
 
@@ -122,8 +122,8 @@ publicKeyBase64: MCowBQYDK2VwAyEAy/fEZHAN9u1e/iPCZMjwJ8Ra3TPS7449CESmOKgrueE=
   "username": "example_user",
   "edition": "BETA",
   "tier": "BETA",
-  "clientVersion": "b7",
-  "buildId": "b7-beta",
+  "clientVersion": "b8",
+  "buildId": "b8-beta",
   "deviceFingerprintHash": "标准 Base64 编码的 SHA-256",
   "accessTokenHash": "标准 Base64 编码的 SHA-256",
   "issuedAt": 1785250000,
@@ -196,8 +196,8 @@ Base64，不是 Base64URL。`betaExpiresAt` 在 Free 会话中为 `null`；限�
   "hwidVersion": "v1",
   "hwidQuality": "STRONG",
   "edition": "FREE",
-  "clientVersion": "b7",
-  "buildId": "b7-free",
+  "clientVersion": "b8",
+  "buildId": "b8-free",
   "launcherVersion": "v0.9.21"
 }
 ```
@@ -220,7 +220,41 @@ Beta 会话，账号持久化等级仍为 Free。注册限制为同一 IP 每小
 
 同一 IP 与用户名组合在 5 分钟内最多尝试 10 次。
 
-### 3.3 刷新会话
+### 3.3 启动器 AccessToken 登录
+
+`POST /api/v1/auth/launcher-login`
+
+启动器可在 `%TEMP%/oraaculus/acc.json` 写入以下内容：
+
+```json
+{
+  "accname": "example_user",
+  "pswd": "10 分钟 AccessToken"
+}
+```
+
+该文件只由客户端本地读取，不会原样上传。客户端把 `pswd` 放入
+`Authorization: Bearer <AccessToken>`，并将 `accname` 映射为请求体中的 `username`：
+
+```json
+{
+  "username": "example_user",
+  "deviceFingerprint": "v1:stable-device-material...",
+  "hwidVersion": "v1",
+  "hwidQuality": "STRONG",
+  "edition": "FREE",
+  "clientVersion": "b8",
+  "buildId": "b8-free"
+}
+```
+
+服务端同时校验 AccessToken 的有效期、令牌绑定账号、HWID、目标 edition、客户端版本和 buildId。
+成功响应与普通登录的成功会话完全相同，包含新的 AccessToken、RefreshToken、到期时间和
+`EntitlementProof`。账号名不匹配、令牌无效或令牌过期统一返回 `401 SESSION_REVOKED`；HWID 不匹配
+返回 `403 HWID_MISMATCH`。客户端自动登录失败后必须回到普通账号密码登录，不得把 `pswd` 作为密码
+提交到 `/auth/login`，也不得在日志中记录该字段。
+
+### 3.4 刷新会话
 
 `POST /api/v1/auth/refresh`
 
@@ -229,8 +263,8 @@ Beta 会话，账号持久化等级仍为 Free。注册限制为同一 IP 每小
   "refreshToken": "登录或上次刷新返回的令牌",
   "deviceFingerprint": "v1:stable-device-material...",
   "edition": "FREE",
-  "clientVersion": "b7",
-  "buildId": "b7-free",
+  "clientVersion": "b8",
+  "buildId": "b8-free",
   "launcherVersion": "v0.9.21"
 }
 ```
@@ -246,7 +280,7 @@ RefreshToken，客户端应在 Proof 验证通过后将新 RefreshToken、到期
 默认 AccessToken 有效期为 10 分钟，RefreshToken 为 7 天；生产配置可在允许
 范围内调整，客户端必须以响应中的到期时间为准。
 
-### 3.4 心跳
+### 3.5 心跳
 
 `POST /api/v1/auth/heartbeat`
 
@@ -264,20 +298,46 @@ RefreshToken，客户端应在 Proof 验证通过后将新 RefreshToken、到期
 心跳会重新检查账号状态、Beta 到期时间、限时 Beta 公益截止时间、客户端版本、
 启动器版本和会话绑定，并更新会话最后活动时间。
 
-### 3.5 查询状态
+### 3.6 查询状态
 
 `GET /api/v1/auth/status`
 
 携带 Bearer AccessToken。行为和响应与心跳相同，适合只读状态检查。
 
-### 3.6 退出
+### 3.7 账户合法性
+
+`POST /api/v1/auth/legality`
+
+请求体为 `{}`，并携带 Bearer AccessToken。该接口只检查令牌所绑定的当前账户，不接受用户名、账户 ID
+或其他查询目标，因此不能用于枚举账户。客户端在关键模块启用和 Beta 多人服务器连接前使用该接口。
+
+```json
+{
+  "requestId": "a1b2c3...",
+  "Ok": true,
+  "Exists": true,
+  "Active": true,
+  "BetaEligible": false,
+  "Username": "example_user",
+  "Tier": "FREE",
+  "ServerTimeUtc": 1785250000
+}
+```
+
+- `Exists=false` 表示令牌原先绑定的账户已被删除或账户记录已不存在。
+- `Active=false` 表示账户存在，但已封禁、要求修改密码、设备绑定失配或客户端版本已失效。
+- `BetaEligible=true` 表示账户当前具有有效 Beta 授权，或处于有效的限时 Beta 公益期。
+- 仅网络超时或 `429`、`5xx` 不代表账户不存在；客户端不得据此写入删除状态。
+- 无效、过期或已撤销的 AccessToken 返回 `401 SESSION_REVOKED`。
+
+### 3.8 退出
 
 `POST /api/v1/auth/logout`
 
 请求体为 `{}`，携带 Bearer AccessToken。服务端撤销当前会话。即使令牌已经
 无效，退出接口仍返回成功，因此客户端应始终清除本地令牌。
 
-### 3.7 客户端登录态自动发卡
+### 3.9 客户端登录态自动发卡
 
 `POST /api/v1/beta-codes/issue`
 
@@ -357,7 +417,7 @@ Beta 卡密页面标记为 `REVIEWED`、填写备注或禁用批次；禁用只�
 100 次。幂等重放不会重复计入生成数量，但仍必须重新通过会话、账号、HWID、版本和
 launcher 校验。
 
-### 3.8 IRC、在线列表与 Minecraft 身份
+### 3.10 IRC、在线列表与 Minecraft 身份
 
 所有 IRC 接口都复用当前 Bearer AccessToken。AccessToken 轮换或撤销后，
 客户端必须关闭旧 SSE 并使用新令牌重连。
@@ -581,7 +641,7 @@ Mojang `/hasJoined`；客户端 Minecraft AccessToken 只能提交给 Mojang `/j
 | 502 | `IRC_IDENTITY_PROVIDER_ERROR` | Mojang 服务暂不可用；指数退避后重新从 challenge 开始 |
 | 503 | `IRC_CAPACITY_REACHED` | 延迟重连，避免并发创建多个 SSE |
 
-### 3.9 健康检查
+### 3.11 健康检查
 
 - `GET /health/live`：进程可接收请求时返回 `200 {"ok":true}`
 - `GET /health/ready`：认证数据结构可用时返回 200，否则返回 503

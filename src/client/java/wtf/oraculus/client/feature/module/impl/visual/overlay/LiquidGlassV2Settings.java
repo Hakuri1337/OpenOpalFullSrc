@@ -1,5 +1,6 @@
 package wtf.oraculus.client.feature.module.impl.visual.overlay;
 
+import wtf.oraculus.client.edition.EditionBuildInfo;
 import wtf.oraculus.client.feature.module.property.Property;
 import wtf.oraculus.client.feature.module.property.impl.bool.BooleanProperty;
 import wtf.oraculus.client.feature.module.property.impl.number.NumberProperty;
@@ -24,7 +25,7 @@ public final class LiquidGlassV2Settings {
             final String enabledId,
             final BooleanSupplier available
     ) {
-        this.available = available;
+        this.available = () -> !EditionBuildInfo.isFree() && available.getAsBoolean();
         this.enabled = new BooleanProperty("LiquidGlass V2", false)
                 .hideIf(() -> !this.available.getAsBoolean())
                 .id(enabledId);

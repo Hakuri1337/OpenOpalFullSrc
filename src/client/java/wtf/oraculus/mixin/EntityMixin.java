@@ -22,6 +22,7 @@ import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationHelper;
 import wtf.oraculus.client.feature.module.impl.movement.MovementFixModule;
 import wtf.oraculus.client.feature.module.impl.movement.physics.PhysicsModule;
 import wtf.oraculus.client.feature.module.impl.world.scaffold.rotation.ScaffoldRotationBridge;
+import wtf.oraculus.client.feature.module.impl.world.ssngscaffold.SsngRotationUtils;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.player.movement.PostMoveEvent;
 import wtf.oraculus.event.impl.game.player.movement.PreMoveEvent;
@@ -85,6 +86,9 @@ public abstract class EntityMixin {
     )
     private float redirectYaw(Entity instance) {
         final boolean isPlayer = mc.player != null && (Object) this == mc.player;
+        if (isPlayer && SsngRotationUtils.hasRotation()) {
+            return SsngRotationUtils.getMovementYawOr(instance.getYaw());
+        }
         if (isPlayer && ScaffoldRotationBridge.ownsRotation()) {
             return ScaffoldRotationBridge.logicalYawOr(instance.getYaw());
         }

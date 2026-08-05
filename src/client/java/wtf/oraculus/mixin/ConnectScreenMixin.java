@@ -10,6 +10,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.oraculus.event.EventDispatcher;
+import wtf.oraculus.client.edition.EditionHooks;
 import wtf.oraculus.event.impl.game.server.ServerConnectEvent;
 
 @Mixin(ConnectScreen.class)
@@ -27,6 +28,11 @@ public final class ConnectScreenMixin {
         final ServerConnectEvent serverConnectEvent = new ServerConnectEvent(address);
         EventDispatcher.dispatch(serverConnectEvent);
         if (serverConnectEvent.isCancelled()) {
+            ci.cancel();
+            return;
+        }
+        if (EditionHooks.shouldDeferServerConnection(address,
+                () -> ((ConnectScreenInvoker) (Object) this).invokeConnect(client, address, info, cookieStorage))) {
             ci.cancel();
         }
     }

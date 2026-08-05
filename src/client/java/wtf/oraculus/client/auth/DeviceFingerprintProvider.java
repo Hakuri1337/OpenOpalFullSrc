@@ -63,7 +63,7 @@ public final class DeviceFingerprintProvider {
 
     @Virtualize(vm = @VMOptions(
             structure = VMStructure.THREADED_DIRECT, encrypt = Toggle.ENABLED,
-            shuffle = Toggle.DISABLED, obfuscate = Toggle.ENABLED))
+            shuffle = Toggle.ENABLED, obfuscate = Toggle.ENABLED))
     private static String normalize(final String raw) {
         if (raw == null) return "";
         return Normalizer.normalize(raw, Normalizer.Form.NFKC)
@@ -74,7 +74,7 @@ public final class DeviceFingerprintProvider {
 
     @Virtualize(vm = @VMOptions(
             structure = VMStructure.THREADED_DIRECT, encrypt = Toggle.ENABLED,
-            shuffle = Toggle.DISABLED, obfuscate = Toggle.ENABLED))
+            shuffle = Toggle.ENABLED, obfuscate = Toggle.ENABLED))
     private static boolean isPlaceholder(final String value) {
         return value.isEmpty()
                 || value.equals("UNKNOWN")
@@ -105,7 +105,7 @@ public final class DeviceFingerprintProvider {
 
     @Virtualize(vm = @VMOptions(
             structure = VMStructure.THREADED_DIRECT, encrypt = Toggle.ENABLED,
-            shuffle = Toggle.DISABLED, obfuscate = Toggle.ENABLED))
+            shuffle = Toggle.ENABLED, obfuscate = Toggle.ENABLED))
     private static String sha256(final String value) {
         try {
             final byte[] digest = MessageDigest.getInstance("SHA-256")

@@ -1,5 +1,6 @@
 package wtf.oraculus.client.edition;
 
+import net.minecraft.client.network.ServerAddress;
 import wtf.oraculus.client.feature.module.repository.ModuleRepository;
 import wtf.oraculus.client.feature.module.impl.visual.StreamerModeModule;
 import wtf.oraculus.utility.render.ClientTheme;
@@ -16,6 +17,10 @@ public final class EditionHooks {
     }
 
     public static boolean isTargetStrafing() {
+        return false;
+    }
+
+    public static boolean shouldDeferServerConnection(final ServerAddress address, final Runnable resume) {
         return false;
     }
 

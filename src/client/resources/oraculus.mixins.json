@@ -3,6 +3,7 @@
 	"package": "wtf.oraculus.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
+		"AbstractClientPlayerEntityMixin",
 		"AbstractBlockMixin",
 		"AbstractBlockStateMixin",
 		"ArmedEntityRenderStateMixin",
@@ -28,6 +29,7 @@
 		"ClientWorldMixin",
 		"CommonPingS2CPacketAccessor",
 		"ConnectScreenMixin",
+		"ConnectScreenInvoker",
 		"DisconnectedScreenMixin",
 		"EntityAccessor",
 		"EntityMixin",
