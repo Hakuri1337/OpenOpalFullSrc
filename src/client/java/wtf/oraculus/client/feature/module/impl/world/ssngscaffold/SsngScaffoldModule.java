@@ -102,7 +102,6 @@ public final class SsngScaffoldModule extends Module {
     private final ModeProperty<BlockCountStyle> blockCountStyle = new ModeProperty<>("Block Count Style", BlockCountStyle.RETRO);
     private final NumberProperty blockCountOffset = new NumberProperty("Block Count Y Offset", 0, 0, 200, 1);
     private final BooleanProperty duplicateRotPlace = new BooleanProperty("Duplicate Rot Place", true);
-    private final BooleanProperty interactItem = new BooleanProperty("Interact Item Before Place", false);
 
     private SsngInventoryUtil.SlotData blockSlot;
     private SsngBlockData blockData, lastBlockData;
@@ -132,7 +131,7 @@ public final class SsngScaffoldModule extends Module {
                 noUptelly, godBridge, heypixelUpTelly, safeMode, testOnGround, fixRotation, slowUpTelly, blockFly,
                 blockSlotMode, jumpMode, safeDistance, eagleTick, keepEagleTick, debug,
                 keepFov, fov, mark, markSideColor, markLineColor, blockCount, blockCountStyle,
-                blockCountOffset, duplicateRotPlace, interactItem);
+                blockCountOffset, duplicateRotPlace);
     }
 
     @Override
@@ -483,7 +482,6 @@ public final class SsngScaffoldModule extends Module {
                 SsngPacketOrderManager.markSwap();
             }
         }
-        if (interactItem.getValue()) mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
         final ActionResult result = mc.interactionManager.interactBlock(mc.player, blockSlot.hand(), hit);
         SsngPacketOrderManager.markRightClicking();
         if (result == ActionResult.SUCCESS) {
