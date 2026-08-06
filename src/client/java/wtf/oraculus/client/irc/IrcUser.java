@@ -24,10 +24,6 @@ public record IrcUser(
         presence = safe(presence).toUpperCase(Locale.ROOT);
     }
 
-    public boolean protectsProfile() {
-        return profileVerified && !minecraftProfileId.isBlank() && "IN_GAME".equals(presence);
-    }
-
     public static String normalizeUuid(final String value) {
         return safe(value).replace("-", "").toLowerCase(Locale.ROOT);
     }

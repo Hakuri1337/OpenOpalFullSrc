@@ -8,7 +8,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.helper.impl.LocalDataWatch;
-import wtf.oraculus.client.irc.IrcService;
 import wtf.oraculus.client.feature.helper.impl.target.TargetFlags;
 import wtf.oraculus.client.feature.helper.impl.target.TargetList;
 import wtf.oraculus.client.feature.helper.impl.target.TargetProperty;
@@ -99,12 +98,6 @@ public final class KillAuraTargeting {
             }
 
             if (LocalDataWatch.getFriendList().contains(entity.getName().getString().toUpperCase())) {
-                iterator.remove();
-                continue;
-            }
-
-            final IrcService ircService = OraculusClient.getInstance().getIrcService();
-            if (ircService != null && ircService.isProtectedProfile(entity.getUuid())) {
                 iterator.remove();
                 continue;
             }

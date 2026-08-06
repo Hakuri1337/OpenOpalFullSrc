@@ -18,7 +18,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import wtf.oraculus.client.OraculusClient;
 import wtf.oraculus.client.feature.helper.impl.player.slot.SlotHelper;
-import wtf.oraculus.client.irc.IrcAttackPolicy;
 import wtf.oraculus.client.feature.module.impl.world.breaker.BreakerModule;
 import wtf.oraculus.client.feature.module.impl.world.FastBreakModule;
 import wtf.oraculus.duck.ClientPlayerInteractionManagerAccess;
@@ -38,14 +37,6 @@ public class ClientPlayerInteractionManagerMixin implements ClientPlayerInteract
     private float currentBreakingProgress;
 
     private ClientPlayerInteractionManagerMixin() {
-    }
-
-    @Inject(method = "attackEntity", at = @At("HEAD"), cancellable = true)
-    private void enforceIrcAttackPolicy(PlayerEntity player, Entity target, CallbackInfo callbackInfo) {
-        if (!IrcAttackPolicy.canAttack(target)) {
-            IrcAttackPolicy.notifyBlocked();
-            callbackInfo.cancel();
-        }
     }
 
     @Inject(

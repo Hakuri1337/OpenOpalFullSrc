@@ -3,8 +3,6 @@ package wtf.oraculus.client;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import wtf.oraculus.client.auth.AuthBootstrap;
 import wtf.oraculus.client.auth.AuthService;
-import wtf.oraculus.client.auth.ModuleBootPolicy;
-import wtf.oraculus.client.auth.RuntimePermit;
 import wtf.oraculus.client.binding.repository.BindRepository;
 import wtf.oraculus.client.edition.EditionModuleCatalog;
 import wtf.oraculus.client.edition.EditionHooks;
@@ -101,8 +99,7 @@ public final class OraculusClient {
         AuthBootstrap.initialize(this);
     }
 
-    public synchronized void runAuthenticatedInitializations(final RuntimePermit permit) {
-        final RuntimePermit acceptedPermit = ModuleBootPolicy.requireRuntimeStart(permit);
+    public synchronized void runAuthenticatedInitializations() {
         if (!this.bootstrapInitialization) {
             this.runBootstrapInitializations();
         }
@@ -120,7 +117,7 @@ public final class OraculusClient {
         }
 
         if (this.moduleRepository == null) {
-            this.moduleRepository = ModuleRepository.fromModules(EditionModuleCatalog.createModules(acceptedPermit));
+            this.moduleRepository = ModuleRepository.fromModules(EditionModuleCatalog.createModules());
         }
 
         SaveUtility.loadBindings();
@@ -162,17 +159,11 @@ public final class OraculusClient {
     }
 
     @Deprecated
-    public synchronized void runAuthenticatedInitializations() {
-        final AuthService authService = AuthBootstrap.getService();
-        if (authService == null) {
-            throw new SecurityException("Authentication has not been initialized");
-        }
-        authService.resumeAuthenticatedRuntime();
-    }
-
-    @Deprecated
     public void runPostInitializations() {
-        this.runAuthenticatedInitializations();
+        final AuthService authService = AuthBootstrap.getService();
+        if (authService != null) {
+            authService.resumeAuthenticatedRuntime();
+        }
     }
 
     public synchronized void stopAuthenticatedRuntime() {

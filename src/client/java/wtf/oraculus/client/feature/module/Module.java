@@ -3,9 +3,6 @@ package wtf.oraculus.client.feature.module;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import wtf.oraculus.client.OraculusClient;
-import wtf.oraculus.client.auth.AuthBootstrap;
-import wtf.oraculus.client.auth.RuntimeAccessGate;
-import wtf.oraculus.client.auth.RuntimeDomain;
 import wtf.oraculus.client.binding.IBindable;
 import wtf.oraculus.client.feature.helper.impl.render.ScreenPositionManager;
 import wtf.oraculus.client.feature.module.impl.visual.overlay.OverlayModule;
@@ -65,24 +62,14 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
         if (this.enabled == enabled) {
             return;
         }
-        if (enabled) {
-            RuntimeAccessGate.require(RuntimeDomain.MODULE_ENABLE);
-        }
         final ModuleToggleEvent event = new ModuleToggleEvent(this, enabled);
         EventDispatcher.dispatch(event);
         if (event.isCancelled()) {
             return;
         }
-        if (enabled) {
-            RuntimeAccessGate.require(RuntimeDomain.MODULE_ENABLE);
-        }
         this.enabled = enabled;
         if (enabled) {
             this.onEnable();
-            final var authService = AuthBootstrap.getService();
-            if (authService != null) {
-                authService.onModuleEnabled(this.name);
-            }
             // Auto-show deprecated modules in ClickGUI when enabled
             if (this instanceof DeprecatedModule) {
                 this.visible = true;
@@ -137,7 +124,7 @@ public class Module implements IBindable, IPropertyListProvider, IEventSubscribe
     }
 
     public final boolean isEnabled() {
-        return enabled && RuntimeAccessGate.allowsHotPath();
+        return enabled;
     }
 
     public final boolean isVisible() {

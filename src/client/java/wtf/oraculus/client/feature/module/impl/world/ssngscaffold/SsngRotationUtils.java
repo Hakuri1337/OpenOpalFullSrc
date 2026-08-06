@@ -32,7 +32,18 @@ public final class SsngRotationUtils {
     }
 
     public static void setRotation(final SsngRotation value) {
-        rotation = value == null ? null : value.copy();
+        if (value == null) {
+            rotation = null;
+            return;
+        }
+
+        final SsngRotation adjusted = value.copy();
+        final float serverYaw = getServerRotation().yaw();
+        // Keep the packet yaw continuous around the -180/180 boundary. Sending
+        // the normalized equivalent directly would appear as a near-360 degree
+        // turn to the server.
+        adjusted.setYaw(serverYaw + MathHelper.wrapDegrees(adjusted.yaw() - serverYaw));
+        rotation = adjusted;
     }
 
     public static SsngRotation getRotation() { return rotation == null ? null : rotation.copy(); }

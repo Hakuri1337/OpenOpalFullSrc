@@ -29,7 +29,6 @@
 		"ClientWorldMixin",
 		"CommonPingS2CPacketAccessor",
 		"ConnectScreenMixin",
-		"ConnectScreenInvoker",
 		"DisconnectedScreenMixin",
 		"EntityAccessor",
 		"EntityMixin",

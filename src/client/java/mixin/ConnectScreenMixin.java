@@ -31,10 +31,6 @@ public final class ConnectScreenMixin {
             ci.cancel();
             return;
         }
-        if (EditionHooks.shouldDeferServerConnection(address,
-                () -> ((ConnectScreenInvoker) (Object) this).invokeConnect(client, address, info, cookieStorage))) {
-            ci.cancel();
-        }
     }
 
 }

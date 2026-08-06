@@ -87,7 +87,6 @@ public final class SsngScaffoldModule extends Module {
     private final BooleanProperty fixRotation = new BooleanProperty("Fix Rotation", true);
     private final BooleanProperty slowUpTelly = new BooleanProperty("Slow UpTelly", false);
     private final BooleanProperty blockFly = new BooleanProperty("Block Fly", false);
-    private final BooleanProperty abuseRotation = new BooleanProperty("Abuse Rotation", true);
     private final ModeProperty<SsngInventoryUtil.BlockSlotMode> blockSlotMode = new ModeProperty<>("Block Slot Mode", SsngInventoryUtil.BlockSlotMode.FARTHEST);
     private final ModeProperty<JumpMode> jumpMode = new ModeProperty<>("Jump Mode", JumpMode.NORMAL);
     private final NumberProperty safeDistance = new NumberProperty("Clutch Safe Distance", 4.5D, 1.0D, 5.0D, 0.25D);
@@ -131,7 +130,7 @@ public final class SsngScaffoldModule extends Module {
         blockCountOffset.hideIf(() -> !blockCount.getValue());
         addProperties(mode, alwaysUpdateRotation, placeTick, rotationTick, spoofItem, noSwing, eagle, snap,
                 noUptelly, godBridge, heypixelUpTelly, safeMode, testOnGround, fixRotation, slowUpTelly, blockFly,
-                abuseRotation, blockSlotMode, jumpMode, safeDistance, eagleTick, keepEagleTick, debug,
+                blockSlotMode, jumpMode, safeDistance, eagleTick, keepEagleTick, debug,
                 keepFov, fov, mark, markSideColor, markLineColor, blockCount, blockCountStyle,
                 blockCountOffset, duplicateRotPlace, interactItem);
     }
@@ -335,10 +334,11 @@ public final class SsngScaffoldModule extends Module {
     private void calculateRotation() {
         if (blockSlot == null || blockSlot.invalid()) return;
         if (mc.player.isOnGround()) posY = Math.floor(mc.player.getY() - 1.0D);
+        else posY = mc.player.getBlockY() - 1.0D;
         if (mc.options.jumpKey.isPressed()) posY = mc.player.getBlockY() - 1.0D;
         final BlockPos target = BlockPos.ofFloored(mc.player.getX(), posY, mc.player.getZ());
         final SsngBlockData possible = isIgnored(mc.world.getBlockState(BlockPos.ofFloored(mc.player.getX(), mc.player.getY(), mc.player.getZ()))) ? getBlockData(target) : null;
-        if (possible != null) blockData = possible;
+        if (possible != null || !mc.player.isOnGround()) blockData = possible;
         lastBlockData = possible;
         canPlace = switch (mode.getValue()) {
             case NORMAL -> true;
@@ -470,7 +470,6 @@ public final class SsngScaffoldModule extends Module {
         if (blockData == null || blockSlot == null || blockSlot.invalid() || !canPlace || mc.interactionManager == null || isBlinking()) return;
         final SsngRotation rotation = SsngRotationUtils.getRotation();
         if (rotation == null || !SsngClientRayTraceUtil.didHitBlockFace(rotation, blockData.pos(), blockData.facing(), true)) return;
-        if (abuseRotation.getValue()) rotationAbuse(30.0F, rotation);
         final BlockHitResult hit = SsngClientRayTraceUtil.getFacedBlock(rotation.yaw(), rotation.pitch());
         if (hit == null) return;
         if (blockSlot.hand() == Hand.MAIN_HAND) mc.player.getInventory().setSelectedSlot(blockSlot.slot());
@@ -511,20 +510,6 @@ public final class SsngScaffoldModule extends Module {
 
     private static float randomFloat(final float minimum, final float maximum) {
         return ThreadLocalRandom.current().nextFloat(minimum, maximum);
-    }
-
-    private void rotationAbuse(final float step, final SsngRotation target) {
-        final SsngRotation previous = SsngRotationUtils.getLastRotation();
-        final float change = SsngRotationUtils.yawDiff(target.yaw(), previous.yaw());
-        final int times = (int) (Math.abs(change) / step);
-        float currentYaw = previous.yaw();
-        for (int i = 0; i < times; i++) {
-            currentYaw += SsngRotationUtils.smooth(change, step);
-            SsngRotationUtils.setRotation(new SsngRotation(currentYaw, target.pitch()));
-            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-            SsngPacketOrderManager.markRightClicking();
-        }
-        SsngRotationUtils.setRotation(target);
     }
 
     public boolean shouldKeepFov() { return keepFov.getValue() && SsngMovementUtil.isMoving(); }
@@ -568,7 +553,7 @@ public final class SsngScaffoldModule extends Module {
     private Direction getPlaceSide(final BlockPos support) {
         final BlockPos playerPos = BlockPos.ofFloored(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         final List<SsngBlockData> candidates = new ArrayList<>();
-        for (final Direction direction : new Direction[]{Direction.EAST, Direction.NORTH, Direction.SOUTH, Direction.WEST}) {
+        for (final Direction direction : new Direction[]{Direction.EAST, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.DOWN}) {
             final BlockPos place = support.offset(direction);
             if (isAir(place) && !place.equals(playerPos)) candidates.add(new SsngBlockData(support, direction));
         }
@@ -582,7 +567,7 @@ public final class SsngScaffoldModule extends Module {
         final List<BlockPos> positions = new ArrayList<>();
         for (int x = 5; x >= -4; x--) for (int y = 5; y >= -4; y--) for (int z = 5; z >= -4; z--) {
             final BlockPos pos = playerPos.add(x, y, z);
-            if (isPosSolid(pos) && pos.getY() < playerPos.getY()) positions.add(pos);
+            if (isPosSolid(pos) && pos.getY() <= playerPos.getY() + 3) positions.add(pos);
         }
         positions.sort(Comparator.comparingDouble(pos -> pos.getSquaredDistance(playerPos)));
         return positions.isEmpty() ? null : positions.getFirst();

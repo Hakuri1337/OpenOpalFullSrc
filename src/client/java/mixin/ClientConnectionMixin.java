@@ -21,7 +21,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import wtf.oraculus.client.feature.helper.impl.player.packet.blockage.impl.InboundNetworkBlockage;
 import wtf.oraculus.client.feature.helper.impl.player.packet.blockage.impl.OutboundNetworkBlockage;
-import wtf.oraculus.client.irc.IrcAttackPolicy;
 import wtf.oraculus.duck.ClientConnectionAccess;
 import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.packet.InstantaneousReceivePacketEvent;
@@ -72,11 +71,6 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
             cancellable = true
     )
     private void hookSendPacket(Packet<?> packet, CallbackInfo ci) {
-        if (IrcAttackPolicy.shouldBlock(packet)) {
-            IrcAttackPolicy.notifyBlocked();
-            ci.cancel();
-            return;
-        }
         InstantaneousSendPacketEvent event = new InstantaneousSendPacketEvent(packet);
         EventDispatcher.dispatch(event);
         if (event.isCancelled() || OutboundNetworkBlockage.get().isBlocked(packet)) {
@@ -90,11 +84,6 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
             cancellable = true
     )
     private void hookSendPacket(Packet<?> packet, @Nullable ChannelFutureListener channelFutureListener, CallbackInfo ci) {
-        if (IrcAttackPolicy.shouldBlock(packet)) {
-            IrcAttackPolicy.notifyBlocked();
-            ci.cancel();
-            return;
-        }
         if (PacketUtility.shouldBypass(packet)) {
             return;
         }
@@ -161,10 +150,6 @@ public abstract class ClientConnectionMixin implements ClientConnectionAccess {
     @Unique
     @Override
     public void oraculus$sendPacketSilent(Packet<?> packet) {
-        if (IrcAttackPolicy.shouldBlock(packet)) {
-            IrcAttackPolicy.notifyBlocked();
-            return;
-        }
         if (this.channel != null && this.channel.isOpen()) {
             this.channel.writeAndFlush(packet);
         }

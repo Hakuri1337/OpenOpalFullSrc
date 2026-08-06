@@ -13,7 +13,6 @@ public final class AuthBootstrap {
     public static synchronized AuthService initialize(final OraculusClient client) {
         if (service != null) return service;
         service = new AuthService(client);
-        new AuthRuntimeGate(service);
         service.initialize();
         return service;
     }
