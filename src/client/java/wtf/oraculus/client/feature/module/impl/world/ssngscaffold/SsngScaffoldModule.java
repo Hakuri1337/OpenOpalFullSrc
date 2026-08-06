@@ -8,7 +8,6 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -28,7 +27,6 @@ import wtf.oraculus.event.EventDispatcher;
 import wtf.oraculus.event.impl.game.JoinWorldEvent;
 import wtf.oraculus.event.impl.game.PostGameTickEvent;
 import wtf.oraculus.event.impl.game.input.MoveInputEvent;
-import wtf.oraculus.event.impl.game.packet.InstantaneousSendPacketEvent;
 import wtf.oraculus.event.impl.game.player.interaction.block.BlockPlacedEvent;
 import wtf.oraculus.event.impl.game.player.interaction.block.SsngVanillaPlaceEvent;
 import wtf.oraculus.event.impl.game.player.movement.PostMovementPacketEvent;
@@ -43,7 +41,6 @@ import wtf.oraculus.client.renderer.world.WorldRenderer;
 import wtf.oraculus.client.renderer.NVGRenderer;
 import wtf.oraculus.utility.render.CustomRenderLayers;
 import mixin.LivingEntityAccessor;
-import mixin.PlayerInteractItemC2SPacketAccessor;
 import wtf.oraculus.utility.misc.chat.ChatUtility;
 
 import java.util.*;
@@ -213,16 +210,6 @@ public final class SsngScaffoldModule extends Module {
 
     @Subscribe(priority = -100)
     public void onPreMovementPacket(final PreMovementPacketEvent event) { SsngRotationUtils.apply(event); }
-
-    @Subscribe(priority = 1000)
-    public void onInstantaneousSendPacket(final InstantaneousSendPacketEvent event) {
-        if (!(event.getPacket() instanceof PlayerInteractItemC2SPacket packet)) return;
-        final SsngRotation rotation = SsngRotationUtils.getRotation();
-        if (rotation == null) return;
-        final PlayerInteractItemC2SPacketAccessor accessor = (PlayerInteractItemC2SPacketAccessor) packet;
-        accessor.setYaw(rotation.yaw());
-        accessor.setPitch(rotation.pitch());
-    }
 
     @Subscribe
     public void onPostMovementPacket(final PostMovementPacketEvent event) { SsngMovementUtil.tick(); }
