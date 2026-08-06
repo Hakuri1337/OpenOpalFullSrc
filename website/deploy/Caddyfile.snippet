@@ -1,0 +1,7 @@
+# 仅在 Auth 已迁移至 Caddy 反向代理架构后启用。
+# 当前 Auth 服务可能直接占用 443；不要把本片段直接部署到生产服务器。
+
+oraculus.hakuri.tech {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}

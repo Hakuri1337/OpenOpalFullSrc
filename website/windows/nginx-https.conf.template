@@ -1,0 +1,49 @@
+worker_processes  1;
+error_log  logs/error.log notice;
+pid        logs/nginx.pid;
+
+events { worker_connections 1024; }
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+    server_tokens off;
+
+    server {
+        listen 80;
+        server_name __DOMAIN__;
+
+        location ^~ /.well-known/acme-challenge/ {
+            root __WEBROOT__;
+            default_type text/plain;
+            try_files $uri =404;
+        }
+
+        location / { return 301 https://$host$request_uri; }
+    }
+
+    server {
+        listen 443 ssl;
+        server_name __DOMAIN__;
+        client_max_body_size 128k;
+        ssl_certificate __CERTIFICATE__;
+        ssl_certificate_key __PRIVATE_KEY__;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_session_cache shared:SSL:10m;
+
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+    }
+}

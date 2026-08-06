@@ -1,0 +1,32 @@
+{
+	"schemaVersion": 1,
+	"id": "oraculus",
+	"version": "${version}",
+	"name": "${display_name}",
+	"description": "we are charlie kirk!!!!!!",
+	"authors": [
+		"tear",
+		"charlie kirk"
+	],
+	"contact": {
+		"homepage": "https://seegore.com",
+		"sources": "yes"
+	},
+	"license": "GPL-3.0",
+	"icon": "assets/oraculus/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"wtf.oraculus.OraculusFabric"
+		]
+	},
+	"mixins": [
+		"oraculus.mixins.json"
+	],
+	"accessWidener": "oraculus.accesswidener",
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~1.21.10",
+		"java": ">=21"
+	}
+}

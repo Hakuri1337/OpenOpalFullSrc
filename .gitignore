@@ -1,0 +1,64 @@
+# gradle
+
+.gradle/
+build/
+out/
+classes/
+
+# local workspace/reference material
+
+.agents/
+.decompiled/
+.tools/
+.trae/
+docs/
+SkidProjects/
+tools/
+
+# eclipse
+
+*.launch
+
+# idea
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+
+.settings/
+.vscode/
+bin/
+obj/
+.classpath
+.project
+
+# macos
+
+*.DS_Store
+
+# fabric
+
+run/
+
+
+# java
+
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
+# generated promotional output and machine-local launchers
+
+__pycache__/
+promotional/**/*.mp4
+/*OpalLegacy.bat
+
+# Website build cache and local package-verification extraction
+website/tsconfig.tsbuildinfo
+website/publish/_verify_windows2012r2_package/
+website/publish/OraculusWebsite-Windows2012R2/
+website/publish/*.zip

@@ -1,0 +1,350 @@
+import net.fabricmc.loom.task.RemapJarTask
+import org.gradle.api.tasks.compile.JavaCompile
+
+plugins {
+	id 'fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+def requestedEdition = providers.gradleProperty("edition").orNull
+def activeEdition = requestedEdition ?: "beta"
+if (!(activeEdition in ["free", "beta"])) {
+    throw new GradleException("Unknown edition '${activeEdition}'. Use -Pedition=free or -Pedition=beta.")
+}
+def editionDisplayName = activeEdition == "free" ? "Free" : "Beta"
+def aggregateEditions = requestedEdition == null
+def noObfReleaseJarName = "Oraculus-${editionDisplayName}-${project.mod_version}-NoObf"
+def remappedEditionJar = layout.buildDirectory.file("libs/${noObfReleaseJarName}.jar")
+
+version = project.mod_version
+group = project.maven_group
+buildDir = file("build/${activeEdition}")
+
+base {
+	archivesName = "Oraculus-${editionDisplayName}"
+}
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+
+	maven {
+		url 'https://repo.hypixel.net/repository/Hypixel'
+	}
+	maven {
+		url 'https://jitpack.io'
+	}
+	maven {
+		url 'https://repo.viaversion.com/'
+	}
+	mavenCentral()
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+    accessWidenerPath = file("src/client/resources/oraculus.accesswidener")
+
+	mods {
+		"oraculus" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+
+}
+
+sourceSets.named("client") {
+    resources.srcDir(file("src/editions/${activeEdition}/resources"))
+
+    if (activeEdition == "free") {
+        java.setSrcDirs([layout.buildDirectory.dir("generated/free-client/java")])
+    } else {
+        java.srcDir(file("src/editions/beta/java"))
+    }
+}
+
+if (activeEdition == "free") {
+    final def prepareFreeClientSources = tasks.register("prepareFreeClientSources", Sync) {
+        from("src/client/java") {
+            exclude(
+                    "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/antikb/**",
+                    "mixin/ClientConnectionMixin.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/VelocityModule.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/AttackReduceVelocity.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/IntaveVelocity.java",
+                    "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/NoXZVelocity.java",
+                    "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule.java",
+                    "wtf/oraculus/client/feature/module/impl/movement/noslow/NoSlowModule.java",
+                    "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/NoC0FNoSlow.java",
+                    "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/WatchdogNoSlow.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule.java",
+                    "wtf/oraculus/client/feature/module/impl/visual/SigmaStyleModule.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/disabler/DisablerModule.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler.java",
+                    "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler.java"
+            )
+        }
+        from("src/editions/free/java")
+        into(layout.buildDirectory.dir("generated/free-client/java"))
+    }
+
+    tasks.named("compileClientJava") {
+        dependsOn(prepareFreeClientSources)
+    }
+    tasks.configureEach {
+        if (name == "sourcesJar") {
+            dependsOn(prepareFreeClientSources)
+        }
+    }
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Oraculus registers custom payload codecs during startup. Bundle Fabric API so a
+	// standalone release jar does not crash when the player has only Fabric Loader installed.
+	modImplementation include("net.fabricmc.fabric-api:fabric-api:0.138.4+1.21.10")
+
+	modImplementation include ('org.graalvm.polyglot:polyglot:23.1.0')
+	modImplementation include("net.hypixel:mod-api:1.0.1")
+	modImplementation include ('com.github.JnCrMx:discord-game-sdk4j:v0.5.5')
+	implementation include('javazoom:jlayer:1.0.1')
+	implementation include('org.jcodec:jcodec:0.2.5')
+	implementation include('org.jcodec:jcodec-javase:0.2.5')
+	modCompileOnly("com.viaversion:viafabricplus-api:4.3.6") {
+		transitive = false
+	}
+	compileOnly("com.viaversion:viaversion-common:5.6.0") {
+		transitive = false
+	}
+
+	modApi include("org.lwjgl:lwjgl-nanovg:3.3.3")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-linux")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-linux-arm64")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-windows")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-windows-arm64")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-macos")
+	modRuntimeOnly include("org.lwjgl:lwjgl-nanovg:3.3.3:natives-macos-arm64")
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": inputs.properties.version
+	}
+}
+
+tasks.named("processClientResources") {
+    // The runtime consumes the predecoded OPV frame pack. Keep the original
+    // MP4 in source control for regenerating that pack, but do not ship both.
+    exclude("assets/oraculus/videos/background.mp4")
+    inputs.properties([
+            version     : "${project.mod_version}-${activeEdition}",
+            display_name: "Oraculus ${editionDisplayName}"
+    ])
+    filesMatching("fabric.mod.json") {
+        expand(
+                version     : "${project.mod_version}-${activeEdition}",
+                display_name: "Oraculus ${editionDisplayName}"
+        )
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	inputs.property "archivesName", "oraculus"
+
+	from("LICENSE") {
+		rename { "${it}_${inputs.properties.archivesName}"}
+	}
+}
+
+def remapNoObfJar = tasks.named("remapJar", RemapJarTask) {
+    archiveFileName.set("${noObfReleaseJarName}.jar")
+}
+
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = "oraculus-${activeEdition}"
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+	}
+
+	dependencies {
+		implementation 'ca.weblite:java-objc-bridge:1.2'
+	}
+}
+
+// The remapped Fabric JAR is the only release artifact for an edition. Keep
+// the validation that protects Fabric metadata and Free/Beta source boundaries.
+def verifyEditionReleaseArtifact = tasks.register("verify${editionDisplayName}ReleaseArtifact") {
+    dependsOn(remapNoObfJar)
+    inputs.file(remappedEditionJar)
+
+    doLast {
+        def requiredEntries = [
+                "fabric.mod.json",
+                "oraculus.mixins.json",
+                "oraculus.accesswidener",
+                "wtf/oraculus/OraculusFabric.class"
+        ]
+        def forbiddenFreeClassPrefixes = [
+                "wtf/oraculus/client/feature/module/impl/combat/FakeLagModule",
+                "wtf/oraculus/client/feature/module/impl/combat/FastPearlModule",
+                "wtf/oraculus/client/feature/module/impl/combat/SuperKnockBackModule",
+                "wtf/oraculus/client/feature/module/impl/combat/antikb",
+                "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/HypixelReduceVelocity",
+                "wtf/oraculus/client/feature/module/impl/combat/velocity/impl/IntaveVelocity",
+                "wtf/oraculus/client/feature/module/impl/movement/TargetStrafeModule",
+                "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/NoC0FNoSlow",
+                "wtf/oraculus/client/feature/module/impl/movement/noslow/impl/WatchdogNoSlow",
+                "wtf/oraculus/client/feature/module/impl/utility/AntiStaffModule",
+                "wtf/oraculus/client/feature/module/impl/utility/AutoRodModule",
+                "wtf/oraculus/client/feature/module/impl/utility/MiddlePearlModule",
+                "wtf/oraculus/client/feature/module/impl/visual/SigmaStyleModule",
+                "wtf/oraculus/client/feature/module/impl/world/legittelly/LegitTellyModule",
+                "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HeypixelDisabler",
+                "wtf/oraculus/client/feature/module/impl/utility/disabler/impl/HypixelInventoryDisabler"
+        ]
+
+        def artifact = remappedEditionJar.get().asFile
+        if (!artifact.isFile() || artifact.length() == 0L) {
+            throw new GradleException("Expected release artifact was not produced: ${artifact}")
+        }
+
+        def archive = new java.util.zip.ZipFile(artifact)
+        try {
+            requiredEntries.each { entry ->
+                if (archive.getEntry(entry) == null) {
+                    throw new GradleException("${artifact.name} is missing required Fabric entry ${entry}")
+                }
+            }
+            if (!archive.entries().any { it.name.startsWith("META-INF/jars/") && it.name.endsWith(".jar") }) {
+                throw new GradleException("${artifact.name} is missing bundled dependency JARs")
+            }
+            if (activeEdition == "free") {
+                def leakedEntry = archive.entries().find { entry ->
+                    forbiddenFreeClassPrefixes.any { prefix ->
+                        entry.name == "${prefix}.class" || entry.name.startsWith("${prefix}\$")
+                    }
+                }
+                if (leakedEntry != null) {
+                    throw new GradleException("${artifact.name} contains Beta-only class ${leakedEntry.name}")
+                }
+            }
+        } finally {
+            archive.close()
+        }
+    }
+}
+
+
+tasks.named("build") {
+    dependsOn(verifyEditionReleaseArtifact)
+}
+
+def syncCurrentEditionArtifacts = tasks.register("sync${editionDisplayName}ReleaseArtifacts") {
+    dependsOn(verifyEditionReleaseArtifact)
+    def editionArtifacts = [remappedEditionJar]
+    inputs.files(editionArtifacts)
+    outputs.files(editionArtifacts.collect { artifact -> file("build/libs/${artifact.get().asFile.name}") })
+
+    doLast {
+        def canonicalDirectory = file("build/libs")
+        canonicalDirectory.mkdirs()
+        delete(fileTree(canonicalDirectory) {
+            include "Oraculus-${editionDisplayName}-*.jar"
+        })
+        editionArtifacts.each { artifact ->
+            copy {
+                from(artifact.get().asFile)
+                into(canonicalDirectory)
+            }
+        }
+    }
+}
+
+if (!aggregateEditions) {
+    tasks.named("build") {
+        finalizedBy(syncCurrentEditionArtifacts)
+    }
+}
+
+if (aggregateEditions) {
+    tasks.register("buildFreeEdition", GradleBuild) {
+        dir = projectDir
+        tasks = ["build"]
+        startParameter.projectProperties = [edition: "free"]
+    }
+
+    tasks.register("cleanEditionArtifacts", Delete) {
+        delete(fileTree("build/libs") {
+            include "Oraculus-*.jar"
+            include "oraculus-*.jar"
+        })
+    }
+
+    tasks.register("collectEditionArtifacts", Copy) {
+        dependsOn(verifyEditionReleaseArtifact, tasks.named("buildFreeEdition"), tasks.named("cleanEditionArtifacts"))
+        def betaArtifacts = ["Oraculus-Beta-${project.mod_version}-NoObf.jar"]
+        def freeArtifacts = ["Oraculus-Free-${project.mod_version}-NoObf.jar"]
+        from(file("build/beta/libs")) {
+            include betaArtifacts
+        }
+        from(file("build/free/libs")) {
+            include freeArtifacts
+        }
+        into(file("build/libs"))
+    }
+
+    tasks.named("build") {
+        // A plain `gradle build` is the release entry point. It completes both
+        // source-level editions and leaves the two distributable JARs in
+        // build/libs.
+        dependsOn(tasks.named("collectEditionArtifacts"))
+    }
+
+    tasks.named("clean") {
+        doFirst {
+            delete(file("build/free"), file("build/libs"))
+        }
+    }
+}

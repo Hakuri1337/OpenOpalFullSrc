@@ -1,0 +1,642 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.2.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :
+Fabric Loom: 1.14.6
+
+> Task :compileJava NO-SOURCE
+> Task :processResources NO-SOURCE
+> Task :classes UP-TO-DATE
+
+> Task :compileClientJava
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:9: 错误: 找不到符号
+import wtf.oraculus.event.impl.game.player.PreMovementPacketEvent;
+                                          ^
+  符号:   类 PreMovementPacketEvent
+  位置: 程序包 wtf.oraculus.event.impl.game.player
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:12: 错误: 找不到符号
+import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationEvent;
+                                                              ^
+  符号:   类 RotationEvent
+  位置: 程序包 wtf.oraculus.client.feature.helper.impl.player.rotation
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:12: 错误: 找不到符号
+import wtf.oraculus.client.feature.module.property.impl.BooleanProperty;
+                                                       ^
+  符号:   类 BooleanProperty
+  位置: 程序包 wtf.oraculus.client.feature.module.property.impl
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:34: 错误: 找不到符号
+    public void onRotation(RotationEvent event) {
+                           ^
+  符号:   类 RotationEvent
+  位置: 类 VelocityMode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:37: 错误: 找不到符号
+    public void onMotion(PreMovementPacketEvent event) {
+                         ^
+  符号:   类 PreMovementPacketEvent
+  位置: 类 VelocityMode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:46: 错误: 找不到符号
+    public void onPreMotion(PreMovementPacketEvent event) {
+                            ^
+  符号:   类 PreMovementPacketEvent
+  位置: 类 VelocityMode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:28: 错误: 找不到符号
+    public final BooleanProperty rotate = new BooleanProperty("Rotate", false);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:29: 错误: 找不到符号
+    public final BooleanProperty followDirection = new BooleanProperty("Follow Direction", false);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:31: 错误: 找不到符号
+    public final BooleanProperty debugLog = new BooleanProperty("Debug Log", false);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:34: 错误: 找不到符号
+    public final BooleanProperty tryAttack = new BooleanProperty("Try Attack", true);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:35: 错误: 找不到符号
+    public final BooleanProperty movementOverride = new BooleanProperty("Movement Override", false);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:38: 错误: 找不到符号
+    public final BooleanProperty autoAttackCount = new BooleanProperty("Auto Attack Count", true);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:40: 错误: 找不到符号
+    public final BooleanProperty instantAttack = new BooleanProperty("Instant Attack", true);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:41: 错误: 找不到符号
+    public final BooleanProperty sprintStateCheck = new BooleanProperty("Sprint State Check", true);
+                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:84: 错误: 找不到符号
+    public void onDisconnect(wtf.oraculus.event.impl.client.DisconnectEvent event) {
+                                                           ^
+  符号:   类 DisconnectEvent
+  位置: 程序包 wtf.oraculus.event.impl.client
+警告: 未知的枚举常量 Level.FULL
+  原因: 找不到com.google.j2objc.annotations.ReflectionSupport$Level的类文件
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\BacktrackModule.java:362: 错误: 找不到符号
+        if (velocityModule.shouldStopBacktrack()) {
+                          ^
+  符号:   方法 shouldStopBacktrack()
+  位置: 类型为VelocityModule的变量 velocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\BacktrackModule.java:366: 错误: 找不到符号
+        if (velocityModule.isPaused()) {
+                          ^
+  符号:   方法 isPaused()
+  位置: 类型为VelocityModule的变量 velocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:20: 错误: Heypixel3Velocity不是抽象的, 并且未覆盖VelocityMode中的抽象方法getName()
+public final class Heypixel3Velocity extends VelocityMode {
+             ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:188: 错误: 方法不会覆盖或实现超类型的方法
+    @Override
+    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:196: 错误: 方法不会覆盖或实现超类型的方法
+    @Override
+    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:201: 错误: 方法不会覆盖或实现超类型的方法
+    @Override
+    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:206: 错误: 方法不会覆盖或实现超类型的方法
+    @Override
+    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:28: 错误: 找不到符号
+    public final BooleanProperty rotate = new BooleanProperty("Rotate", false);
+                                              ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:29: 错误: 找不到符号
+    public final BooleanProperty followDirection = new BooleanProperty("Follow Direction", false);
+                                                       ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:31: 错误: 找不到符号
+    public final BooleanProperty debugLog = new BooleanProperty("Debug Log", false);
+                                                ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:34: 错误: 找不到符号
+    public final BooleanProperty tryAttack = new BooleanProperty("Try Attack", true);
+                                                 ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:35: 错误: 找不到符号
+    public final BooleanProperty movementOverride = new BooleanProperty("Movement Override", false);
+                                                        ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:38: 错误: 找不到符号
+    public final BooleanProperty autoAttackCount = new BooleanProperty("Auto Attack Count", true);
+                                                       ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:40: 错误: 找不到符号
+    public final BooleanProperty instantAttack = new BooleanProperty("Instant Attack", true);
+                                                     ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:41: 错误: 找不到符号
+    public final BooleanProperty sprintStateCheck = new BooleanProperty("Sprint State Check", true);
+                                                        ^
+  符号:   类 BooleanProperty
+  位置: 类 VelocityModule
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: 不兼容的类型: String无法转换为Mode
+        if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                                                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: 不兼容的类型: String无法转换为Mode
+        if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                                                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:136: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (mc.player == null || !module.mode.is("Jump Reset")) return;
+                                        ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:136: 错误: 不兼容的类型: String无法转换为Mode
+        if (mc.player == null || !module.mode.is("Jump Reset")) return;
+                                                 ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:158: 错误: 找不到符号
+            double xMotion = motion.getVelocityX() / 8000.0;
+                                   ^
+  符号:   方法 getVelocityX()
+  位置: 类型为EntityVelocityUpdateS2CPacket的变量 motion
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:159: 错误: 找不到符号
+            double zMotion = motion.getVelocityZ() / 8000.0;
+                                   ^
+  符号:   方法 getVelocityZ()
+  位置: 类型为EntityVelocityUpdateS2CPacket的变量 motion
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:168: 错误: 找不到符号
+                    RotationHelper.getInstance().setRotation(kbRotation, 180, 10, true);
+                                  ^
+  符号:   方法 getInstance()
+  位置: 类 RotationHelper
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                             ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                             ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:265: 错误: 找不到符号
+                            RotationHelper.getInstance().setRotation(this.targetRotation, 180, 10, true);
+                                          ^
+  符号:   方法 getInstance()
+  位置: 类 RotationHelper
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:56: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Mix")) return;
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:56: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Mix")) return;
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:61: 错误: 找不到符号
+        float yaw = VelocityModule.rotation.yaw();
+                                           ^
+  符号:   方法 yaw()
+  位置: 类型为Rotation的变量 rotation
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:92: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Mix")) return;
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:92: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Mix")) return;
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:102: 错误: 无法取消引用double
+                    double reach = killAura.getSettings().getRange().getValue();
+                                                                    ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:127: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (!module.mode.is("Mix")) return;
+                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:127: 错误: 不兼容的类型: String无法转换为Mode
+        if (!module.mode.is("Mix")) return;
+                            ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:52: 错误: 找不到符号
+            CommonPingS2CPacket.class,
+            ^
+  符号:   类 CommonPingS2CPacket
+  位置: 类 NoXZMode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:139: 错误: 找不到符号
+        if (teleport.getId() != mc.player.getId()) return false;
+                    ^
+  符号:   方法 getId()
+  位置: 类型为EntityPositionS2CPacket的变量 teleport
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:140: 错误: 找不到符号
+        double dx = teleport.getX() - this.preSuspendX;
+                            ^
+  符号:   方法 getX()
+  位置: 类型为EntityPositionS2CPacket的变量 teleport
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:141: 错误: 找不到符号
+        double dy = teleport.getY() - this.preSuspendY;
+                            ^
+  符号:   方法 getY()
+  位置: 类型为EntityPositionS2CPacket的变量 teleport
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:142: 错误: 找不到符号
+        double dz = teleport.getZ() - this.preSuspendZ;
+                            ^
+  符号:   方法 getZ()
+  位置: 类型为EntityPositionS2CPacket的变量 teleport
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:149: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                        ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:149: 错误: 不兼容的类型: String无法转换为Mode
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                 ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:195: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                        ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:195: 错误: 不兼容的类型: String无法转换为Mode
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                 ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:210: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                        ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:210: 错误: 不兼容的类型: String无法转换为Mode
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                 ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:225: 错误: 无法取消引用double
+                double reach = killAura != null ? killAura.getSettings().getRange().getValue() : 3.0;
+                                                                                   ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:282: 错误: mode 在 VelocityModule 中是 private 访问控制
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                        ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:282: 错误: 不兼容的类型: String无法转换为Mode
+        if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                 ^
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\disabler\impl\AbstractMinibloxDisabler.java:136: 错误: 找不到符号
+                && (velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER
+                                                                                  ^
+  符号:   变量 BUFFER
+  位置: 类 Mode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\disabler\impl\AbstractMinibloxDisabler.java:137: 错误: 找不到符号
+                || velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER_JUMP_RESET))) {
+                                                                                 ^
+  符号:   变量 BUFFER_JUMP_RESET
+  位置: 类 Mode
+C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\utility\player\FightManager.java:26: 错误: 找不到符号
+            ((ClientConnectionAccess) mc.getNetworkHandler().getConnection()).oraculus$sendSilent(packet);
+                                                                             ^
+  符号:   方法 oraculus$sendSilent(PlayerInteractEntityC2SPacket)
+  位置: 接口 ClientConnectionAccess
+注: C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\ServerPackSpoofModule.java使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+注: 某些输入文件使用了未经检查或不安全的操作。
+注: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+注: 某些消息已经过简化; 请使用 -Xdiags:verbose 重新编译以获得完整输出
+73 个错误
+1 个警告
+
+> Task :compileClientJava FAILED
+
+[Incubating] Problems report is available at: file:///C:/Users/27881/Documents/Opal-v2-build-main/build/beta/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileClientJava'.
+> Compilation failed; see the compiler output below.
+  注: C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\ServerPackSpoofModule.java使用或覆盖了已过时的 API。
+  警告: 未知的枚举常量 Level.FULL
+    原因: 找不到com.google.j2objc.annotations.ReflectionSupport$Level的类文件
+  注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: 不兼容的类型: String无法转换为Mode
+          if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: 不兼容的类型: String无法转换为Mode
+          if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                                                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:136: 错误: 不兼容的类型: String无法转换为Mode
+          if (mc.player == null || !module.mode.is("Jump Reset")) return;
+                                                   ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                               ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                               ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:56: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Mix")) return;
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:92: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Mix")) return;
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:127: 错误: 不兼容的类型: String无法转换为Mode
+          if (!module.mode.is("Mix")) return;
+                              ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:149: 错误: 不兼容的类型: String无法转换为Mode
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                   ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:195: 错误: 不兼容的类型: String无法转换为Mode
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                   ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:210: 错误: 不兼容的类型: String无法转换为Mode
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                   ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:282: 错误: 不兼容的类型: String无法转换为Mode
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                                   ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:20: 错误: Heypixel3Velocity不是抽象的, 并且未覆盖VelocityMode中的抽象方法getName()
+  public final class Heypixel3Velocity extends VelocityMode {
+               ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:9: 错误: 找不到符号
+  import wtf.oraculus.event.impl.game.player.PreMovementPacketEvent;
+                                            ^
+    符号:   类 PreMovementPacketEvent
+    位置: 程序包 wtf.oraculus.event.impl.game.player
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:12: 错误: 找不到符号
+  import wtf.oraculus.client.feature.helper.impl.player.rotation.RotationEvent;
+                                                                ^
+    符号:   类 RotationEvent
+    位置: 程序包 wtf.oraculus.client.feature.helper.impl.player.rotation
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:12: 错误: 找不到符号
+  import wtf.oraculus.client.feature.module.property.impl.BooleanProperty;
+                                                         ^
+    符号:   类 BooleanProperty
+    位置: 程序包 wtf.oraculus.client.feature.module.property.impl
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:34: 错误: 找不到符号
+      public void onRotation(RotationEvent event) {
+                             ^
+    符号:   类 RotationEvent
+    位置: 类 VelocityMode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:37: 错误: 找不到符号
+      public void onMotion(PreMovementPacketEvent event) {
+                           ^
+    符号:   类 PreMovementPacketEvent
+    位置: 类 VelocityMode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityMode.java:46: 错误: 找不到符号
+      public void onPreMotion(PreMovementPacketEvent event) {
+                              ^
+    符号:   类 PreMovementPacketEvent
+    位置: 类 VelocityMode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:28: 错误: 找不到符号
+      public final BooleanProperty rotate = new BooleanProperty("Rotate", false);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:29: 错误: 找不到符号
+      public final BooleanProperty followDirection = new BooleanProperty("Follow Direction", false);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:31: 错误: 找不到符号
+      public final BooleanProperty debugLog = new BooleanProperty("Debug Log", false);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:34: 错误: 找不到符号
+      public final BooleanProperty tryAttack = new BooleanProperty("Try Attack", true);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:35: 错误: 找不到符号
+      public final BooleanProperty movementOverride = new BooleanProperty("Movement Override", false);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:38: 错误: 找不到符号
+      public final BooleanProperty autoAttackCount = new BooleanProperty("Auto Attack Count", true);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:40: 错误: 找不到符号
+      public final BooleanProperty instantAttack = new BooleanProperty("Instant Attack", true);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:41: 错误: 找不到符号
+      public final BooleanProperty sprintStateCheck = new BooleanProperty("Sprint State Check", true);
+                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:84: 错误: 找不到符号
+      public void onDisconnect(wtf.oraculus.event.impl.client.DisconnectEvent event) {
+                                                             ^
+    符号:   类 DisconnectEvent
+    位置: 程序包 wtf.oraculus.event.impl.client
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:28: 错误: 找不到符号
+      public final BooleanProperty rotate = new BooleanProperty("Rotate", false);
+                                                ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:29: 错误: 找不到符号
+      public final BooleanProperty followDirection = new BooleanProperty("Follow Direction", false);
+                                                         ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:31: 错误: 找不到符号
+      public final BooleanProperty debugLog = new BooleanProperty("Debug Log", false);
+                                                  ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:34: 错误: 找不到符号
+      public final BooleanProperty tryAttack = new BooleanProperty("Try Attack", true);
+                                                   ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:35: 错误: 找不到符号
+      public final BooleanProperty movementOverride = new BooleanProperty("Movement Override", false);
+                                                          ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:38: 错误: 找不到符号
+      public final BooleanProperty autoAttackCount = new BooleanProperty("Auto Attack Count", true);
+                                                         ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:40: 错误: 找不到符号
+      public final BooleanProperty instantAttack = new BooleanProperty("Instant Attack", true);
+                                                       ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\VelocityModule.java:41: 错误: 找不到符号
+      public final BooleanProperty sprintStateCheck = new BooleanProperty("Sprint State Check", true);
+                                                          ^
+    符号:   类 BooleanProperty
+    位置: 类 VelocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:52: 错误: 找不到符号
+              CommonPingS2CPacket.class,
+              ^
+    符号:   类 CommonPingS2CPacket
+    位置: 类 NoXZMode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\disabler\impl\AbstractMinibloxDisabler.java:136: 错误: 找不到符号
+                  && (velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER
+                                                                                    ^
+    符号:   变量 BUFFER
+    位置: 类 Mode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\utility\disabler\impl\AbstractMinibloxDisabler.java:137: 错误: 找不到符号
+                  || velocity.getActiveMode().getEnumValue() == VelocityModule.Mode.BUFFER_JUMP_RESET))) {
+                                                                                   ^
+    符号:   变量 BUFFER_JUMP_RESET
+    位置: 类 Mode
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:126: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if ((module.mode.is("Jump Reset") || module.mode.is("Mix"))
+                                                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:136: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (mc.player == null || !module.mode.is("Jump Reset")) return;
+                                          ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:202: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:237: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Jump Reset") && !module.mode.is("Mix")) return;
+                                                      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:56: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Mix")) return;
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:92: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Mix")) return;
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:127: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (!module.mode.is("Mix")) return;
+                     ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:149: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                          ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:195: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                          ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:210: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                          ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:282: 错误: mode 在 VelocityModule 中是 private 访问控制
+          if (mc.player == null || !module.mode.is("NoXZ")) return;
+                                          ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:102: 错误: 无法取消引用double
+                      double reach = killAura.getSettings().getRange().getValue();
+                                                                      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:225: 错误: 无法取消引用double
+                  double reach = killAura != null ? killAura.getSettings().getRange().getValue() : 3.0;
+                                                                                     ^
+  注: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:188: 错误: 方法不会覆盖或实现超类型的方法
+      @Override
+      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:196: 错误: 方法不会覆盖或实现超类型的方法
+      @Override
+      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:201: 错误: 方法不会覆盖或实现超类型的方法
+      @Override
+      ^
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\Heypixel3Velocity.java:206: 错误: 方法不会覆盖或实现超类型的方法
+      @Override
+      ^
+  注: 某些消息已经过简化; 请使用 -Xdiags:verbose 重新编译以获得完整输出
+  注: 某些输入文件使用了未经检查或不安全的操作。
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\BacktrackModule.java:362: 错误: 找不到符号
+          if (velocityModule.shouldStopBacktrack()) {
+                            ^
+    符号:   方法 shouldStopBacktrack()
+    位置: 类型为VelocityModule的变量 velocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\BacktrackModule.java:366: 错误: 找不到符号
+          if (velocityModule.isPaused()) {
+                            ^
+    符号:   方法 isPaused()
+    位置: 类型为VelocityModule的变量 velocityModule
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:158: 错误: 找不到符号
+              double xMotion = motion.getVelocityX() / 8000.0;
+                                     ^
+    符号:   方法 getVelocityX()
+    位置: 类型为EntityVelocityUpdateS2CPacket的变量 motion
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:159: 错误: 找不到符号
+              double zMotion = motion.getVelocityZ() / 8000.0;
+                                     ^
+    符号:   方法 getVelocityZ()
+    位置: 类型为EntityVelocityUpdateS2CPacket的变量 motion
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:168: 错误: 找不到符号
+                      RotationHelper.getInstance().setRotation(kbRotation, 180, 10, true);
+                                    ^
+    符号:   方法 getInstance()
+    位置: 类 RotationHelper
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\JumpResetMode.java:265: 错误: 找不到符号
+                              RotationHelper.getInstance().setRotation(this.targetRotation, 180, 10, true);
+                                            ^
+    符号:   方法 getInstance()
+    位置: 类 RotationHelper
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\MixMode.java:61: 错误: 找不到符号
+          float yaw = VelocityModule.rotation.yaw();
+                                             ^
+    符号:   方法 yaw()
+    位置: 类型为Rotation的变量 rotation
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:139: 错误: 找不到符号
+          if (teleport.getId() != mc.player.getId()) return false;
+                      ^
+    符号:   方法 getId()
+    位置: 类型为EntityPositionS2CPacket的变量 teleport
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:140: 错误: 找不到符号
+          double dx = teleport.getX() - this.preSuspendX;
+                              ^
+    符号:   方法 getX()
+    位置: 类型为EntityPositionS2CPacket的变量 teleport
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:141: 错误: 找不到符号
+          double dy = teleport.getY() - this.preSuspendY;
+                              ^
+    符号:   方法 getY()
+    位置: 类型为EntityPositionS2CPacket的变量 teleport
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\client\feature\module\impl\combat\velocity\impl\NoXZMode.java:142: 错误: 找不到符号
+          double dz = teleport.getZ() - this.preSuspendZ;
+                              ^
+    符号:   方法 getZ()
+    位置: 类型为EntityPositionS2CPacket的变量 teleport
+  C:\Users\27881\Documents\Opal-v2-build-main\src\client\java\wtf\oraculus\utility\player\FightManager.java:26: 错误: 找不到符号
+              ((ClientConnectionAccess) mc.getNetworkHandler().getConnection()).oraculus$sendSilent(packet);
+                                                                               ^
+    符号:   方法 oraculus$sendSilent(PlayerInteractEntityC2SPacket)
+    位置: 接口 ClientConnectionAccess
+  73 个错误
+  1 个警告
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to generate a Build Scan (powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 17s
+1 actionable task: 1 executed

@@ -1,0 +1,32 @@
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+A problem occurred configuring root project 'Oraculus'.
+> Could not resolve all artifacts for configuration ':classpath'.
+   > Could not resolve net.fabricmc:fabric-loom:1.14.6.
+     Required by:
+         project : > fabric-loom:fabric-loom.gradle.plugin:1.14.6
+      > No matching variant of net.fabricmc:fabric-loom:1.14.6 was found. The consumer was configured to find a library for use during runtime, compatible with Java 21, packaged as a jar, and its dependencies declared externally, as well as attribute 'org.gradle.plugin.api-version' with value '8.8' but:
+          - Variant 'apiElements' declares a library, compatible with Java 21, packaged as a jar, and its dependencies declared externally:
+              - Incompatible because this component declares a component for use during compile-time and the consumer needed a component for use during runtime
+              - Other compatible attribute:
+                  - Doesn't say anything about org.gradle.plugin.api-version (required '8.8')
+          - Variant 'runtimeElements' declares a library for use during runtime, compatible with Java 21, packaged as a jar, and its dependencies declared externally:
+              - Incompatible because this component declares a component, as well as attribute 'org.gradle.plugin.api-version' with value '9.2.0' and the consumer needed a component, as well as attribute 'org.gradle.plugin.api-version' with value '8.8'
+          - Variant 'sourcesElements' declares a component for use during runtime, and its dependencies declared externally:
+              - Incompatible because this component declares documentation and the consumer needed a library
+              - Other compatible attributes:
+                  - Doesn't say anything about its elements (required them packaged as a jar)
+                  - Doesn't say anything about its target Java version (required compatibility with Java 21)
+                  - Doesn't say anything about org.gradle.plugin.api-version (required '8.8')
+
+* Try:
+> No matching variant errors are explained in more detail at https://docs.gradle.org/8.8/userguide/variant_model.html#sub:variant-no-match.
+> Review the variant matching algorithm at https://docs.gradle.org/8.8/userguide/variant_attributes.html#sec:abm_algorithm.
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 11s

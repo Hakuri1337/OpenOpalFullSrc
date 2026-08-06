@@ -1,0 +1,40 @@
+[Unit]
+Description=Oraculus Authentication Server
+Documentation=https://auth.hakuri.tech/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=oraculus-auth
+Group=oraculus-auth
+WorkingDirectory=/opt/oraculus-auth
+Environment=NODE_ENV=production
+ExecStartPre=/opt/oraculus-auth/runtime/bin/node /opt/oraculus-auth/server.js --config /etc/oraculus-auth/server.json --check-config
+ExecStart=/opt/oraculus-auth/runtime/bin/node /opt/oraculus-auth/server.js --config /etc/oraculus-auth/server.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+LimitNOFILE=8192
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/oraculus-auth
+
+[Install]
+WantedBy=multi-user.target
