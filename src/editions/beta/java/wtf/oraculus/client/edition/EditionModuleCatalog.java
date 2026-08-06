@@ -1,7 +1,5 @@
 package wtf.oraculus.client.edition;
 
-import wtf.oraculus.client.auth.ModuleBootPolicy;
-import wtf.oraculus.client.auth.RuntimePermit;
 import wtf.oraculus.client.feature.module.Module;
 import wtf.oraculus.client.feature.module.impl.combat.*;
 import wtf.oraculus.client.feature.module.impl.combat.criticals.CriticalsModule;
@@ -38,8 +36,7 @@ public final class EditionModuleCatalog {
     private EditionModuleCatalog() {
     }
 
-    public static Module[] createModules(final RuntimePermit permit) {
-        ModuleBootPolicy.requireModuleCatalog(permit);
+    public static Module[] createModules() {
         return new Module[]{
                 new KillAuraModule(), new TpAuraModule(), new TeamsModule(), new BacktrackModule(), new BlockModule(),
                 new ReachModule(), new PiercingModule(), new AutoClickerModule(), new AttackDelayModule(),

@@ -30,9 +30,6 @@ final class AuthDecisionEvaluator {
                 || result.betaExpiresAt() <= now)) {
             return SessionDecision.INVALID_ENTITLEMENT;
         }
-        if (!ServerEntitlementVerifier.verify(result, fingerprint, now)) {
-            return SessionDecision.INVALID_SERVER_PROOF;
-        }
         return SessionDecision.ACCEPT;
     }
 
@@ -46,7 +43,6 @@ final class AuthDecisionEvaluator {
         TEMPORARY_FAILURE,
         SERVER_REJECTED,
         MALFORMED_RESPONSE,
-        INVALID_ENTITLEMENT,
-        INVALID_SERVER_PROOF
+        INVALID_ENTITLEMENT
     }
 }
